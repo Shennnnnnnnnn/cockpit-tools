@@ -738,6 +738,10 @@
       "hideDockIconDesc": "Control Dock icon visibility independently; not affected by window minimize behavior",
       "hideDockIconOff": "No (Show Dock icon)",
       "hideDockIconOn": "Yes (Hide Dock icon)",
+      "trayIconStyle": "Menu bar icon style (macOS only)",
+      "trayIconStyleDesc": "Choose the system template icon or the original color app icon",
+      "trayIconStyleTemplate": "Template icon",
+      "trayIconStyleColor": "Color icon",
       "floatingCardStartup": "Show floating card on startup",
       "floatingCardStartupDesc": "Display the floating account card automatically after app launch",
       "floatingCardAlwaysOnTop": "Keep floating card on top by default",
@@ -1759,12 +1763,12 @@
       "timeoutRetry": "Refresh Auth Link"
     },
     "token": {
-      "desc": "Paste auth.json, account JSON, or refresh_token.",
-      "placeholder": "Example: one refresh_token per line, or {\"refresh_token\":\"rt_...\"}",
+      "desc": "Paste auth.json, account JSON, Sub2API JSON, accessToken, or refresh_token.",
+      "placeholder": "Example: paste accessToken directly, a Sub2API export JSON, or {\"accessToken\":\"eyJ...\"}",
       "formatSummary": "Required fields and examples",
-      "formatRequired": "Supports full tokens (id_token + access_token), a single refresh_token, or one refresh_token per line. refresh_token-only import exchanges it online for full credentials first.",
+      "formatRequired": "Supports full tokens (id_token + access_token), Sub2API export JSON, accessToken only, or refresh_token only. refresh_token-only import exchanges it online for full credentials first.",
       "formatSingleLabel": "Full tokens",
-      "formatRefreshOnlyLabel": "refresh_token only",
+      "formatRefreshOnlyLabel": "accessToken / refresh_token only",
       "formatBatchLabel": "Batch example"
     },
     "exportFormat": {

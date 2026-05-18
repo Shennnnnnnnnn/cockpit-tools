@@ -127,6 +127,9 @@ pub struct UserConfig {
     /// 是否隐藏 Dock 图标（macOS）
     #[serde(default = "default_hide_dock_icon")]
     pub hide_dock_icon: bool,
+    /// 菜单栏图标样式（macOS）
+    #[serde(default = "default_tray_icon_style")]
+    pub tray_icon_style: TrayIconStyle,
     /// 是否在启动后自动显示悬浮卡片
     #[serde(default = "default_floating_card_show_on_startup")]
     pub floating_card_show_on_startup: bool,
@@ -406,6 +409,38 @@ impl Default for MinimizeWindowBehavior {
     }
 }
 
+/// 菜单栏图标样式（macOS）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TrayIconStyle {
+    /// 使用 macOS template 单色图标
+    Template,
+    /// 使用原始彩色 App 图标
+    Color,
+}
+
+impl TrayIconStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrayIconStyle::Template => "template",
+            TrayIconStyle::Color => "color",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "color" => TrayIconStyle::Color,
+            _ => TrayIconStyle::Template,
+        }
+    }
+}
+
+impl Default for TrayIconStyle {
+    fn default() -> Self {
+        TrayIconStyle::Template
+    }
+}
+
 fn default_ws_enabled() -> bool {
     true
 }
@@ -492,6 +527,9 @@ fn default_minimize_behavior() -> MinimizeWindowBehavior {
 }
 fn default_hide_dock_icon() -> bool {
     false
+}
+fn default_tray_icon_style() -> TrayIconStyle {
+    TrayIconStyle::Template
 }
 fn default_floating_card_show_on_startup() -> bool {
     false
@@ -776,6 +814,7 @@ impl Default for UserConfig {
             close_behavior: default_close_behavior(),
             minimize_behavior: default_minimize_behavior(),
             hide_dock_icon: default_hide_dock_icon(),
+            tray_icon_style: default_tray_icon_style(),
             floating_card_show_on_startup: default_floating_card_show_on_startup(),
             floating_card_always_on_top: default_floating_card_always_on_top(),
             app_auto_launch_enabled: default_app_auto_launch_enabled(),
@@ -1140,6 +1179,13 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             obj.insert(
                 "hide_dock_icon".to_string(),
                 json!(inherited_hide_dock_icon),
+            );
+        }
+
+        if !obj.contains_key("tray_icon_style") {
+            obj.insert(
+                "tray_icon_style".to_string(),
+                json!(default_tray_icon_style()),
             );
         }
 

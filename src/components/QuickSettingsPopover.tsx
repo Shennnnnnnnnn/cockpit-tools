@@ -71,6 +71,7 @@ interface GeneralConfig {
   close_behavior: string;
   minimize_behavior?: 'dock_and_tray' | 'tray_only';
   hide_dock_icon?: boolean;
+  tray_icon_style?: 'template' | 'color';
   opencode_app_path: string;
   antigravity_app_path: string;
   codex_app_path: string;
@@ -822,6 +823,7 @@ export function QuickSettingsPopover({ type }: QuickSettingsPopoverProps) {
           closeBehavior: merged.close_behavior,
           minimizeBehavior: merged.minimize_behavior,
           hideDockIcon: merged.hide_dock_icon,
+          trayIconStyle: merged.tray_icon_style,
           opencodeAppPath: merged.opencode_app_path,
           antigravityAppPath: merged.antigravity_app_path,
           codexAppPath: merged.codex_app_path,

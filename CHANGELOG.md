@@ -7,6 +7,22 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.23.9] - 2026-05-17
+
+### Added
+- **Codex token import now accepts accessToken-only and Sub2API export formats**: Codex imports can read raw JWT access tokens, `accessToken`/`access_token` fields, camelCase token JSON, line-delimited token input, and OpenAI OAuth accounts from Sub2API export JSON.
+- **macOS menu bar icon style is now configurable**: Settings can switch between the system template status icon and the original color app icon, and the selected style is applied immediately when settings or imported user config change.
+
+### Changed
+- **Codex API Key account switching now writes the official runtime provider state**: API Key accounts write the selected provider as a managed `codex_local_access` provider with the bearer token in `config.toml`, preserving the configured provider identity while avoiding stale `openai_base_url` state.
+- **Codex OAuth imports now preserve more identity metadata from access tokens**: accessToken-only imports derive email, user ID, plan, account ID, organization ID, and subscription expiry when those claims are available.
+
+### Fixed
+- **macOS packaged builds now keep the template menu bar icon visible**: the template tray asset is normalized to menu-bar size before use and the template flag is applied again after tray creation.
+- **Codex built-in OpenAI switching now clears managed API Key runtime provider state**: switching back to the built-in path removes Cockpit-managed provider/token entries while preserving unrelated manual providers.
+- **Cursor quota badges now use the intended mid-level style for 70%+ usage**: quota indicators no longer use the warning style before reaching the critical range.
+
+---
 ## [0.23.8] - 2026-05-17
 
 ### Added

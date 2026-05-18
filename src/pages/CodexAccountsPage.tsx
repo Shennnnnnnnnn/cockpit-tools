@@ -203,7 +203,11 @@ const CODEX_TOKEN_SINGLE_EXAMPLE = `{
     "refresh_token": "rt_..."
   }
 }`;
-const CODEX_TOKEN_REFRESH_ONLY_EXAMPLE = `{
+const CODEX_TOKEN_ACCESS_OR_REFRESH_EXAMPLE = `{
+  "accessToken": "eyJ..."
+}
+
+{
   "refresh_token": "rt_..."
 }`;
 const CODEX_TOKEN_BATCH_EXAMPLE = `[
@@ -8707,7 +8711,7 @@ export function CodexAccountsPage() {
                       <p className="section-desc">
                         {t(
                           "codex.token.desc",
-                          "粘贴 auth.json、账号 JSON 或 refresh_token。",
+                          "粘贴 auth.json、账号 JSON、Sub2API JSON、accessToken 或 refresh_token。",
                         )}
                       </p>
                       <details className="token-format-collapse">
@@ -8721,7 +8725,7 @@ export function CodexAccountsPage() {
                           <p className="token-format-required">
                             {t(
                               "codex.token.formatRequired",
-                              "支持完整 tokens（id_token + access_token）或仅 refresh_token。仅 refresh_token 会先联网换取完整凭据。",
+                              "支持完整 tokens（id_token + access_token）、Sub2API 导出 JSON、仅 accessToken 或仅 refresh_token。仅 refresh_token 会先联网换取完整凭据。",
                             )}
                           </p>
                           <div className="token-format-group">
@@ -8739,11 +8743,11 @@ export function CodexAccountsPage() {
                             <div className="token-format-label">
                               {t(
                                 "codex.token.formatRefreshOnlyLabel",
-                                "仅 refresh_token 示例",
+                                "仅 accessToken / refresh_token 示例",
                               )}
                             </div>
                             <pre className="token-format-code">
-                              {CODEX_TOKEN_REFRESH_ONLY_EXAMPLE}
+                              {CODEX_TOKEN_ACCESS_OR_REFRESH_EXAMPLE}
                             </pre>
                           </div>
                           <div className="token-format-group">
@@ -8762,7 +8766,7 @@ export function CodexAccountsPage() {
                         onChange={(e) => setTokenInput(e.target.value)}
                         placeholder={t(
                           "codex.token.placeholder",
-                          '示例：每行一个 refresh_token，或 {"refresh_token":"rt_..."}',
+                          '示例：直接粘贴 accessToken、Sub2API 导出 JSON，或 {"accessToken":"eyJ..."}',
                         )}
                       />
                       <button
