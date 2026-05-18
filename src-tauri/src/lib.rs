@@ -156,6 +156,13 @@ pub fn run() {
             {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
+                    modules::codex_oauth_rpc::start_server(app_handle).await;
+                });
+            }
+
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
                     modules::codex_oauth::restore_pending_oauth_listener(app_handle);
                     modules::windsurf_oauth::restore_pending_oauth_listener();
                     modules::kiro_oauth::restore_pending_oauth_listener();
