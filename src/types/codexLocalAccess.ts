@@ -7,7 +7,14 @@ export type CodexLocalAccessRoutingStrategy =
   | 'quota_low_first'
   | 'plan_high_first'
   | 'plan_low_first'
-  | 'expiry_soon_first';
+  | 'expiry_soon_first'
+  | 'custom';
+
+export interface CodexLocalAccessCustomRoutingRule {
+  accountId: string;
+  priority: number;
+  weight: number;
+}
 
 export interface CodexLocalAccessCollection {
   enabled: boolean;
@@ -15,6 +22,7 @@ export interface CodexLocalAccessCollection {
   apiKey: string;
   accessScope: CodexLocalAccessScope;
   routingStrategy: CodexLocalAccessRoutingStrategy;
+  customRoutingRules: CodexLocalAccessCustomRoutingRule[];
   restrictFreeAccounts: boolean;
   boundOauthAccountId?: string | null;
   accountIds: string[];
