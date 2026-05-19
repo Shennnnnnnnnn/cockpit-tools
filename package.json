@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "pretauri": "npm run typecheck",
     "tauri": "npm run sync-version && tauri",
+    "sync-fork-build": "node scripts/sync-fork-and-build.cjs",
     "sync-version": "node scripts/sync-version.js"
   },
   "dependencies": {
