@@ -5269,6 +5269,19 @@ async fn add_imported_accounts_to_local_access_collection(
     Ok(added)
 }
 
+pub async fn import_codex_account_content(content: &str) -> Result<Value, String> {
+    let imported = codex_account::import_from_json(content).await?;
+    let added_to_api_service = add_imported_accounts_to_local_access_collection(&imported).await?;
+    let accounts: Vec<CodexLocalAccessImportAccountSummary> =
+        imported.iter().map(build_import_account_summary).collect();
+    Ok(json!({
+        "object": "codex_account_import_result",
+        "imported_count": accounts.len(),
+        "added_to_api_service_count": added_to_api_service,
+        "accounts": accounts,
+    }))
+}
+
 async fn handle_codex_account_import_request(
     stream: &mut TcpStream,
     request: &ParsedRequest,
@@ -5288,16 +5301,7 @@ async fn handle_codex_account_import_request(
     }
 
     let content = extract_import_content_from_request_body(&request.body)?;
-    let imported = codex_account::import_from_json(&content).await?;
-    let added_to_api_service = add_imported_accounts_to_local_access_collection(&imported).await?;
-    let accounts: Vec<CodexLocalAccessImportAccountSummary> =
-        imported.iter().map(build_import_account_summary).collect();
-    let response_body = json!({
-        "object": "codex_account_import_result",
-        "imported_count": accounts.len(),
-        "added_to_api_service_count": added_to_api_service,
-        "accounts": accounts,
-    });
+    let response_body = import_codex_account_content(&content).await?;
     let body =
         serde_json::to_vec(&response_body).map_err(|e| format!("序列化导入响应失败: {}", e))?;
     write_http_response(stream, 200, "OK", "application/json; charset=utf-8", &body).await

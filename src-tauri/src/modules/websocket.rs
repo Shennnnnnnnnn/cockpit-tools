@@ -8,11 +8,19 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, oneshot, Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::config::{get_preferred_port, init_server_status, PORT_RANGE};
+
+const MAX_HTTP_IMPORT_BYTES: usize = 8 * 1024 * 1024;
+const CODEX_IMPORT_PATHS: &[&str] = &[
+    "/v1/codex/accounts/import",
+    "/v1/accounts/import",
+    "/codex/accounts/import",
+];
 
 /// 消息类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -516,7 +524,20 @@ pub async fn start_server() {
 }
 
 /// 处理单个客户端连接
-async fn handle_connection(server: Arc<WsServer>, stream: TcpStream, addr: SocketAddr) {
+async fn handle_connection(server: Arc<WsServer>, mut stream: TcpStream, addr: SocketAddr) {
+    if is_http_codex_import_probe(&stream).await {
+        if let Err(error) = handle_http_codex_import(&mut stream).await {
+            let _ = write_http_json_response(
+                &mut stream,
+                400,
+                "Bad Request",
+                &serde_json::json!({ "error": { "message": error } }),
+            )
+            .await;
+        }
+        return;
+    }
+
     let ws_stream = match tokio_tungstenite::accept_async(stream).await {
         Ok(ws) => ws,
         Err(e) => {
@@ -586,6 +607,146 @@ async fn handle_connection(server: Arc<WsServer>, stream: TcpStream, addr: Socke
     }
 
     crate::modules::logger::log_info(&format!("[WS] 连接关闭: {}", addr));
+}
+
+async fn is_http_codex_import_probe(stream: &TcpStream) -> bool {
+    let mut buffer = [0u8; 256];
+    let Ok(size) = stream.peek(&mut buffer).await else {
+        return false;
+    };
+    let preview = String::from_utf8_lossy(&buffer[..size]).to_string();
+    (preview.starts_with("POST ") || preview.starts_with("OPTIONS "))
+        && CODEX_IMPORT_PATHS.iter().any(|path| {
+            preview.starts_with(&format!("POST {} ", path))
+                || preview.starts_with(&format!("OPTIONS {} ", path))
+        })
+}
+
+async fn handle_http_codex_import(stream: &mut TcpStream) -> Result<(), String> {
+    let request = read_http_request(stream).await?;
+    if request.starts_with(b"OPTIONS ") {
+        write_http_json_response(stream, 204, "No Content", &serde_json::json!({})).await?;
+        return Ok(());
+    }
+    let content = extract_http_import_content(&request)?;
+    let response =
+        crate::modules::codex_local_access::import_codex_account_content(&content).await?;
+    write_http_json_response(stream, 200, "OK", &response).await
+}
+
+async fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, String> {
+    let mut data = Vec::new();
+    let mut buffer = [0u8; 8192];
+    let mut header_end = None;
+    let mut content_length = 0usize;
+
+    loop {
+        let size = stream
+            .read(&mut buffer)
+            .await
+            .map_err(|error| format!("读取导入请求失败: {}", error))?;
+        if size == 0 {
+            break;
+        }
+        data.extend_from_slice(&buffer[..size]);
+        if data.len() > MAX_HTTP_IMPORT_BYTES {
+            return Err("导入请求体过大".to_string());
+        }
+        if header_end.is_none() {
+            header_end = find_header_end(&data);
+            if let Some(end) = header_end {
+                content_length = parse_content_length(&data[..end])?;
+            }
+        }
+        if let Some(end) = header_end {
+            if data.len() >= end + 4 + content_length {
+                data.truncate(end + 4 + content_length);
+                return Ok(data);
+            }
+        }
+    }
+
+    Err("导入请求不完整".to_string())
+}
+
+fn find_header_end(data: &[u8]) -> Option<usize> {
+    data.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn parse_content_length(headers: &[u8]) -> Result<usize, String> {
+    let headers_text = String::from_utf8_lossy(headers);
+    for line in headers_text.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            let length = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "Content-Length 无效".to_string())?;
+            if length > MAX_HTTP_IMPORT_BYTES {
+                return Err("导入请求体过大".to_string());
+            }
+            return Ok(length);
+        }
+    }
+    Ok(0)
+}
+
+fn extract_http_import_content(request: &[u8]) -> Result<String, String> {
+    let Some(header_end) = find_header_end(request) else {
+        return Err("导入请求缺少 HTTP 头".to_string());
+    };
+    let body = &request[header_end + 4..];
+    let raw = std::str::from_utf8(body)
+        .map_err(|_| "导入请求体必须是 UTF-8 文本".to_string())?
+        .trim();
+    if raw.is_empty() {
+        return Err("导入内容不能为空".to_string());
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Ok(raw.to_string());
+    };
+    match &value {
+        serde_json::Value::Object(object) => {
+            for key in ["content", "jsonContent", "json_content", "payload", "token"] {
+                if let Some(item) = object.get(key).filter(|item| !item.is_null()) {
+                    return match item {
+                        serde_json::Value::String(value) => Ok(value.clone()),
+                        _ => serde_json::to_string(item)
+                            .map_err(|error| format!("序列化导入内容失败: {}", error)),
+                    };
+                }
+            }
+            Ok(raw.to_string())
+        }
+        serde_json::Value::String(value) => Ok(value.clone()),
+        serde_json::Value::Array(_) => Ok(raw.to_string()),
+        _ => Err("导入请求体需要是 Token 文本、JSON 对象、JSON 数组或包装对象".to_string()),
+    }
+}
+
+async fn write_http_json_response(
+    stream: &mut TcpStream,
+    status: u16,
+    reason: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    let body = serde_json::to_vec(value).map_err(|error| format!("序列化响应失败: {}", error))?;
+    let headers = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        status,
+        reason,
+        body.len()
+    );
+    stream
+        .write_all(headers.as_bytes())
+        .await
+        .map_err(|error| format!("写入响应失败: {}", error))?;
+    stream
+        .write_all(&body)
+        .await
+        .map_err(|error| format!("写入响应失败: {}", error))
 }
 
 /// 处理客户端消息
