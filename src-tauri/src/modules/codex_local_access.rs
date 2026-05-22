@@ -1,4 +1,4 @@
-use crate::models::codex::{CodexAccount, CodexApiProviderMode};
+use crate::models::codex::{CodexAccount, CodexApiProviderMode, CodexAuthMode};
 use crate::models::codex_local_access::{
     CodexLocalAccessAccountStats, CodexLocalAccessCollection, CodexLocalAccessCustomRoutingRule,
     CodexLocalAccessPortCleanupResult, CodexLocalAccessRoutingStrategy, CodexLocalAccessScope,
@@ -80,6 +80,8 @@ const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const RESPONSES_PATH: &str = "/v1/responses";
 const IMAGES_GENERATIONS_PATH: &str = "/v1/images/generations";
 const IMAGES_EDITS_PATH: &str = "/v1/images/edits";
+const CODEX_ACCOUNT_IMPORT_PATH: &str = "/v1/codex/accounts/import";
+const CODEX_ACCOUNT_IMPORT_SHORT_PATH: &str = "/v1/accounts/import";
 static GATEWAY_RUNTIME: OnceLock<TokioMutex<GatewayRuntime>> = OnceLock::new();
 static GATEWAY_ROUND_ROBIN_CURSOR: AtomicUsize = AtomicUsize::new(0);
 static UPSTREAM_HTTP_CLIENT: OnceLock<Mutex<Option<CachedUpstreamHttpClient>>> = OnceLock::new();
@@ -218,6 +220,20 @@ struct ParsedRequest {
     target: String,
     headers: HashMap<String, String>,
     body: Vec<u8>,
+}
+
+#[derive(serde::Serialize)]
+struct CodexLocalAccessImportAccountSummary {
+    id: String,
+    email: String,
+    auth_mode: CodexAuthMode,
+    plan_type: Option<String>,
+    subscription_active_until: Option<String>,
+    account_id: Option<String>,
+    organization_id: Option<String>,
+    account_name: Option<String>,
+    account_structure: Option<String>,
+    account_note: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -5120,6 +5136,11 @@ fn is_local_models_request(target: &str) -> bool {
     target == "/v1/models" || target.starts_with("/v1/models?")
 }
 
+fn is_codex_account_import_request(target: &str) -> bool {
+    let path = proxy_target_path(target);
+    path == CODEX_ACCOUNT_IMPORT_PATH || path == CODEX_ACCOUNT_IMPORT_SHORT_PATH
+}
+
 fn build_local_models_response() -> Value {
     let data: Vec<Value> = supported_codex_model_ids()
         .into_iter()
@@ -5137,6 +5158,149 @@ fn build_local_models_response() -> Value {
         "object": "list",
         "data": data,
     })
+}
+
+fn stringify_json_import_value(value: &Value) -> Result<String, String> {
+    match value {
+        Value::String(raw) => Ok(raw.clone()),
+        _ => serde_json::to_string(value).map_err(|e| format!("序列化导入内容失败: {}", e)),
+    }
+}
+
+fn extract_import_content_from_request_body(body: &[u8]) -> Result<String, String> {
+    let raw = std::str::from_utf8(body)
+        .map_err(|_| "导入请求体必须是 UTF-8 文本".to_string())?
+        .trim();
+    if raw.is_empty() {
+        return Err("导入内容不能为空".to_string());
+    }
+
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return Ok(raw.to_string());
+    };
+
+    match &value {
+        Value::Object(object) => {
+            for key in [
+                "content",
+                "jsonContent",
+                "json_content",
+                "payload",
+                "importPayload",
+                "import_payload",
+                "token",
+                "importToken",
+                "import_token",
+            ] {
+                if let Some(item) = object.get(key).filter(|item| !item.is_null()) {
+                    return stringify_json_import_value(item);
+                }
+            }
+            Ok(raw.to_string())
+        }
+        Value::String(_) => stringify_json_import_value(&value),
+        Value::Array(_) => Ok(raw.to_string()),
+        _ => Err("导入请求体需要是 Token 文本、JSON 对象、JSON 数组或包装对象".to_string()),
+    }
+}
+
+fn build_import_account_summary(account: &CodexAccount) -> CodexLocalAccessImportAccountSummary {
+    CodexLocalAccessImportAccountSummary {
+        id: account.id.clone(),
+        email: account.email.clone(),
+        auth_mode: account.auth_mode.clone(),
+        plan_type: account.plan_type.clone(),
+        subscription_active_until: account.subscription_active_until.clone(),
+        account_id: account.account_id.clone(),
+        organization_id: account.organization_id.clone(),
+        account_name: account.account_name.clone(),
+        account_structure: account.account_structure.clone(),
+        account_note: account.account_note.clone(),
+    }
+}
+
+async fn add_imported_accounts_to_local_access_collection(
+    imported: &[CodexAccount],
+) -> Result<usize, String> {
+    if imported.is_empty() {
+        return Ok(0);
+    }
+
+    let mut collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime
+            .collection
+            .clone()
+            .ok_or_else(|| "本地接入集合尚未创建".to_string())?
+    };
+
+    let mut added = 0usize;
+    for account in imported {
+        if !is_local_access_eligible_account(account, collection.restrict_free_accounts) {
+            continue;
+        }
+        if collection
+            .account_ids
+            .iter()
+            .any(|account_id| account_id == &account.id)
+        {
+            continue;
+        }
+        collection.account_ids.push(account.id.clone());
+        added += 1;
+    }
+
+    if added == 0 {
+        return Ok(0);
+    }
+
+    collection.updated_at = now_ms();
+    let (changed, _) = sanitize_collection(&mut collection)?;
+    if changed {
+        collection.updated_at = now_ms();
+    }
+    save_collection_to_disk(&collection)?;
+
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        sync_runtime_collection(&mut runtime, collection);
+    }
+
+    Ok(added)
+}
+
+async fn handle_codex_account_import_request(
+    stream: &mut TcpStream,
+    request: &ParsedRequest,
+) -> Result<(), String> {
+    if !request.method.eq_ignore_ascii_case("POST") {
+        let body = serde_json::to_vec(&gateway_error_body(405, "账号导入 API 仅支持 POST", None))
+            .map_err(|e| format!("序列化错误响应失败: {}", e))?;
+        write_http_response(
+            stream,
+            405,
+            "Method Not Allowed",
+            "application/json; charset=utf-8",
+            &body,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    let content = extract_import_content_from_request_body(&request.body)?;
+    let imported = codex_account::import_from_json(&content).await?;
+    let added_to_api_service = add_imported_accounts_to_local_access_collection(&imported).await?;
+    let accounts: Vec<CodexLocalAccessImportAccountSummary> =
+        imported.iter().map(build_import_account_summary).collect();
+    let response_body = json!({
+        "object": "codex_account_import_result",
+        "imported_count": accounts.len(),
+        "added_to_api_service_count": added_to_api_service,
+        "accounts": accounts,
+    });
+    let body =
+        serde_json::to_vec(&response_body).map_err(|e| format!("序列化导入响应失败: {}", e))?;
+    write_http_response(stream, 200, "OK", "application/json; charset=utf-8", &body).await
 }
 
 fn build_codex_client_models_response() -> Value {
@@ -7123,6 +7287,27 @@ async fn handle_connection(
         return Ok(());
     }
 
+    if is_codex_account_import_request(&parsed.target) {
+        match handle_codex_account_import_request(&mut stream, &parsed).await {
+            Ok(()) => {}
+            Err(message) => {
+                write_json_error_response(
+                    &mut stream,
+                    Some(&addr),
+                    Some(&parsed),
+                    400,
+                    "Bad Request",
+                    message.as_str(),
+                    None,
+                    None,
+                    None,
+                )
+                .await?;
+            }
+        }
+        return Ok(());
+    }
+
     if is_local_models_request(&parsed.target) {
         if collection.account_ids.is_empty() {
             write_json_error_response(
@@ -7259,12 +7444,15 @@ mod tests {
     use super::{
         apply_routing_strategy, build_chat_completion_payload, build_chat_completion_stream_body,
         build_codex_client_models_response, build_images_api_payload, build_local_models_response,
-        build_ordered_account_ids, build_request_routing_hint, extract_usage_capture,
-        is_responses_completion_event, normalize_custom_routing_rules, parse_codex_retry_after,
+        build_ordered_account_ids, build_request_routing_hint,
+        extract_import_content_from_request_body, extract_usage_capture,
+        is_codex_account_import_request, is_responses_completion_event,
+        normalize_custom_routing_rules, parse_codex_retry_after,
         parse_responses_payload_from_upstream, prepare_gateway_request,
         resolve_supported_model_alias, should_retry_single_account_upstream_status,
         should_treat_response_as_stream, should_try_next_account, GatewayResponseAdapter,
-        ParsedRequest, ResponseUsageCollector,
+        ParsedRequest, ResponseUsageCollector, CODEX_ACCOUNT_IMPORT_PATH,
+        CODEX_ACCOUNT_IMPORT_SHORT_PATH,
     };
     use crate::models::codex_local_access::{
         CodexLocalAccessCustomRoutingRule, CodexLocalAccessRoutingStrategy,
@@ -7273,6 +7461,61 @@ mod tests {
     use serde_json::{json, Value};
     use std::collections::HashMap;
     use tokio::time::Duration;
+
+    #[test]
+    fn recognizes_codex_account_import_paths() {
+        assert!(is_codex_account_import_request(CODEX_ACCOUNT_IMPORT_PATH));
+        assert!(is_codex_account_import_request(&format!(
+            "{}?source=test",
+            CODEX_ACCOUNT_IMPORT_SHORT_PATH
+        )));
+        assert!(!is_codex_account_import_request("/v1/chat/completions"));
+    }
+
+    #[test]
+    fn extracts_raw_token_import_body() {
+        let content = extract_import_content_from_request_body(b"  refresh-token-value  ")
+            .expect("raw token should be accepted");
+
+        assert_eq!(content, "refresh-token-value");
+    }
+
+    #[test]
+    fn extracts_wrapped_string_import_body() {
+        let raw = br#"{"content":"{\"accessToken\":\"jwt.token.sig\"}"}"#;
+        let content = extract_import_content_from_request_body(raw)
+            .expect("wrapped string content should be accepted");
+
+        assert_eq!(content, r#"{"accessToken":"jwt.token.sig"}"#);
+    }
+
+    #[test]
+    fn extracts_wrapped_json_payload_import_body() {
+        let raw = br#"{"payload":{"tokens":{"access_token":"jwt.token.sig"}}}"#;
+        let content = extract_import_content_from_request_body(raw)
+            .expect("wrapped object payload should be stringified");
+
+        let parsed: Value = serde_json::from_str(&content).expect("content should be JSON");
+        assert_eq!(
+            parsed
+                .get("tokens")
+                .and_then(|value| value.get("access_token"))
+                .and_then(Value::as_str),
+            Some("jwt.token.sig")
+        );
+    }
+
+    #[test]
+    fn keeps_unwrapped_json_import_body() {
+        let raw = br#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}"#;
+        let content = extract_import_content_from_request_body(raw)
+            .expect("unwrapped account JSON should pass through");
+
+        assert_eq!(
+            content,
+            r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}"#
+        );
+    }
 
     #[test]
     fn extracts_usage_from_codex_response_completed_payload() {
