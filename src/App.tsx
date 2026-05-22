@@ -189,7 +189,7 @@ type AppPathMissingDetail = {
   retry?:
     | { kind: 'default' }
     | { kind: 'instance'; instanceId?: string }
-    | { kind: 'switchAccount'; accountId?: string };
+    | { kind: 'switchAccount'; accountId?: string; runtimeTarget?: string };
 };
 
 const WAKEUP_ENABLED_KEY = 'agtools.wakeup.enabled';
@@ -380,7 +380,7 @@ function getQuotaAlertPlatformLabel(
     case 'zed':
       return t('nav.zed', 'Zed');
     default:
-      return t('nav.overview', 'Antigravity');
+      return t('nav.overview', 'Antigravity IDE');
   }
 }
 
@@ -2451,7 +2451,7 @@ function MainApp() {
     const refreshTasks = [
       {
         command: 'refresh_current_quota',
-        errorMessage: 'Failed to refresh Antigravity quotas:',
+        errorMessage: 'Failed to refresh Antigravity IDE quotas:',
       },
       {
         command: 'refresh_current_codex_quota',
@@ -2648,7 +2648,10 @@ function MainApp() {
         await useZedAccountStore.getState().switchAccount(retry.accountId);
         setPage('zed');
       } else if (retry?.kind === 'switchAccount' && retry.accountId) {
-        await invoke('switch_account', { accountId: retry.accountId });
+        await invoke('switch_account', {
+          accountId: retry.accountId,
+          runtimeTarget: retry.runtimeTarget,
+        });
         await Promise.allSettled([
           useAccountStore.getState().fetchAccounts(),
           useAccountStore.getState().fetchCurrentAccount(),
@@ -2897,7 +2900,7 @@ function MainApp() {
                 ? 'Qoder'
               : appPathMissing.app === 'trae'
                 ? 'Trae'
-              : 'Antigravity'
+              : 'Antigravity IDE'
     : '';
 
   const appPathMissingPathLabel = appPathMissing

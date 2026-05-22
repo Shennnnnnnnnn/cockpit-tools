@@ -55,6 +55,8 @@ pub struct CodexLocalAccessCollection {
     pub api_key: String,
     #[serde(default = "default_access_scope_for_existing_config")]
     pub access_scope: CodexLocalAccessScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_proxy_url: Option<String>,
     #[serde(default)]
     pub routing_strategy: CodexLocalAccessRoutingStrategy,
     #[serde(default)]

@@ -1,6 +1,6 @@
 [package]
 name = "cockpit-tools"
-version = "0.23.11"
+version = "0.24.3"
 description = "Cockpit Tools"
 authors = ["jlcodes"]
 license = "CC-BY-NC-SA-4.0"
@@ -71,7 +71,7 @@ pbkdf2 = "0.12"
 sha1 = "0.10"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_UI_Shell"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6"

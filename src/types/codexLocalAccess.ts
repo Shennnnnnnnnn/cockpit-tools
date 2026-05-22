@@ -21,6 +21,7 @@ export interface CodexLocalAccessCollection {
   port: number;
   apiKey: string;
   accessScope: CodexLocalAccessScope;
+  upstreamProxyUrl?: string | null;
   routingStrategy: CodexLocalAccessRoutingStrategy;
   customRoutingRules: CodexLocalAccessCustomRoutingRule[];
   restrictFreeAccounts: boolean;

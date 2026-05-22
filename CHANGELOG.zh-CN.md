@@ -7,6 +7,54 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [0.24.3] - 2026-05-21
+
+### 变更
+- **紧急修复 Codex 本地 API 服务在未配置显式代理时的路由问题**：API 代理地址、Cockpit 全局代理与环境代理变量仍会按顺序优先使用；服务现在会继续进入 reqwest 的系统代理自动发现，而不是在系统自动代理路径生效前停止请求。
+- **Antigravity 已安装版本读取现区分快速徽标读取与完整扫描**：总览徽标会短暂延迟后启动，优先使用可用缓存，并在后台完成更长的扫描，避免版本显示阻塞页面。
+- **Codex 套餐徽标现复用账号原始套餐值与共享样式**：账号卡片、摘要与路由视图都会保留后端或本地套餐标签原值，同时通过统一展示路径生成徽标样式。
+
+### 修复
+- **Antigravity 旧版切号不再因安装版本元数据缺失或无法解析而失败**：已缓存的明确版本仍会阻断 Antigravity `2.0.0` 及以上版本；缺少缓存信息时允许旧版路径继续执行。
+- **Codex 自定义路由账号列表现将表头与行内容限制在固定滚动区域内**：弹框主体可正确滚动，套餐徽标在窄布局下也保持稳定尺寸。
+
+---
+## [0.24.2] - 2026-05-21
+
+### 修复
+- **紧急修复 v0.24.1 后 Codex 本地 API 服务代理路由异常**：API 代理地址为空时会依次回退到 Cockpit 全局代理和显式环境代理变量（`HTTPS_PROXY`、`HTTP_PROXY` 或 `ALL_PROXY`）；没有可用代理地址时，网关会拒绝官方上游请求，避免意外直连官方上游。
+- **Codex 本地 API 服务上游失败诊断现标明实际代理来源**：502 诊断与日志会标明使用的是 API 服务代理、Cockpit 全局代理、环境代理或缺少代理配置，便于快速修正网络出口。
+
+---
+## [0.24.1] - 2026-05-21
+
+### 新增
+- **Antigravity 主页面现显示所选目标的已安装版本**：版本徽标会跟随当前 Antigravity 或 Antigravity IDE 目标，便于确认正在管理的本地客户端版本。
+
+### 变更
+- **Antigravity 现作为一个分组管理 Antigravity 与 Antigravity IDE 两个目标**：平台管理会保持 Antigravity 分组在首位，分组切换器会决定总览操作、版本读取与切号使用的目标。
+- **Antigravity 旧版切号现按安装版本门禁执行**：低于 `2.0.0` 的 Antigravity 继续使用旧版落盘与启动路径；Antigravity `2.0.0` 及以上版本会阻断切号，并引导使用 Antigravity IDE。
+- **Codex 本地 API 服务代理配置改为专用 API 代理地址**：服务会校验填写的代理地址，仅将其用于 API 上游请求；地址为空时直连上游。
+
+### 修复
+- **Antigravity IDE 路径与版本检测现适配官方重命名后的安装结构**：macOS、Windows 与 Linux 检测会区分旧版 Antigravity 和 Antigravity IDE，并解析正确的应用元数据与可执行文件候选路径。
+
+---
+## [0.24.0] - 2026-05-20
+
+### 变更
+- **Antigravity 集成已对齐官方 Antigravity IDE 客户端**：默认应用路径、用户数据目录、进程识别、唤醒 Language Server 元数据、README 文案与界面标签统一使用 Antigravity IDE；本地导入与切号也改为读写官方 `antigravityUnifiedStateSync.oauthToken` 状态。
+- **MFA 保险箱现抽取共享解析与 TOTP 生成逻辑**：已保存验证码管理与快速取码入口复用同一套密钥解析、去重、历史迁移、刷新倒计时与验证码生成行为。
+
+### 新增
+- **Codex 本地 API 服务现可选择上游代理模式**：API 服务设置可在跟随应用全局代理与直连官方上游之间切换，并将所选模式持久化用于网关请求。
+- **Codex OAuth 授权现内置 2FA 快速取码入口**：添加账号弹框可展示已保存 MFA 密钥、刷新倒计时与一键复制验证码；重新授权时会显示并可复制目标账号邮箱。
+
+### 修复
+- **Antigravity IDE 自动检测现适配官方重命名后的安装位置**：默认应用与 Language Server 解析覆盖 `/Applications/Antigravity IDE.app`、Windows `Antigravity IDE.exe` 和 Linux `antigravity-ide`，并可从旧 macOS 路径配置迁移到当前路径。
+- **Antigravity Unified State 写入现保留其他同步条目**：OAuth token 注入只替换 `oauthTokenInfoSentinelKey` 对应行，不再覆盖整个 topic，避免影响其他 sentinel row。
+
+---
 ## [0.23.11] - 2026-05-19
 
 ### 新增

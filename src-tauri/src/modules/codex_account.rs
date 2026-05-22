@@ -1257,6 +1257,30 @@ fn mark_account_requires_reauth(account: &mut CodexAccount, reason: &str) -> Res
     save_account(account)
 }
 
+fn is_missing_refresh_token_reason(reason: &str) -> bool {
+    reason.contains("缺少 refresh_token")
+}
+
+fn clear_stale_missing_refresh_token_reauth(account: &mut CodexAccount) -> Result<(), String> {
+    let is_missing_refresh_token_reauth = account
+        .reauth_reason
+        .as_deref()
+        .map(is_missing_refresh_token_reason)
+        .unwrap_or(false);
+
+    if !account.requires_reauth || !is_missing_refresh_token_reauth {
+        return Ok(());
+    }
+
+    if codex_oauth::is_token_expired(&account.tokens.access_token) {
+        return Ok(());
+    }
+
+    account.requires_reauth = false;
+    account.reauth_reason = None;
+    save_account(account)
+}
+
 pub fn extract_chatgpt_account_id_from_access_token(access_token: &str) -> Option<String> {
     let payload = decode_jwt_payload_value(access_token)?;
     let auth_data = payload.get("https://api.openai.com/auth")?;
@@ -3426,10 +3450,10 @@ async fn perform_managed_token_refresh(
     {
         Some(token) => token,
         None => {
-            let reason = "Codex 登录授权缺少 refresh_token，无法自动刷新。请重新登录 Codex 账号。"
-                .to_string();
-            let _ = mark_account_requires_reauth(&mut account, &reason);
-            return Err(reason);
+            return Err(
+                "Codex 登录授权缺少 refresh_token，无法自动续期；当前 access_token 已不可用。"
+                    .to_string(),
+            );
         }
     };
 
@@ -3480,6 +3504,12 @@ async fn refresh_managed_account_locked(
     if let Err(err) = sync_account_from_authority_sources(&mut account) {
         logger::log_warn(&format!(
             "Codex 账号刷新前同步官方凭证失败，继续使用账号库: account_id={}, error={}",
+            account.id, err
+        ));
+    }
+    if let Err(err) = clear_stale_missing_refresh_token_reauth(&mut account) {
+        logger::log_warn(&format!(
+            "Codex 清理缺失 refresh_token 的过期重登标记失败，继续处理: account_id={}, error={}",
             account.id, err
         ));
     }
@@ -3540,6 +3570,12 @@ pub async fn keepalive_managed_account(
     if let Err(err) = sync_account_from_authority_sources(&mut account) {
         logger::log_warn(&format!(
             "Codex 保活同步官方凭证失败，继续使用账号库: account_id={}, error={}",
+            account.id, err
+        ));
+    }
+    if let Err(err) = clear_stale_missing_refresh_token_reauth(&mut account) {
+        logger::log_warn(&format!(
+            "Codex 保活清理缺失 refresh_token 的过期重登标记失败，继续处理: account_id={}, error={}",
             account.id, err
         ));
     }

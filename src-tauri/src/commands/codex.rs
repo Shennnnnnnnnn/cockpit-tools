@@ -960,6 +960,13 @@ pub async fn codex_local_access_update_custom_routing(
 }
 
 #[tauri::command]
+pub async fn codex_local_access_update_upstream_proxy_config(
+    upstream_proxy_url: Option<String>,
+) -> Result<CodexLocalAccessState, String> {
+    codex_local_access::update_local_access_upstream_proxy_config(upstream_proxy_url).await
+}
+
+#[tauri::command]
 pub async fn codex_local_access_update_access_scope(
     access_scope: CodexLocalAccessScope,
 ) -> Result<CodexLocalAccessState, String> {

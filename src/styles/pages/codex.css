@@ -1184,6 +1184,7 @@
   border: 1px solid var(--plan-plus-border);
 }
 
+.tier-badge.codex-plus,
 .codex-account-card .tier-badge.codex-plus,
 .codex-accounts-page .account-table .tier-badge.codex-plus,
 .codex-oauth-binding-row .tier-badge.codex-plus,
@@ -1220,6 +1221,7 @@
   border: 1px solid var(--plan-pro-border);
 }
 
+.tier-badge.codex-pro-lite,
 .codex-account-card .tier-badge.codex-pro-lite,
 .codex-accounts-page .account-table .tier-badge.codex-pro-lite,
 .codex-oauth-binding-row .tier-badge.codex-pro-lite,
@@ -1231,6 +1233,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 1px 3px rgba(71, 85, 105, 0.16);
 }
 
+.tier-badge.codex-pro-max,
 .codex-account-card .tier-badge.codex-pro-max,
 .codex-accounts-page .account-table .tier-badge.codex-pro-max,
 .codex-oauth-binding-row .tier-badge.codex-pro-max,
@@ -1242,6 +1245,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 3px rgba(180, 116, 11, 0.2);
 }
 
+.tier-badge.new-api-exclusive,
 .codex-account-card .tier-badge.new-api-exclusive,
 .codex-accounts-page .account-table .tier-badge.new-api-exclusive,
 .codex-oauth-binding-row .tier-badge.new-api-exclusive,

@@ -184,18 +184,19 @@ const AUTO_SWITCH_SCOPE_ALL_ACCOUNTS: AutoSwitchAccountScopeMode = 'all_accounts
 const AUTO_SWITCH_SCOPE_SELECTED_ACCOUNTS: AutoSwitchAccountScopeMode = 'selected_accounts';
 const FALLBACK_PLATFORM_SETTINGS_ORDER: Record<PlatformId, number> = {
   antigravity: 0,
-  codex: 1,
-  'github-copilot': 2,
-  windsurf: 3,
-  kiro: 4,
-  cursor: 5,
-  gemini: 6,
-  codebuddy: 7,
-  codebuddy_cn: 8,
-  qoder: 9,
-  trae: 10,
-  workbuddy: 11,
-  zed: 12,
+  antigravity_ide: 1,
+  codex: 2,
+  'github-copilot': 3,
+  windsurf: 4,
+  kiro: 5,
+  cursor: 6,
+  gemini: 7,
+  codebuddy: 8,
+  codebuddy_cn: 9,
+  qoder: 10,
+  trae: 11,
+  workbuddy: 12,
+  zed: 13,
 };
 type UpdateCheckSource = 'auto' | 'manual';
 type UpdateCheckFinishedDetail = {
@@ -2123,7 +2124,7 @@ export function SettingsPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ order: platformSettingsOrder.antigravity }}>
-                <div className="group-title">{t('settings.general.antigravitySettingsTitle', 'Antigravity 设置')}</div>
+                <div className="group-title">{t('settings.general.antigravitySettingsTitle', 'Antigravity IDE 设置')}</div>
                 <div className="settings-group">
               <div className="settings-row">
                 <div className="row-label">
@@ -2213,7 +2214,7 @@ export function SettingsPage() {
 
               <div className="settings-row">
                 <div className="row-label">
-                  <div className="row-title">{t('settings.general.antigravityAppPath', 'Antigravity 启动路径')}</div>
+                  <div className="row-title">{t('settings.general.antigravityAppPath', 'Antigravity IDE 启动路径')}</div>
                   <div className="row-desc">{t('settings.general.codexAppPathDesc', '留空则使用默认路径')}</div>
                 </div>
                 <div className="row-control row-control--grow">
@@ -2258,7 +2259,7 @@ export function SettingsPage() {
                     <div className="row-desc">
                       {t(
                         'settings.general.antigravityDualSwitchNoRestartDesc',
-                        '切号时同时执行本地落盘与扩展无感切号，不再自动重启 Antigravity。'
+                        '切号时同时执行本地落盘与扩展无感切号，不再自动重启 Antigravity IDE。'
                       )}
                     </div>
                   </div>

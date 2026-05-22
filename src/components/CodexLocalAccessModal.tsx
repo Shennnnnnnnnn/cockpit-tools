@@ -85,6 +85,9 @@ interface CodexLocalAccessModalProps {
   onUpdateAccessScope: (
     accessScope: CodexLocalAccessScope,
   ) => Promise<unknown> | unknown;
+  onUpdateUpstreamProxyConfig: (
+    upstreamProxyUrl: string | null,
+  ) => Promise<unknown> | unknown;
   onRotateApiKey: () => Promise<unknown> | unknown;
   onKillPort: () => Promise<unknown> | unknown;
   onToggleEnabled: () => Promise<unknown> | unknown;
@@ -198,6 +201,7 @@ export function CodexLocalAccessModal({
   onUpdateRoutingStrategy,
   onUpdateCustomRouting,
   onUpdateAccessScope,
+  onUpdateUpstreamProxyConfig,
   onRotateApiKey,
   onKillPort,
   onToggleEnabled,
@@ -223,6 +227,7 @@ export function CodexLocalAccessModal({
     useState<CodexLocalAccessTestResult | null>(null);
   const [testDialogError, setTestDialogError] = useState('');
   const [portInput, setPortInput] = useState('');
+  const [upstreamProxyDraftUrl, setUpstreamProxyDraftUrl] = useState('');
   const [keyVisible, setKeyVisible] = useState(false);
   const [copiedField, setCopiedField] = useState<CopyableField | null>(null);
   const [selectedModelId, setSelectedModelId] = useState('');
@@ -271,6 +276,7 @@ export function CodexLocalAccessModal({
   const selectedTotals = selectedStatsWindow?.totals;
   const routingStrategy = collection?.routingStrategy ?? 'auto';
   const accessScope = collection?.accessScope ?? 'localhost';
+  const upstreamProxyUrl = collection?.upstreamProxyUrl ?? '';
   const accessScopeAddress =
     accessScope === 'lan' ? '0.0.0.0' : '127.0.0.1';
   const accessScopeBadge =
@@ -376,6 +382,7 @@ export function CodexLocalAccessModal({
     setKeyVisible(false);
     setCopiedField(null);
     setPortInput(collection?.port ? String(collection.port) : '');
+    setUpstreamProxyDraftUrl(collection?.upstreamProxyUrl ?? '');
     setCustomRoutingOpen(false);
     setCustomRoutingQuery('');
     setCustomRoutingFilterTypes([]);
@@ -413,6 +420,7 @@ export function CodexLocalAccessModal({
     collection?.customRoutingRules,
     collection?.port,
     collection?.restrictFreeAccounts,
+    collection?.upstreamProxyUrl,
     isOpen,
     mode,
     normalizedInitialSelectedIds,
@@ -727,7 +735,6 @@ export function CodexLocalAccessModal({
     ],
     [t],
   );
-
   const renderQuotaPreview = (
     presentation: ReturnType<typeof buildCodexAccountPresentation>,
     limit = 2,
@@ -1209,6 +1216,25 @@ export function CodexLocalAccessModal({
     );
   };
 
+  const handleSaveUpstreamProxyConfig = async () => {
+    if (!collection) return;
+    const upstreamProxyUrlDraft = upstreamProxyDraftUrl.trim();
+    if (upstreamProxyUrlDraft === upstreamProxyUrl.trim()) {
+      setUpstreamProxyDraftUrl(upstreamProxyUrlDraft);
+      return;
+    }
+
+    await runAction(
+      async () => {
+        await onUpdateUpstreamProxyConfig(upstreamProxyUrlDraft || null);
+      },
+      t(
+        'codex.localAccess.upstreamProxySaveSuccess',
+        'API 代理地址已更新',
+      ),
+    );
+  };
+
   const handleResetKey = async () => {
     const confirmed = await confirmDialog(
       t(
@@ -1365,6 +1391,50 @@ export function CodexLocalAccessModal({
                     <ShieldCheck size={13} className={testDialogBusy ? 'loading-spinner' : ''} />
                     <span>{t('codex.localAccess.testAction', '测试')}</span>
                   </button>
+                  {collection && (
+                    <div className="codex-local-access-header-upstream">
+                      <div className="codex-local-access-header-upstream-url">
+                        <input
+                          type="text"
+                          value={upstreamProxyDraftUrl}
+                          onChange={(event) =>
+                            setUpstreamProxyDraftUrl(event.target.value)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void handleSaveUpstreamProxyConfig();
+                            }
+                          }}
+                          disabled={saving || testing || starting}
+                          placeholder={t(
+                            'codex.localAccess.upstreamProxyUrlPlaceholder',
+                            '留空用全局代理',
+                          )}
+                          aria-label={t(
+                            'codex.localAccess.upstreamProxyLabel',
+                            'API 代理地址',
+                          )}
+                        />
+                        <button
+                          type="button"
+                          className="codex-local-access-upstream-save-btn"
+                          onClick={() => void handleSaveUpstreamProxyConfig()}
+                          disabled={saving || testing || starting}
+                          title={t(
+                            'codex.localAccess.upstreamProxySaveAction',
+                            '保存代理',
+                          )}
+                          aria-label={t(
+                            'codex.localAccess.upstreamProxySaveAction',
+                            '保存代理',
+                          )}
+                        >
+                          <Check size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="codex-local-access-header-tools">
                   <button
