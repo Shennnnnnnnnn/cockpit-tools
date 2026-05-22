@@ -2904,7 +2904,7 @@ fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, St
         tokens: Some(CodexAuthTokens {
             id_token: account.tokens.id_token.clone(),
             access_token: account.tokens.access_token.clone(),
-            refresh_token: account.tokens.refresh_token.clone(),
+            refresh_token: Some(account.tokens.refresh_token.clone().unwrap_or_default()),
             account_id: account.account_id.clone(),
         }),
         last_refresh: Some(serde_json::Value::String(
@@ -4635,8 +4635,9 @@ fn extract_codex_tokens_from_value(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_account_storage_id, decode_jwt_payload_value, detect_auth_file_plan_type_from_path,
-        extract_codex_import_candidate_from_value, extract_codex_tokens_from_value,
+        build_account_storage_id, build_auth_file_value, decode_jwt_payload_value,
+        detect_auth_file_plan_type_from_path, extract_codex_import_candidate_from_value,
+        extract_codex_tokens_from_value,
         extract_user_info, format_refresh_error_for_user, get_accounts_dir,
         get_accounts_storage_path, get_current_account, list_accounts_checked, load_account,
         load_account_index, looks_like_sub2api_export, parse_auth_file_last_refresh,
@@ -4907,6 +4908,32 @@ mod tests {
             serde_json::to_string_pretty(&auth_file).expect("serialize auth file"),
         )
         .expect("write auth file");
+    }
+
+    #[test]
+    fn build_auth_file_value_keeps_empty_refresh_token_field_for_cpa_accounts() {
+        let mut account = CodexAccount::new(
+            "codex-cpa-account".to_string(),
+            "cpa@example.com".to_string(),
+            CodexTokens {
+                id_token: "id.jwt.token".to_string(),
+                access_token: "access.jwt.token".to_string(),
+                refresh_token: None,
+            },
+        );
+        account.account_id = Some("acc-cpa".to_string());
+
+        let auth_file = build_auth_file_value(&account).expect("build auth file");
+        let tokens = auth_file
+            .get("tokens")
+            .and_then(|value| value.as_object())
+            .expect("tokens object");
+
+        assert!(tokens.contains_key("refresh_token"));
+        assert_eq!(
+            tokens.get("refresh_token").and_then(|value| value.as_str()),
+            Some("")
+        );
     }
 
     #[test]
