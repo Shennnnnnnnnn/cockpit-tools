@@ -734,7 +734,17 @@ async fn write_http_json_response(
 ) -> Result<(), String> {
     let body = serde_json::to_vec(value).map_err(|error| format!("序列化响应失败: {}", error))?;
     let headers = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        concat!(
+            "HTTP/1.1 {} {}\r\n",
+            "Content-Type: application/json; charset=utf-8\r\n",
+            "Content-Length: {}\r\n",
+            "Access-Control-Allow-Origin: *\r\n",
+            "Access-Control-Allow-Methods: POST, OPTIONS\r\n",
+            "Access-Control-Allow-Headers: Content-Type, Accept\r\n",
+            "Access-Control-Allow-Private-Network: true\r\n",
+            "Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers\r\n",
+            "Connection: close\r\n\r\n"
+        ),
         status,
         reason,
         body.len()
