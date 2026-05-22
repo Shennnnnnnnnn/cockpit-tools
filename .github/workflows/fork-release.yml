@@ -1,0 +1,188 @@
+name: Fork Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to upload assets to"
+        required: true
+        default: "v0.24.3-fork.1"
+      release_name:
+        description: "Release title"
+        required: false
+        default: "Cockpit Tools 0.24.3 fork build"
+
+concurrency:
+  group: fork-release-${{ github.event.inputs.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.inputs.tag_name }}
+          RELEASE_NAME: ${{ github.event.inputs.release_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" \
+              --target "$GITHUB_SHA" \
+              --title "${RELEASE_NAME:-$TAG_NAME}" \
+              --notes "Fork release build from commit $GITHUB_SHA." \
+              --prerelease=false \
+              --latest=false
+          else
+            gh release create "$TAG_NAME" \
+              --target "$GITHUB_SHA" \
+              --title "${RELEASE_NAME:-$TAG_NAME}" \
+              --notes "Fork release build from commit $GITHUB_SHA." \
+              --prerelease=false \
+              --latest=false
+          fi
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: prepare-release
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-aarch64
+            platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - label: macos-x86_64
+            platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - label: macos-universal
+            platform: macos-latest
+            args: "--target universal-apple-darwin"
+          - label: linux-x86_64
+            platform: ubuntu-22.04
+            args: ""
+          - label: linux-aarch64
+            platform: ubuntu-24.04-arm
+            args: ""
+          - label: windows-x86_64
+            platform: windows-latest
+            args: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            javascriptcoregtk-4.1 \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libnm-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            pkg-config \
+            wget \
+            xdg-utils
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Node.js setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Disable updater signing artifacts for fork build
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.bundle = config.bundle || {};
+          config.bundle.createUpdaterArtifacts = false;
+          fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+          NODE
+
+      - name: Sync versions
+        run: npm run sync-version
+
+      - name: Build app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tauri build --ci ${{ matrix.args }}
+
+      - name: Collect release assets
+        id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          mapfile -d '' files < <(
+            find target -type f \( \
+              -name '*.dmg' \
+              -o -name '*.app.tar.gz' \
+              -o -name '*.msi' \
+              -o -name '*.exe' \
+              -o -name '*.AppImage' \
+              -o -name '*.deb' \
+              -o -name '*.rpm' \
+            \) ! -name 'rw.*' -print0
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No bundle assets found under target"
+            find target -maxdepth 5 -type f | sort
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            base="$(basename "$file")"
+            sanitized="$(printf '%s' "$base" | tr ' ' '.')"
+            cp "$file" "release-assets/${{ matrix.label }}-${sanitized}"
+          done
+          shasum -a 256 release-assets/* > "release-assets/SHA256SUMS-${{ matrix.label }}.txt"
+          ls -lh release-assets
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-release-${{ matrix.label }}
+          retention-days: 14
+          if-no-files-found: error
+          path: release-assets/*
+
+      - name: Upload assets to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG_NAME" release-assets/* --clobber
