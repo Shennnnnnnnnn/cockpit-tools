@@ -21,6 +21,12 @@ const CODEX_IMPORT_PATHS: &[&str] = &[
     "/v1/accounts/import",
     "/codex/accounts/import",
 ];
+const CODEX_ACCOUNT_LIST_PATHS: &[&str] = &["/v1/codex/accounts", "/codex/accounts"];
+const CODEX_ACCOUNT_DELETE_PATHS: &[&str] = &[
+    "/v1/codex/accounts/delete",
+    "/v1/codex/accounts/remove",
+    "/codex/accounts/delete",
+];
 
 /// 消息类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -525,8 +531,8 @@ pub async fn start_server() {
 
 /// 处理单个客户端连接
 async fn handle_connection(server: Arc<WsServer>, mut stream: TcpStream, addr: SocketAddr) {
-    if is_http_codex_import_probe(&stream).await {
-        if let Err(error) = handle_http_codex_import(&mut stream).await {
+    if is_http_codex_api_probe(&stream).await {
+        if let Err(error) = handle_http_codex_api(&mut stream).await {
             let _ = write_http_json_response(
                 &mut stream,
                 400,
@@ -609,29 +615,117 @@ async fn handle_connection(server: Arc<WsServer>, mut stream: TcpStream, addr: S
     crate::modules::logger::log_info(&format!("[WS] 连接关闭: {}", addr));
 }
 
-async fn is_http_codex_import_probe(stream: &TcpStream) -> bool {
+async fn is_http_codex_api_probe(stream: &TcpStream) -> bool {
     let mut buffer = [0u8; 256];
     let Ok(size) = stream.peek(&mut buffer).await else {
         return false;
     };
     let preview = String::from_utf8_lossy(&buffer[..size]).to_string();
-    (preview.starts_with("POST ") || preview.starts_with("OPTIONS "))
-        && CODEX_IMPORT_PATHS.iter().any(|path| {
-            preview.starts_with(&format!("POST {} ", path))
-                || preview.starts_with(&format!("OPTIONS {} ", path))
-        })
+    ["GET", "POST", "OPTIONS"].iter().any(|method| preview.starts_with(&format!("{} ", method)))
+        && CODEX_IMPORT_PATHS
+            .iter()
+            .chain(CODEX_ACCOUNT_LIST_PATHS.iter())
+            .chain(CODEX_ACCOUNT_DELETE_PATHS.iter())
+            .any(|path| {
+                ["GET", "POST", "OPTIONS"]
+                    .iter()
+                    .any(|method| preview.starts_with(&format!("{} {} ", method, path)))
+            })
 }
 
-async fn handle_http_codex_import(stream: &mut TcpStream) -> Result<(), String> {
+async fn handle_http_codex_api(stream: &mut TcpStream) -> Result<(), String> {
     let request = read_http_request(stream).await?;
     if request.starts_with(b"OPTIONS ") {
         write_http_json_response(stream, 204, "No Content", &serde_json::json!({})).await?;
         return Ok(());
     }
-    let content = extract_http_import_content(&request)?;
-    let response =
-        crate::modules::codex_local_access::import_codex_account_content(&content).await?;
-    write_http_json_response(stream, 200, "OK", &response).await
+    let (method, path) = parse_http_request_line(&request)?;
+    if method == "GET" && CODEX_ACCOUNT_LIST_PATHS.contains(&path.as_str()) {
+        let accounts = crate::modules::codex_account::list_accounts_checked()?;
+        write_http_json_response(
+            stream,
+            200,
+            "OK",
+            &serde_json::json!({ "ok": true, "accounts": accounts }),
+        )
+        .await?;
+        return Ok(());
+    }
+    if method == "POST" && CODEX_ACCOUNT_DELETE_PATHS.contains(&path.as_str()) {
+        let body = extract_http_json_body(&request)?;
+        let account_id = body
+            .get("accountId")
+            .or_else(|| body.get("account_id"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let email = body
+            .get("email")
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim().to_ascii_lowercase())
+            .filter(|value| !value.is_empty());
+        let resolved_id = if let Some(id) = account_id {
+            id
+        } else if let Some(email) = email {
+            crate::modules::codex_account::list_accounts_checked()?
+                .into_iter()
+                .find(|account| account.email.trim().eq_ignore_ascii_case(&email))
+                .map(|account| account.id)
+                .ok_or_else(|| format!("未找到 Codex 账号: {}", email))?
+        } else {
+            return Err("删除 Codex 账号需要 accountId 或 email".to_string());
+        };
+        crate::modules::codex_account::remove_account(&resolved_id)?;
+        write_http_json_response(
+            stream,
+            200,
+            "OK",
+            &serde_json::json!({ "ok": true, "deleted": true, "accountId": resolved_id }),
+        )
+        .await?;
+        return Ok(());
+    }
+    if method == "POST" && CODEX_IMPORT_PATHS.contains(&path.as_str()) {
+        let content = extract_http_import_content(&request)?;
+        let response =
+            crate::modules::codex_local_access::import_codex_account_content(&content).await?;
+        write_http_json_response(stream, 200, "OK", &response).await?;
+        return Ok(());
+    }
+    Err(format!("Unsupported Codex HTTP API: {} {}", method, path))
+}
+
+fn parse_http_request_line(request: &[u8]) -> Result<(String, String), String> {
+    let header_end = find_header_end(request).unwrap_or(request.len());
+    let headers_text = String::from_utf8_lossy(&request[..header_end]);
+    let first_line = headers_text
+        .lines()
+        .next()
+        .ok_or_else(|| "HTTP 请求行缺失".to_string())?;
+    let mut parts = first_line.split_whitespace();
+    let method = parts
+        .next()
+        .ok_or_else(|| "HTTP method 缺失".to_string())?
+        .to_ascii_uppercase();
+    let raw_path = parts.next().ok_or_else(|| "HTTP path 缺失".to_string())?;
+    let path = raw_path.split('?').next().unwrap_or(raw_path).to_string();
+    Ok((method, path))
+}
+
+fn extract_http_json_body(request: &[u8]) -> Result<serde_json::Value, String> {
+    let Some(header_end) = find_header_end(request) else {
+        return Err("导入请求缺少 HTTP 头".to_string());
+    };
+    let body = &request[header_end + 4..];
+    let raw = std::str::from_utf8(body)
+        .map_err(|_| "请求体必须是 UTF-8 文本".to_string())?
+        .trim();
+    if raw.is_empty() {
+        return Ok(serde_json::json!({}));
+    }
+    serde_json::from_str::<serde_json::Value>(raw)
+        .map_err(|error| format!("请求体 JSON 无效: {}", error))
 }
 
 async fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, String> {
@@ -739,7 +833,7 @@ async fn write_http_json_response(
             "Content-Type: application/json; charset=utf-8\r\n",
             "Content-Length: {}\r\n",
             "Access-Control-Allow-Origin: *\r\n",
-            "Access-Control-Allow-Methods: POST, OPTIONS\r\n",
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n",
             "Access-Control-Allow-Headers: Content-Type, Accept\r\n",
             "Access-Control-Allow-Private-Network: true\r\n",
             "Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers\r\n",
