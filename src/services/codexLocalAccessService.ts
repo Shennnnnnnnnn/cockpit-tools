@@ -1,11 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   CodexLocalAccessCustomRoutingRule,
+  CodexLocalAccessImageGenerationMode,
+  CodexLocalAccessModelAlias,
   CodexLocalAccessPortCleanupResult,
+  CodexLocalAccessRequestLogQuery,
   CodexLocalAccessRoutingStrategy,
   CodexLocalAccessScope,
   CodexLocalAccessState,
   CodexLocalAccessTestResult,
+  CodexLocalAccessUsageEventPage,
 } from '../types/codexLocalAccess';
 
 export async function getCodexLocalAccessState(): Promise<CodexLocalAccessState> {
@@ -44,6 +48,22 @@ export async function clearCodexLocalAccessStats(): Promise<CodexLocalAccessStat
   return await invoke('codex_local_access_clear_stats');
 }
 
+export async function queryCodexLocalAccessRequestLogs(
+  query: CodexLocalAccessRequestLogQuery,
+): Promise<CodexLocalAccessUsageEventPage> {
+  return await invoke('codex_local_access_query_request_logs', {
+    page: query.page,
+    pageSize: query.pageSize,
+    statsRange: query.statsRange ?? null,
+    modelQuery: query.modelQuery ?? null,
+    accountQuery: query.accountQuery ?? null,
+    apiKeyQuery: query.apiKeyQuery ?? null,
+    requestKind: query.requestKind ?? null,
+    success: query.success ?? null,
+    errorCategory: query.errorCategory ?? null,
+  });
+}
+
 export async function prepareCodexLocalAccessForRestart(): Promise<CodexLocalAccessState> {
   return await invoke('codex_local_access_prepare_restart');
 }
@@ -70,6 +90,26 @@ export async function updateCodexLocalAccessCustomRouting(
   return await invoke('codex_local_access_update_custom_routing', { rules });
 }
 
+export async function updateCodexLocalAccessModelRules(
+  modelAliases: CodexLocalAccessModelAlias[],
+  excludedModels: string[],
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_update_model_rules', {
+    modelAliases,
+    excludedModels,
+  });
+}
+
+export async function updateCodexLocalAccessRoutingOptions(payload: {
+  sessionAffinity: boolean;
+  sessionAffinityTtlMs: number;
+  maxRetryCredentials: number;
+  maxRetryIntervalMs: number;
+  disableCooling: boolean;
+}): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_update_routing_options', payload);
+}
+
 export async function updateCodexLocalAccessUpstreamProxyConfig(
   upstreamProxyUrl: string | null,
 ): Promise<CodexLocalAccessState> {
@@ -84,6 +124,54 @@ export async function updateCodexLocalAccessAccessScope(
   return await invoke('codex_local_access_update_access_scope', {
     accessScope,
   });
+}
+
+export async function updateCodexLocalAccessImageGenerationMode(
+  imageGenerationMode: CodexLocalAccessImageGenerationMode,
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_update_image_generation_mode', {
+    imageGenerationMode,
+  });
+}
+
+export async function createCodexLocalAccessApiKey(
+  label?: string | null,
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_create_api_key', {
+    label: label ?? null,
+  });
+}
+
+export async function updateCodexLocalAccessApiKey(
+  apiKeyId: string,
+  payload: {
+    label?: string | null;
+    enabled?: boolean | null;
+    modelPrefix?: string | null;
+    allowedModels?: string[] | null;
+    excludedModels?: string[] | null;
+  },
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_update_api_key', {
+    apiKeyId,
+    label: payload.label ?? null,
+    enabled: payload.enabled ?? null,
+    modelPrefix: payload.modelPrefix ?? null,
+    allowedModels: payload.allowedModels ?? null,
+    excludedModels: payload.excludedModels ?? null,
+  });
+}
+
+export async function rotateCodexLocalAccessNamedApiKey(
+  apiKeyId: string,
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_rotate_named_api_key', { apiKeyId });
+}
+
+export async function deleteCodexLocalAccessApiKey(
+  apiKeyId: string,
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_delete_api_key', { apiKeyId });
 }
 
 export async function setCodexLocalAccessEnabled(

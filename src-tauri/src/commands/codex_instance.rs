@@ -487,7 +487,8 @@ pub async fn codex_update_instance(
             launch_mode,
         )?;
         if let Some(speed) = app_speed {
-            updated = modules::codex_instance::update_default_app_speed(speed)?;
+            updated = modules::codex_instance::update_default_app_speed(speed.clone())?;
+            modules::codex_speed::write_app_speed_for_dir(&default_dir, speed)?;
         }
         let running = updated
             .last_pid
@@ -520,6 +521,7 @@ pub async fn codex_update_instance(
         }
     }
 
+    let selected_app_speed = app_speed.clone();
     let instance =
         modules::codex_instance::update_instance(modules::codex_instance::UpdateInstanceParams {
             instance_id,
@@ -530,6 +532,9 @@ pub async fn codex_update_instance(
             launch_mode,
             app_speed,
         })?;
+    if let Some(speed) = selected_app_speed {
+        modules::codex_speed::write_app_speed_for_dir(Path::new(&instance.user_data_dir), speed)?;
+    }
 
     let running = instance
         .last_pid

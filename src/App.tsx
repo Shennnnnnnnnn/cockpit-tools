@@ -72,6 +72,9 @@ const AccountsPage = lazy(() =>
 const CodexAccountsPage = lazy(() =>
   import('./pages/CodexAccountsPage').then((module) => ({ default: module.CodexAccountsPage })),
 );
+const CodexApiServicePage = lazy(() =>
+  import('./pages/CodexApiServicePage').then((module) => ({ default: module.CodexApiServicePage })),
+);
 const GitHubCopilotAccountsPage = lazy(() =>
   import('./pages/GitHubCopilotAccountsPage').then((module) => ({
     default: module.GitHubCopilotAccountsPage,
@@ -2773,6 +2776,7 @@ function MainApp() {
           switch (target) {
             case 'overview':
             case 'codex':
+            case 'codex-api-service':
             case 'github-copilot':
             case 'windsurf':
             case 'kiro':
@@ -3198,6 +3202,7 @@ function MainApp() {
           )}
           {page === 'overview' && <AccountsPage onNavigate={setPage} />}
           {page === 'codex' && <CodexAccountsPage />}
+          {page === 'codex-api-service' && <CodexApiServicePage />}
           {page === 'github-copilot' && <GitHubCopilotAccountsPage />}
           {page === 'windsurf' && <WindsurfAccountsPage />}
           {page === 'kiro' && <KiroAccountsPage />}

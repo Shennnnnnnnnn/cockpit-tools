@@ -1098,6 +1098,8 @@
       "noGroups": "尚無分組",
       "noGroupsDesc": "建立分組來批次管理你的帳號",
       "manage": "管理",
+      "refresh": "重新整理分組",
+      "refreshEmpty": "目前分組沒有可重新整理的帳號",
       "error": {
         "duplicate": "分組名稱已存在",
         "createFailed": "建立分組失敗：{{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "停用服務",
       "enableService": "啟用服務",
       "saveSuccess": "API 服務集合已更新",
+      "noEligibleAccountsSelected": "所選帳號不在目前環境中，或不符合 API 服務條件。請先在目前環境匯入可用的 Codex 帳號後再新增。",
       "removeSuccess": "帳號已移出 API 服務",
       "rotateSuccess": "API 服務金鑰已重設",
       "enabledSuccess": "API 服務已啟用",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} 次請求",
         "accountTokens": "{{count}} Tokens",
         "accountResult": "成功 {{success}} / 失敗 {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "圖片請求",
+        "imagesDetail": "生成 {{generate}} / 編輯 {{edit}} / 權限 {{blocked}}"
       },
       "routingLabel": "調度策略",
       "routingSaveSuccess": "API 服務調度策略已更新",
@@ -1900,7 +1905,7 @@
         "empty": "尚無額度統計"
       },
       "oauthBinding": {
-        "desc": "可選綁定。未綁定時 API 服務會沿用原 API Key 邏輯；綁定後登入狀態使用 OAuth 帳號，Provider 使用目前 API 服務設定。",
+        "desc": "可選綁定。只能選擇帶訂閱時間（有效期標識）的 OAuth 帳號，已過期也可綁定；未綁定時 API 服務會沿用原 API Key 邏輯；綁定後登入狀態使用 OAuth 帳號，Provider 使用目前 API 服務設定。",
         "currentService": "API 服務：{{name}}"
       },
       "customRoutingEdit": "編輯自訂調度",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "API 代理位址",
       "upstreamProxySaveSuccess": "API 代理位址已更新",
       "upstreamProxyUrlPlaceholder": "留空用全域代理",
-      "upstreamProxySaveAction": "儲存代理"
+      "upstreamProxySaveAction": "儲存代理",
+      "imageGenerationLabel": "image_generation 工具",
+      "imageGenerationDesc": "控制文字對話是否宣告圖片工具，以及圖片端點是否可用。",
+      "imageGenerationSaveSuccess": "image_generation 設定已更新",
+      "apiKeysTitle": "用戶端 Key",
+      "apiKeyAdd": "新增 Key",
+      "apiKeyLabel": "Key 名稱",
+      "apiKeySaveLabel": "儲存名稱",
+      "apiKeyDefaultLabel": "用戶端 {{index}}",
+      "apiKeyCreateSuccess": "API Key 已建立",
+      "apiKeyUpdateSuccess": "API Key 已更新",
+      "apiKeyRotateSuccess": "API Key 已重設",
+      "apiKeyDeleteSuccess": "API Key 已刪除",
+      "apiKeyRotateConfirm": "重設後此 API Key 會立即失效，是否繼續？",
+      "apiKeyDeleteConfirm": "確定刪除此 API Key？",
+      "apiKeyDelete": "刪除 Key",
+      "apiKeyDisable": "停用 Key",
+      "apiKeyEnable": "啟用 Key",
+      "modelStatsTitle": "按模型統計",
+      "apiKeyStatsTitle": "按 Key 統計",
+      "healthAvailable": "可用",
+      "healthUnavailable": "不可用",
+      "healthCooldown": "冷卻 {{count}}",
+      "healthImageUnavailable": "圖片不可用",
+      "requestLogTitle": "請求日誌",
+      "requestLogEmpty": "暫無請求日誌",
+      "requestLogSuccess": "成功",
+      "requestLogFailed": "失敗",
+      "requestLogTokens": "{{value}} 個 Tokens",
+      "imageGenerationMode": {
+        "enabled": "啟用",
+        "imagesOnly": "僅圖片",
+        "disabled": "停用"
+      },
+      "requestKind": {
+        "text": "文字",
+        "imageGeneration": "生圖",
+        "imageEdit": "改圖",
+        "other": "其他"
+      },
+      "testSuccessInline": "API 服務測試通過"
     },
     "api": {
       "baseUrl": "基礎網址",
@@ -2022,11 +2067,13 @@
         "action": "綁定 OAuth",
         "actionShort": "綁定",
         "title": "綁定 OAuth 帳號",
-        "desc": "可選綁定。未綁定時此帳號會沿用原 API Key 邏輯切換；綁定後登入狀態使用 OAuth 帳號，Provider 使用目前 API Key 帳號設定。",
+        "desc": "可選綁定。只能選擇帶訂閱時間（有效期標識）的 OAuth 帳號，已過期也可綁定；未綁定時此帳號會沿用原 API Key 邏輯切換；綁定後登入狀態使用 OAuth 帳號，Provider 使用目前 API Key 帳號設定。",
         "currentAccount": "API Key 帳號：{{name}}",
         "selectLabel": "選擇 OAuth 帳號",
         "empty": "尚無 OAuth 帳號，請先新增 OAuth 授權帳號。",
+        "emptyEligible": "沒有帶訂閱時間的 OAuth 帳號，請先重新整理配額或新增符合條件的 OAuth 帳號。",
         "validationRequired": "請選擇 OAuth 帳號",
+        "validationSubscriptionRequired": "只能綁定帶訂閱時間的 OAuth 帳號",
         "saveSuccess": "OAuth 綁定已更新",
         "saveFailed": "OAuth 綁定失敗：{{error}}",
         "switchRequiresBinding": "請先綁定 OAuth 帳號",
@@ -2529,6 +2576,84 @@
       "fastDesc": "1.5 倍速，用量增加",
       "saveSuccess": "速度已更新",
       "saveFailed": "儲存速度失敗：{{error}}"
+    },
+    "apiService": {
+      "navTitle": "Codex API 服務",
+      "title": "Codex API 服務",
+      "subtitle": "將 Codex OAuth 帳號池以 OpenAI-compatible API 形式提供給本機或區域網路用戶端。",
+      "openPage": "進入 API 服務",
+      "openFullPage": "檢視全部功能",
+      "tabs": {
+        "overview": "服務總覽",
+        "keys": "用戶端 Key",
+        "accounts": "帳號池",
+        "models": "模型與能力",
+        "logs": "統計與日誌"
+      },
+      "healthTitle": "服務健康",
+      "health": {
+        "availableAccounts": "可用帳號",
+        "cooldowns": "冷卻",
+        "imageUnavailable": "圖片不可用",
+        "keys": "用戶端 Key"
+      },
+      "accountHealth": {
+        "failures": "連續失敗 {{count}}",
+        "image": "圖片 {{status}}"
+      },
+      "models": {
+        "availableTitle": "可用模型",
+        "capabilityTitle": "能力開關",
+        "capabilityDesc": "gpt-image-2 會依服務開關、帳號方案與已記錄的圖片能力狀態自動顯示或隱藏。",
+        "rulesTitle": "模型規則",
+        "aliasTitle": "模型別名",
+        "aliasPlaceholder": "gpt-5 => g5；保留原模型加 +",
+        "excludedTitle": "隱藏模型",
+        "excludedPlaceholder": "每行一個模型或萬用字元，例如 gpt-5-*",
+        "saveRules": "儲存規則",
+        "rulesSaved": "模型規則已儲存"
+      },
+      "keys": {
+        "policyTitle": "模型策略",
+        "advancedPolicyTitle": "進階功能：模型策略",
+        "modelPrefix": "模型前綴",
+        "modelPrefixPlaceholder": "例如 codex",
+        "allowedModels": "允許模型",
+        "allowedModelsPlaceholder": "留空允許全部；每行一個模型或萬用字元",
+        "excludedModels": "排除模型",
+        "excludedModelsPlaceholder": "每行一個模型或萬用字元",
+        "savePolicy": "儲存策略",
+        "policySaved": "Key 模型策略已儲存"
+      },
+      "routing": {
+        "optionsTitle": "調度選項",
+        "sessionAffinity": "會話親和",
+        "sessionAffinityTtl": "親和 TTL",
+        "maxRetryCredentials": "重試帳號數",
+        "maxRetryInterval": "重試等待",
+        "disableCooling": "停用冷卻",
+        "saveOptions": "儲存選項",
+        "optionsSaved": "調度選項已儲存"
+      },
+      "validation": {
+        "numberRange": "請輸入 {{min}} 到 {{max}} 之間的數字"
+      },
+      "logs": {
+        "allKinds": "全部類型",
+        "allStatuses": "全部狀態",
+        "modelFilter": "模型",
+        "modelPlaceholder": "模型 ID",
+        "accountFilter": "帳號",
+        "accountPlaceholder": "信箱或帳號 ID",
+        "apiKeyFilter": "API 金鑰",
+        "apiKeyPlaceholder": "名稱或 ID",
+        "kindFilter": "類型",
+        "statusFilter": "狀態",
+        "errorFilter": "錯誤",
+        "errorPlaceholder": "錯誤分類",
+        "clearFilters": "清除篩選",
+        "loading": "正在載入請求日誌"
+      }
     }
   },
   "githubCopilot": {

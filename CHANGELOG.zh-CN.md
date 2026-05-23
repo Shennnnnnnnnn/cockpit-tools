@@ -7,6 +7,28 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [0.24.4] - 2026-05-23
+
+### 新增
+- **Codex API 服务新增独立管理页**：服务状态、访问地址、客户端 Key、账号池、模型规则、调度选项、健康状态与请求日志现在都可在同一个 Codex API 服务入口中管理。
+- **Codex API 服务现支持命名客户端 API Key 与按 Key 设置模型策略**：Key 可创建、改名、停用、重置、删除，并可设置模型前缀、允许模型列表和排除模型列表。
+- **Codex API 服务现可桥接官方 Codex 后端与 WebSocket 请求路径**：`/backend-api/codex/responses`、`/backend-api/codex/responses/compact` 与 Responses WebSocket 升级请求都可通过本地受管账号网关转发。
+- **Codex API 服务现通过 `gpt-image-2` 暴露图片生成兼容能力**：`/v1/images/generations` 与 `/v1/images/edits` 会映射到 Codex Responses 图片工具，并结合服务级图片模式与账号能力检查。
+- **Codex API 服务现记录用量统计与可检索请求日志**：支持按账号、模型和客户端 Key 统计日/周/月/全量用量，并可按模型、账号、Key、请求类型、状态和错误分类筛选日志。
+- **开发运行现使用独立 Cockpit Tools Dev 配置**：`npm run tauri:dev` 会以独立 Tauri 标识、数据目录、API 端口和窗口品牌启动开发版应用。
+
+### 变更
+- **Codex API 服务弹框现保持快速配置定位，并提供“查看全部功能”入口**：高级统计、请求日志、image_generation 控制与命名 Key 管理统一放到独立页面。
+- **Codex API 服务调度现加入会话亲和、可配置重试行为与账号健康跟踪**：连续轮次可保持在同一账号上，冷却中、额度耗尽或图片能力不可用的账号会在下次选号前被跳过。
+- **Codex 官方 App 速度选择现写入当前官方 `config.toml` 桌面服务档位键**：“标准”会移除受管档位，“快速”会写入 `priority`，与当前 Codex 客户端落盘位置保持一致。
+- **Cockpit 共享数据文件现统一通过同一数据目录解析**：账号分组、设备状态、配置状态与 Codex API 服务状态都会跟随同一配置目录或 profile 专属目录。
+- **文档现补充葡萄牙语 README/赞助页面与 WSL2 Ubuntu 24 构建说明**：项目本地化文档与 Linux 构建指引已与现有中英文文档并列提供。
+
+### 修复
+- **Codex 仅 access token 与 session token 导入不再因为缺少 `refresh_token` 被强制要求重新授权**：导入会识别 `session_token`/`sessionToken`，受管投影会保留预期的 `refresh_token` 字段，且无法刷新的账号会跳过主动续期。
+- **仪表盘与平台切换现保持 Antigravity/Codex 分组条目一致**：分组卡片会去重，Codex API 服务导航保留在 Codex 分组内，切换器也不再把当前额外页面误判为平台不匹配。
+
+---
 ## [0.24.3] - 2026-05-21
 
 ### 变更

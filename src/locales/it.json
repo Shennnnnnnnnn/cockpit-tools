@@ -1098,6 +1098,8 @@
       "noGroups": "Nessun gruppo",
       "noGroupsDesc": "Crea gruppi per gestire i tuoi account",
       "manage": "Gestisci",
+      "refresh": "Aggiorna gruppo",
+      "refreshEmpty": "Nessun account aggiornabile in questo gruppo",
       "error": {
         "duplicate": "Il nome del gruppo esiste già",
         "createFailed": "Creazione del gruppo non riuscita: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Disattiva servizio",
       "enableService": "Attiva servizio",
       "saveSuccess": "Raccolta del servizio API aggiornata",
+      "noEligibleAccountsSelected": "Gli account selezionati non sono in questo ambiente o non possono essere usati dal servizio API. Importa prima un account Codex utilizzabile in questo ambiente.",
       "removeSuccess": "Account rimosso dal servizio API",
       "rotateSuccess": "Chiave del servizio API reimpostata",
       "enabledSuccess": "Servizio API abilitato",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} richieste",
         "accountTokens": "{{count}} token",
         "accountResult": "Successi {{success}} / Errori {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Richieste immagine",
+        "imagesDetail": "Genera {{generate}} / Modifica {{edit}} / Permesso {{blocked}}"
       },
       "routingLabel": "Instradamento",
       "routingSaveSuccess": "Instradamento del servizio API aggiornato",
@@ -1900,7 +1905,7 @@
         "empty": "Nessuna statistica quota"
       },
       "oauthBinding": {
-        "desc": "Opzionale. Senza collegamento, il servizio API usa il flusso API Key esistente; dopo il collegamento, l’accesso usa l’account OAuth e il Provider usa la configurazione del servizio API.",
+        "desc": "Opzionale. Si possono selezionare solo account OAuth con indicazione del periodo di abbonamento; sono ammessi anche periodi scaduti. Senza collegamento, il servizio API usa il flusso API Key esistente; dopo il collegamento, l’accesso usa l’account OAuth e il Provider usa la configurazione del servizio API.",
         "currentService": "Servizio API: {{name}}"
       },
       "customRoutingEdit": "Modifica routing personalizzato",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "URL proxy API",
       "upstreamProxySaveSuccess": "URL proxy API aggiornato",
       "upstreamProxyUrlPlaceholder": "Vuoto = proxy globale",
-      "upstreamProxySaveAction": "Salva proxy"
+      "upstreamProxySaveAction": "Salva proxy",
+      "imageGenerationLabel": "Strumento image_generation",
+      "imageGenerationDesc": "Controlla se le chat di testo dichiarano lo strumento immagine e se gli endpoint immagine sono disponibili.",
+      "imageGenerationSaveSuccess": "Impostazione image_generation aggiornata",
+      "apiKeysTitle": "Chiavi client",
+      "apiKeyAdd": "Aggiungi chiave",
+      "apiKeyLabel": "Nome chiave",
+      "apiKeySaveLabel": "Salva nome",
+      "apiKeyDefaultLabel": "Cliente {{index}}",
+      "apiKeyCreateSuccess": "API Key creata",
+      "apiKeyUpdateSuccess": "API Key aggiornata",
+      "apiKeyRotateSuccess": "API Key reimpostata",
+      "apiKeyDeleteSuccess": "API Key eliminata",
+      "apiKeyRotateConfirm": "Questa API Key smetterà subito di funzionare dopo il reset. Continuare?",
+      "apiKeyDeleteConfirm": "Eliminare questa API Key?",
+      "apiKeyDelete": "Elimina chiave",
+      "apiKeyDisable": "Disattiva chiave",
+      "apiKeyEnable": "Attiva chiave",
+      "modelStatsTitle": "Per modello",
+      "apiKeyStatsTitle": "Per chiave",
+      "healthAvailable": "Disponibile",
+      "healthUnavailable": "Non disponibile",
+      "healthCooldown": "Attesa {{count}}",
+      "healthImageUnavailable": "Immagine non disponibile",
+      "requestLogTitle": "Log richieste",
+      "requestLogEmpty": "Nessun log richieste",
+      "requestLogSuccess": "Riuscita",
+      "requestLogFailed": "Fallita",
+      "requestLogTokens": "{{value}} token",
+      "imageGenerationMode": {
+        "enabled": "Attivo",
+        "imagesOnly": "Solo immagini",
+        "disabled": "Disattivo"
+      },
+      "requestKind": {
+        "text": "Testo",
+        "imageGeneration": "Immagine",
+        "imageEdit": "Modifica",
+        "other": "Altro"
+      },
+      "testSuccessInline": "Test del servizio API riuscito"
     },
     "local": {
       "desc": "Importa l'account attuale da ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Collega OAuth",
         "actionShort": "Collega",
         "title": "Collega account OAuth",
-        "desc": "Opzionale. Senza collegamento, questo account cambia con il flusso API Key esistente; dopo il collegamento, l’accesso usa l’account OAuth e il Provider usa la configurazione di questo account API Key.",
+        "desc": "Opzionale. Si possono selezionare solo account OAuth con indicazione del periodo di abbonamento; sono ammessi anche periodi scaduti. Senza collegamento, questo account cambia con il flusso API Key esistente; dopo il collegamento, l’accesso usa l’account OAuth e il Provider usa la configurazione di questo account API Key.",
         "currentAccount": "Account API Key: {{name}}",
         "selectLabel": "Seleziona account OAuth",
         "empty": "Nessun account OAuth. Aggiungi prima un account autorizzato OAuth.",
+        "emptyEligible": "Nessun account OAuth con periodo di abbonamento. Aggiorna la quota o aggiungi prima un account OAuth idoneo.",
         "validationRequired": "Seleziona un account OAuth",
+        "validationSubscriptionRequired": "Si possono collegare solo account OAuth con periodo di abbonamento",
         "saveSuccess": "Collegamento OAuth aggiornato",
         "saveFailed": "Collegamento OAuth non riuscito: {{error}}",
         "switchRequiresBinding": "Collega prima un account OAuth",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Velocità 1,5x, uso maggiore",
       "saveSuccess": "Velocità aggiornata",
       "saveFailed": "Impossibile salvare la velocità: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Servizio API Codex",
+      "title": "Servizio API Codex",
+      "subtitle": "Espone il pool di account OAuth Codex come API compatibile con OpenAI per client locali o LAN.",
+      "openPage": "Apri servizio API",
+      "openFullPage": "Vedi tutte le funzioni",
+      "tabs": {
+        "overview": "Panoramica servizio",
+        "keys": "Chiavi client",
+        "accounts": "Pool account",
+        "models": "Modelli e capacità",
+        "logs": "Statistiche e log"
+      },
+      "healthTitle": "Stato servizio",
+      "health": {
+        "availableAccounts": "Account disponibili",
+        "cooldowns": "Raffreddamenti",
+        "imageUnavailable": "Immagini non disponibili",
+        "keys": "Chiavi client"
+      },
+      "accountHealth": {
+        "failures": "{{count}} errori consecutivi",
+        "image": "Immagini {{status}}"
+      },
+      "models": {
+        "availableTitle": "Modelli disponibili",
+        "capabilityTitle": "Interruttori capacità",
+        "capabilityDesc": "gpt-image-2 viene mostrato o nascosto automaticamente in base all’interruttore del servizio, al piano account e allo stato registrato della capacità immagini.",
+        "rulesTitle": "Regole modelli",
+        "aliasTitle": "Alias modelli",
+        "aliasPlaceholder": "gpt-5 => g5; aggiungi + per tenere il modello originale",
+        "excludedTitle": "Modelli nascosti",
+        "excludedPlaceholder": "Un modello o pattern per riga, es. gpt-5-*",
+        "saveRules": "Salva regole",
+        "rulesSaved": "Regole modelli salvate"
+      },
+      "keys": {
+        "policyTitle": "Criterio modelli",
+        "advancedPolicyTitle": "Avanzate: criterio modelli",
+        "modelPrefix": "Prefisso modello",
+        "modelPrefixPlaceholder": "Esempio: codex",
+        "allowedModels": "Modelli ammessi",
+        "allowedModelsPlaceholder": "Vuoto consente tutti; un modello o pattern per riga",
+        "excludedModels": "Modelli esclusi",
+        "excludedModelsPlaceholder": "Un modello o pattern per riga",
+        "savePolicy": "Salva criterio",
+        "policySaved": "Criterio modelli del Key salvato"
+      },
+      "routing": {
+        "optionsTitle": "Opzioni routing",
+        "sessionAffinity": "Affinità sessione",
+        "sessionAffinityTtl": "TTL affinità",
+        "maxRetryCredentials": "Account retry",
+        "maxRetryInterval": "Attesa retry",
+        "disableCooling": "Disattiva cooldown",
+        "saveOptions": "Salva opzioni",
+        "optionsSaved": "Opzioni routing salvate"
+      },
+      "validation": {
+        "numberRange": "Inserisci un numero da {{min}} a {{max}}"
+      },
+      "logs": {
+        "allKinds": "Tutti i tipi",
+        "allStatuses": "Tutti gli stati",
+        "modelFilter": "Modello",
+        "modelPlaceholder": "ID modello",
+        "accountFilter": "Account",
+        "accountPlaceholder": "Email o ID account",
+        "apiKeyFilter": "Chiave API",
+        "apiKeyPlaceholder": "Nome o ID",
+        "kindFilter": "Tipo",
+        "statusFilter": "Stato",
+        "errorFilter": "Errore",
+        "errorPlaceholder": "Categoria errore",
+        "clearFilters": "Cancella filtri",
+        "loading": "Caricamento log richieste"
+      }
     }
   },
   "githubCopilot": {

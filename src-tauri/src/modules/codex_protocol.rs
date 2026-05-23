@@ -88,7 +88,7 @@ fn build_codex_client_model(model_id: &str) -> Value {
         "max_context_window": DEFAULT_MAX_CONTEXT_WINDOW,
         "default_reasoning_level": "medium",
         "supported_reasoning_levels": reasoning_levels(),
-        "prefer_websockets": false,
+        "prefer_websockets": true,
         "visibility": visibility,
     })
 }
@@ -464,6 +464,12 @@ mod tests {
         assert_eq!(
             response.pointer("/models/0/slug").and_then(Value::as_str),
             Some("gpt-5.4")
+        );
+        assert_eq!(
+            response
+                .pointer("/models/0/prefer_websockets")
+                .and_then(Value::as_bool),
+            Some(true)
         );
     }
 }

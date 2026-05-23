@@ -1098,6 +1098,8 @@
       "noGroups": "Chưa có nhóm",
       "noGroupsDesc": "Tạo nhóm để quản lý tài khoản hàng loạt",
       "manage": "Quản lý",
+      "refresh": "Làm mới nhóm",
+      "refreshEmpty": "Nhóm này không có tài khoản nào có thể làm mới",
       "error": {
         "duplicate": "Tên nhóm đã tồn tại",
         "createFailed": "Tạo nhóm thất bại: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Tắt dịch vụ",
       "enableService": "Bật dịch vụ",
       "saveSuccess": "Đã cập nhật bộ dịch vụ API",
+      "noEligibleAccountsSelected": "Các tài khoản đã chọn không có trong môi trường này hoặc không thể dùng với dịch vụ API. Trước tiên hãy nhập một tài khoản Codex dùng được trong môi trường này.",
       "removeSuccess": "Đã xóa tài khoản khỏi dịch vụ API",
       "rotateSuccess": "Đã đặt lại khóa dịch vụ API",
       "enabledSuccess": "Đã bật dịch vụ API",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} yêu cầu",
         "accountTokens": "{{count}} token",
         "accountResult": "Thành công {{success}} / Thất bại {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Yêu cầu ảnh",
+        "imagesDetail": "Tạo {{generate}} / Sửa {{edit}} / Quyền {{blocked}}"
       },
       "routingLabel": "Định tuyến",
       "routingSaveSuccess": "Đã cập nhật định tuyến dịch vụ API",
@@ -1900,7 +1905,7 @@
         "empty": "Chưa có thống kê hạn mức"
       },
       "oauthBinding": {
-        "desc": "Tùy chọn. Khi chưa liên kết, dịch vụ API chạy theo luồng API Key cũ; sau khi liên kết, trạng thái đăng nhập dùng tài khoản OAuth và Provider dùng cấu hình dịch vụ API hiện tại.",
+        "desc": "Tùy chọn. Chỉ có thể chọn tài khoản OAuth có thông tin thời hạn đăng ký; tài khoản đã hết hạn cũng được phép liên kết. Khi chưa liên kết, dịch vụ API chạy theo luồng API Key cũ; sau khi liên kết, trạng thái đăng nhập dùng tài khoản OAuth và Provider dùng cấu hình dịch vụ API hiện tại.",
         "currentService": "Dịch vụ API: {{name}}"
       },
       "customRoutingEdit": "Sửa định tuyến tùy chỉnh",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "URL proxy API",
       "upstreamProxySaveSuccess": "Đã cập nhật URL proxy API",
       "upstreamProxyUrlPlaceholder": "Trống = proxy toàn cục",
-      "upstreamProxySaveAction": "Lưu proxy"
+      "upstreamProxySaveAction": "Lưu proxy",
+      "imageGenerationLabel": "Công cụ image_generation",
+      "imageGenerationDesc": "Điều khiển việc chat văn bản khai báo công cụ ảnh và việc endpoint ảnh có khả dụng hay không.",
+      "imageGenerationSaveSuccess": "Đã cập nhật cài đặt image_generation",
+      "apiKeysTitle": "Khóa máy khách",
+      "apiKeyAdd": "Thêm khóa",
+      "apiKeyLabel": "Tên khóa",
+      "apiKeySaveLabel": "Lưu tên",
+      "apiKeyDefaultLabel": "Máy khách {{index}}",
+      "apiKeyCreateSuccess": "Đã tạo API Key",
+      "apiKeyUpdateSuccess": "Đã cập nhật API Key",
+      "apiKeyRotateSuccess": "Đã đặt lại API Key",
+      "apiKeyDeleteSuccess": "Đã xóa API Key",
+      "apiKeyRotateConfirm": "API Key này sẽ ngừng hoạt động ngay sau khi đặt lại. Tiếp tục?",
+      "apiKeyDeleteConfirm": "Xóa API Key này?",
+      "apiKeyDelete": "Xóa khóa",
+      "apiKeyDisable": "Tắt khóa",
+      "apiKeyEnable": "Bật khóa",
+      "modelStatsTitle": "Theo mô hình",
+      "apiKeyStatsTitle": "Theo khóa",
+      "healthAvailable": "Khả dụng",
+      "healthUnavailable": "Không khả dụng",
+      "healthCooldown": "Chờ {{count}}",
+      "healthImageUnavailable": "Ảnh không khả dụng",
+      "requestLogTitle": "Nhật ký yêu cầu",
+      "requestLogEmpty": "Chưa có nhật ký yêu cầu",
+      "requestLogSuccess": "Thành công",
+      "requestLogFailed": "Thất bại",
+      "requestLogTokens": "{{value}} token",
+      "imageGenerationMode": {
+        "enabled": "Bật",
+        "imagesOnly": "Chỉ ảnh",
+        "disabled": "Tắt"
+      },
+      "requestKind": {
+        "text": "Văn bản",
+        "imageGeneration": "Ảnh",
+        "imageEdit": "Sửa ảnh",
+        "other": "Khác"
+      },
+      "testSuccessInline": "Kiểm thử dịch vụ API đã đạt"
     },
     "local": {
       "desc": "Nhập tài khoản hiện tại từ ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Liên kết OAuth",
         "actionShort": "Liên kết",
         "title": "Liên kết tài khoản OAuth",
-        "desc": "Tùy chọn. Khi chưa liên kết, tài khoản này chuyển theo luồng API Key cũ; sau khi liên kết, trạng thái đăng nhập dùng tài khoản OAuth và Provider dùng cấu hình tài khoản API Key này.",
+        "desc": "Tùy chọn. Chỉ có thể chọn tài khoản OAuth có thông tin thời hạn đăng ký; tài khoản đã hết hạn cũng được phép liên kết. Khi chưa liên kết, tài khoản này chuyển theo luồng API Key cũ; sau khi liên kết, trạng thái đăng nhập dùng tài khoản OAuth và Provider dùng cấu hình tài khoản API Key này.",
         "currentAccount": "Tài khoản API Key: {{name}}",
         "selectLabel": "Chọn tài khoản OAuth",
         "empty": "Chưa có tài khoản OAuth. Hãy thêm tài khoản ủy quyền OAuth trước.",
+        "emptyEligible": "Không có tài khoản OAuth có thông tin thời hạn đăng ký. Hãy làm mới quota hoặc thêm tài khoản OAuth đủ điều kiện trước.",
         "validationRequired": "Vui lòng chọn tài khoản OAuth",
+        "validationSubscriptionRequired": "Chỉ có thể liên kết tài khoản OAuth có thông tin thời hạn đăng ký",
         "saveSuccess": "Đã cập nhật liên kết OAuth",
         "saveFailed": "Liên kết OAuth thất bại: {{error}}",
         "switchRequiresBinding": "Hãy liên kết tài khoản OAuth trước",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Tốc độ 1,5x, dùng nhiều hơn",
       "saveSuccess": "Đã cập nhật tốc độ",
       "saveFailed": "Không thể lưu tốc độ: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Dịch vụ API Codex",
+      "title": "Dịch vụ API Codex",
+      "subtitle": "Công bố nhóm tài khoản OAuth Codex dưới dạng API tương thích OpenAI cho máy cục bộ hoặc máy khách LAN.",
+      "openPage": "Mở dịch vụ API",
+      "openFullPage": "Xem tất cả tính năng",
+      "tabs": {
+        "overview": "Tổng quan dịch vụ",
+        "keys": "Khóa máy khách",
+        "accounts": "Nhóm tài khoản",
+        "models": "Mô hình và năng lực",
+        "logs": "Thống kê và nhật ký"
+      },
+      "healthTitle": "Sức khỏe dịch vụ",
+      "health": {
+        "availableAccounts": "Tài khoản khả dụng",
+        "cooldowns": "Thời gian chờ",
+        "imageUnavailable": "Ảnh không khả dụng",
+        "keys": "Khóa máy khách"
+      },
+      "accountHealth": {
+        "failures": "{{count}} lỗi liên tiếp",
+        "image": "Ảnh {{status}}"
+      },
+      "models": {
+        "availableTitle": "Mô hình khả dụng",
+        "capabilityTitle": "Công tắc năng lực",
+        "capabilityDesc": "gpt-image-2 được tự động hiển thị hoặc ẩn theo công tắc dịch vụ, gói tài khoản và trạng thái năng lực ảnh đã ghi nhận.",
+        "rulesTitle": "Quy tắc mô hình",
+        "aliasTitle": "Bí danh mô hình",
+        "aliasPlaceholder": "gpt-5 => g5; thêm + để giữ mô hình gốc",
+        "excludedTitle": "Mô hình ẩn",
+        "excludedPlaceholder": "Mỗi dòng một mô hình hoặc mẫu, ví dụ gpt-5-*",
+        "saveRules": "Lưu quy tắc",
+        "rulesSaved": "Đã lưu quy tắc mô hình"
+      },
+      "keys": {
+        "policyTitle": "Chính sách mô hình",
+        "advancedPolicyTitle": "Nâng cao: chính sách mô hình",
+        "modelPrefix": "Tiền tố mô hình",
+        "modelPrefixPlaceholder": "Ví dụ: codex",
+        "allowedModels": "Mô hình được phép",
+        "allowedModelsPlaceholder": "Để trống là tất cả; mỗi dòng một mô hình hoặc mẫu",
+        "excludedModels": "Mô hình loại trừ",
+        "excludedModelsPlaceholder": "Mỗi dòng một mô hình hoặc mẫu",
+        "savePolicy": "Lưu chính sách",
+        "policySaved": "Đã lưu chính sách mô hình của Key"
+      },
+      "routing": {
+        "optionsTitle": "Tùy chọn định tuyến",
+        "sessionAffinity": "Gắn phiên",
+        "sessionAffinityTtl": "TTL gắn phiên",
+        "maxRetryCredentials": "Tài khoản retry",
+        "maxRetryInterval": "Chờ retry",
+        "disableCooling": "Tắt cooldown",
+        "saveOptions": "Lưu tùy chọn",
+        "optionsSaved": "Đã lưu tùy chọn định tuyến"
+      },
+      "validation": {
+        "numberRange": "Nhập số từ {{min}} đến {{max}}"
+      },
+      "logs": {
+        "allKinds": "Mọi loại",
+        "allStatuses": "Mọi trạng thái",
+        "modelFilter": "Mô hình",
+        "modelPlaceholder": "ID mô hình",
+        "accountFilter": "Tài khoản",
+        "accountPlaceholder": "Email hoặc ID tài khoản",
+        "apiKeyFilter": "Khóa API",
+        "apiKeyPlaceholder": "Tên hoặc ID",
+        "kindFilter": "Loại",
+        "statusFilter": "Trạng thái",
+        "errorFilter": "Lỗi",
+        "errorPlaceholder": "Nhóm lỗi",
+        "clearFilters": "Xóa bộ lọc",
+        "loading": "Đang tải nhật ký"
+      }
     }
   },
   "githubCopilot": {

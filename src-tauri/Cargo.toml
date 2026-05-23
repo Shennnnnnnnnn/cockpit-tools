@@ -1,6 +1,6 @@
 [package]
 name = "cockpit-tools"
-version = "0.24.3"
+version = "0.24.4"
 description = "Cockpit Tools"
 authors = ["jlcodes"]
 license = "CC-BY-NC-SA-4.0"
@@ -55,7 +55,7 @@ rand = "0.8"
 futures = "0.3"
 sysinfo = "0.33"
 libc = "0.2"
-tokio-tungstenite = "0.26"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 md5 = "0.7"
 tiny_http = "0.12"

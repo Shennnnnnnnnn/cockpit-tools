@@ -1098,6 +1098,8 @@
       "noGroups": "Grup yok",
       "noGroupsDesc": "Hesaplarınızı toplu yönetmek için gruplar oluşturun",
       "manage": "Yönet",
+      "refresh": "Grubu yenile",
+      "refreshEmpty": "Bu grupta yenilenebilir hesap yok",
       "error": {
         "duplicate": "Grup adı zaten mevcut",
         "createFailed": "Grup oluşturulamadı: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Hizmeti kapat",
       "enableService": "Hizmeti aç",
       "saveSuccess": "API hizmeti koleksiyonu güncellendi",
+      "noEligibleAccountsSelected": "Seçilen hesaplar bu ortamda yok veya API hizmeti tarafından kullanılamıyor. Önce bu ortama kullanılabilir bir Codex hesabı içe aktarın.",
       "removeSuccess": "Hesap API hizmetinden çıkarıldı",
       "rotateSuccess": "API hizmeti anahtarı yenilendi",
       "enabledSuccess": "API hizmeti etkinleştirildi",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} istek",
         "accountTokens": "{{count}} token",
         "accountResult": "Başarılı {{success}} / Hatalı {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Görsel istekleri",
+        "imagesDetail": "Üret {{generate}} / Düzenle {{edit}} / Yetki {{blocked}}"
       },
       "routingLabel": "Yönlendirme",
       "routingSaveSuccess": "API hizmeti yönlendirmesi güncellendi",
@@ -1900,7 +1905,7 @@
         "empty": "Henüz kota istatistiği yok"
       },
       "oauthBinding": {
-        "desc": "İsteğe bağlı. Bağlantı yoksa API hizmeti eski API Key akışıyla çalışır; bağlanınca oturum OAuth hesabını, Provider ise API hizmeti yapılandırmasını kullanır.",
+        "desc": "İsteğe bağlı. Yalnızca abonelik süresi işareti olan OAuth hesapları seçilebilir; süresi dolmuş olanlar da kabul edilir. Bağlantı yoksa API hizmeti eski API Key akışıyla çalışır; bağlanınca oturum OAuth hesabını, Provider ise API hizmeti yapılandırmasını kullanır.",
         "currentService": "API hizmeti: {{name}}"
       },
       "customRoutingEdit": "Özel yönlendirmeyi düzenle",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "API proxy URL'si",
       "upstreamProxySaveSuccess": "API proxy URL'si güncellendi",
       "upstreamProxyUrlPlaceholder": "Boş = genel proxy",
-      "upstreamProxySaveAction": "Proxy kaydet"
+      "upstreamProxySaveAction": "Proxy kaydet",
+      "imageGenerationLabel": "image_generation aracı",
+      "imageGenerationDesc": "Metin sohbetlerinin görsel aracını bildirmesini ve görsel uç noktalarının kullanılabilirliğini yönetir.",
+      "imageGenerationSaveSuccess": "image_generation ayarı güncellendi",
+      "apiKeysTitle": "İstemci anahtarları",
+      "apiKeyAdd": "Anahtar ekle",
+      "apiKeyLabel": "Anahtar adı",
+      "apiKeySaveLabel": "Adı kaydet",
+      "apiKeyDefaultLabel": "İstemci {{index}}",
+      "apiKeyCreateSuccess": "API Key oluşturuldu",
+      "apiKeyUpdateSuccess": "API Key güncellendi",
+      "apiKeyRotateSuccess": "API Key sıfırlandı",
+      "apiKeyDeleteSuccess": "API Key silindi",
+      "apiKeyRotateConfirm": "Bu API Key sıfırlanınca hemen geçersiz olur. Devam edilsin mi?",
+      "apiKeyDeleteConfirm": "Bu API Key silinsin mi?",
+      "apiKeyDelete": "Anahtarı sil",
+      "apiKeyDisable": "Anahtarı kapat",
+      "apiKeyEnable": "Anahtarı aç",
+      "modelStatsTitle": "Modele göre",
+      "apiKeyStatsTitle": "Anahtara göre",
+      "healthAvailable": "Kullanılabilir",
+      "healthUnavailable": "Kullanılamaz",
+      "healthCooldown": "Bekleme {{count}}",
+      "healthImageUnavailable": "Görsel yok",
+      "requestLogTitle": "İstek günlüğü",
+      "requestLogEmpty": "Henüz istek günlüğü yok",
+      "requestLogSuccess": "Başarılı",
+      "requestLogFailed": "Başarısız",
+      "requestLogTokens": "{{value}} token",
+      "imageGenerationMode": {
+        "enabled": "Açık",
+        "imagesOnly": "Yalnız görsel",
+        "disabled": "Kapalı"
+      },
+      "requestKind": {
+        "text": "Metin",
+        "imageGeneration": "Görsel",
+        "imageEdit": "Düzenleme",
+        "other": "Diğer"
+      },
+      "testSuccessInline": "API hizmeti testi başarılı"
     },
     "local": {
       "desc": "~/.codex/auth.json'dan mevcut hesabı içe aktar",
@@ -2335,11 +2380,13 @@
         "action": "OAuth Bağla",
         "actionShort": "Bağla",
         "title": "OAuth Hesabı Bağla",
-        "desc": "İsteğe bağlı. Bağlantı yoksa bu hesap eski API Key akışıyla geçiş yapar; bağlanınca oturum OAuth hesabını, Provider ise bu API Key hesap yapılandırmasını kullanır.",
+        "desc": "İsteğe bağlı. Yalnızca abonelik süresi işareti olan OAuth hesapları seçilebilir; süresi dolmuş olanlar da kabul edilir. Bağlantı yoksa bu hesap eski API Key akışıyla geçiş yapar; bağlanınca oturum OAuth hesabını, Provider ise bu API Key hesap yapılandırmasını kullanır.",
         "currentAccount": "API Key hesabı: {{name}}",
         "selectLabel": "OAuth hesabı seç",
         "empty": "Henüz OAuth hesabı yok. Önce OAuth yetkili bir hesap ekleyin.",
+        "emptyEligible": "Abonelik süresi işareti olan OAuth hesabı yok. Önce kotayı yenileyin veya uygun bir OAuth hesabı ekleyin.",
         "validationRequired": "Bir OAuth hesabı seçin",
+        "validationSubscriptionRequired": "Yalnızca abonelik süresi işareti olan OAuth hesapları bağlanabilir",
         "saveSuccess": "OAuth bağı güncellendi",
         "saveFailed": "OAuth bağı kurulamadı: {{error}}",
         "switchRequiresBinding": "Önce bir OAuth hesabı bağlayın",
@@ -2529,6 +2576,84 @@
       "fastDesc": "1,5x hız, daha yüksek kullanım",
       "saveSuccess": "Hız güncellendi",
       "saveFailed": "Hız kaydedilemedi: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Codex API Hizmeti",
+      "title": "Codex API Hizmeti",
+      "subtitle": "Codex OAuth hesap havuzunu yerel veya LAN istemcileri için OpenAI uyumlu API olarak sunar.",
+      "openPage": "API hizmetini aç",
+      "openFullPage": "Tüm özellikleri görüntüle",
+      "tabs": {
+        "overview": "Hizmet özeti",
+        "keys": "İstemci anahtarları",
+        "accounts": "Hesap havuzu",
+        "models": "Modeller ve yetenekler",
+        "logs": "İstatistik ve günlükler"
+      },
+      "healthTitle": "Hizmet durumu",
+      "health": {
+        "availableAccounts": "Kullanılabilir hesaplar",
+        "cooldowns": "Bekleme süreleri",
+        "imageUnavailable": "Görseller kullanılamıyor",
+        "keys": "İstemci anahtarları"
+      },
+      "accountHealth": {
+        "failures": "Art arda {{count}} hata",
+        "image": "Görseller {{status}}"
+      },
+      "models": {
+        "availableTitle": "Kullanılabilir modeller",
+        "capabilityTitle": "Yetenek anahtarları",
+        "capabilityDesc": "gpt-image-2; hizmet anahtarı, hesap planı ve kaydedilen görsel yetenek durumuna göre otomatik olarak gösterilir veya gizlenir.",
+        "rulesTitle": "Model kuralları",
+        "aliasTitle": "Model takma adları",
+        "aliasPlaceholder": "gpt-5 => g5; özgün modeli tutmak için + ekle",
+        "excludedTitle": "Gizli modeller",
+        "excludedPlaceholder": "Her satıra bir model veya desen, ör. gpt-5-*",
+        "saveRules": "Kuralları kaydet",
+        "rulesSaved": "Model kuralları kaydedildi"
+      },
+      "keys": {
+        "policyTitle": "Model ilkesi",
+        "advancedPolicyTitle": "Gelişmiş: model ilkesi",
+        "modelPrefix": "Model ön eki",
+        "modelPrefixPlaceholder": "Örnek: codex",
+        "allowedModels": "İzinli modeller",
+        "allowedModelsPlaceholder": "Boşsa tümü; her satıra bir model veya desen",
+        "excludedModels": "Dışlanan modeller",
+        "excludedModelsPlaceholder": "Her satıra bir model veya desen",
+        "savePolicy": "İlkeyi kaydet",
+        "policySaved": "Key model ilkesi kaydedildi"
+      },
+      "routing": {
+        "optionsTitle": "Yönlendirme seçenekleri",
+        "sessionAffinity": "Oturum bağı",
+        "sessionAffinityTtl": "Bağ TTL",
+        "maxRetryCredentials": "Retry hesapları",
+        "maxRetryInterval": "Retry bekleme",
+        "disableCooling": "Cooldown kapat",
+        "saveOptions": "Seçenekleri kaydet",
+        "optionsSaved": "Yönlendirme seçenekleri kaydedildi"
+      },
+      "validation": {
+        "numberRange": "{{min}} ile {{max}} arasında bir sayı girin"
+      },
+      "logs": {
+        "allKinds": "Tüm türler",
+        "allStatuses": "Tüm durumlar",
+        "modelFilter": "Model adı",
+        "modelPlaceholder": "Model ID",
+        "accountFilter": "Hesap",
+        "accountPlaceholder": "E-posta veya hesap ID",
+        "apiKeyFilter": "API anahtarı",
+        "apiKeyPlaceholder": "Ad veya ID",
+        "kindFilter": "Tür",
+        "statusFilter": "Durum",
+        "errorFilter": "Hata",
+        "errorPlaceholder": "Hata kategorisi",
+        "clearFilters": "Filtreleri temizle",
+        "loading": "İstek günlükleri yükleniyor"
+      }
     }
   },
   "githubCopilot": {

@@ -1098,6 +1098,8 @@
       "noGroups": "그룹 없음",
       "noGroupsDesc": "그룹을 만들어 계정을 일괄 관리하세요",
       "manage": "관리",
+      "refresh": "그룹 새로고침",
+      "refreshEmpty": "이 그룹에는 새로고침할 수 있는 계정이 없습니다",
       "error": {
         "duplicate": "그룹 이름이 이미 존재합니다",
         "createFailed": "그룹 생성 실패: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "서비스 끄기",
       "enableService": "서비스 켜기",
       "saveSuccess": "API 서비스 모음을 업데이트했습니다",
+      "noEligibleAccountsSelected": "선택한 계정이 현재 환경에 없거나 API 서비스에서 사용할 수 없습니다. 먼저 이 환경에 사용 가능한 Codex 계정을 가져오세요.",
       "removeSuccess": "계정을 API 서비스에서 제거했습니다",
       "rotateSuccess": "API 서비스 키를 재설정했습니다",
       "enabledSuccess": "API 서비스를 활성화했습니다",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}}건 요청",
         "accountTokens": "{{count}} 토큰",
         "accountResult": "성공 {{success}} / 실패 {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "이미지 요청",
+        "imagesDetail": "생성 {{generate}} / 편집 {{edit}} / 권한 {{blocked}}"
       },
       "routingLabel": "라우팅",
       "routingSaveSuccess": "API 서비스 라우팅을 업데이트했습니다",
@@ -1900,7 +1905,7 @@
         "empty": "할당량 통계가 아직 없습니다"
       },
       "oauthBinding": {
-        "desc": "선택 사항입니다. 연결하지 않으면 API 서비스는 기존 API Key 로직으로 실행됩니다. 연결하면 로그인 상태는 OAuth 계정을 사용하고 Provider는 현재 API 서비스 설정을 사용합니다.",
+        "desc": "선택 사항입니다. 구독 기간 표시가 있는 OAuth 계정만 선택할 수 있으며, 만료된 계정도 연결할 수 있습니다. 연결하지 않으면 API 서비스는 기존 API Key 로직으로 실행됩니다. 연결하면 로그인 상태는 OAuth 계정을 사용하고 Provider는 현재 API 서비스 설정을 사용합니다.",
         "currentService": "API 서비스: {{name}}"
       },
       "customRoutingEdit": "사용자 지정 라우팅 편집",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "API 프록시 주소",
       "upstreamProxySaveSuccess": "API 프록시 주소가 업데이트되었습니다",
       "upstreamProxyUrlPlaceholder": "비움 = 전역 프록시",
-      "upstreamProxySaveAction": "프록시 저장"
+      "upstreamProxySaveAction": "프록시 저장",
+      "imageGenerationLabel": "image_generation 도구",
+      "imageGenerationDesc": "텍스트 대화에서 이미지 도구를 선언할지와 이미지 엔드포인트 사용 가능 여부를 제어합니다.",
+      "imageGenerationSaveSuccess": "image_generation 설정이 업데이트되었습니다",
+      "apiKeysTitle": "클라이언트 키",
+      "apiKeyAdd": "키 추가",
+      "apiKeyLabel": "키 이름",
+      "apiKeySaveLabel": "이름 저장",
+      "apiKeyDefaultLabel": "클라이언트 {{index}}",
+      "apiKeyCreateSuccess": "API Key가 생성되었습니다",
+      "apiKeyUpdateSuccess": "API Key가 업데이트되었습니다",
+      "apiKeyRotateSuccess": "API Key가 재설정되었습니다",
+      "apiKeyDeleteSuccess": "API Key가 삭제되었습니다",
+      "apiKeyRotateConfirm": "재설정 후 이 API Key는 즉시 사용할 수 없습니다. 계속할까요?",
+      "apiKeyDeleteConfirm": "이 API Key를 삭제할까요?",
+      "apiKeyDelete": "키 삭제",
+      "apiKeyDisable": "키 끄기",
+      "apiKeyEnable": "키 켜기",
+      "modelStatsTitle": "모델별",
+      "apiKeyStatsTitle": "키별",
+      "healthAvailable": "사용 가능",
+      "healthUnavailable": "사용 불가",
+      "healthCooldown": "대기 {{count}}",
+      "healthImageUnavailable": "이미지 불가",
+      "requestLogTitle": "요청 로그",
+      "requestLogEmpty": "아직 요청 로그가 없습니다",
+      "requestLogSuccess": "성공",
+      "requestLogFailed": "실패",
+      "requestLogTokens": "{{value}} 토큰",
+      "imageGenerationMode": {
+        "enabled": "사용",
+        "imagesOnly": "이미지만",
+        "disabled": "사용 안 함"
+      },
+      "requestKind": {
+        "text": "텍스트",
+        "imageGeneration": "이미지",
+        "imageEdit": "편집",
+        "other": "기타"
+      },
+      "testSuccessInline": "API 서비스 테스트 통과"
     },
     "local": {
       "desc": "~/.codex/auth.json에서 현재 로그인된 계정 가져오기",
@@ -2335,11 +2380,13 @@
         "action": "OAuth 연결",
         "actionShort": "연결",
         "title": "OAuth 계정 연결",
-        "desc": "선택 사항입니다. 연결하지 않으면 이 계정은 기존 API Key 로직으로 전환됩니다. 연결하면 로그인 상태는 OAuth 계정을 사용하고 Provider는 이 API Key 계정 설정을 사용합니다.",
+        "desc": "선택 사항입니다. 구독 기간 표시가 있는 OAuth 계정만 선택할 수 있으며, 만료된 계정도 연결할 수 있습니다. 연결하지 않으면 이 계정은 기존 API Key 로직으로 전환됩니다. 연결하면 로그인 상태는 OAuth 계정을 사용하고 Provider는 이 API Key 계정 설정을 사용합니다.",
         "currentAccount": "API Key 계정: {{name}}",
         "selectLabel": "OAuth 계정 선택",
         "empty": "OAuth 계정이 없습니다. 먼저 OAuth 인증 계정을 추가하세요.",
+        "emptyEligible": "구독 기간 표시가 있는 OAuth 계정이 없습니다. 먼저 할당량을 새로고침하거나 조건에 맞는 OAuth 계정을 추가하세요.",
         "validationRequired": "OAuth 계정을 선택하세요",
+        "validationSubscriptionRequired": "구독 기간 표시가 있는 OAuth 계정만 연결할 수 있습니다",
         "saveSuccess": "OAuth 연결이 업데이트되었습니다",
         "saveFailed": "OAuth 연결 실패: {{error}}",
         "switchRequiresBinding": "먼저 OAuth 계정을 연결하세요",
@@ -2529,6 +2576,84 @@
       "fastDesc": "1.5배 속도, 사용량 증가",
       "saveSuccess": "속도가 업데이트되었습니다",
       "saveFailed": "속도 저장 실패: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Codex API 서비스",
+      "title": "Codex API 서비스",
+      "subtitle": "Codex OAuth 계정 풀을 로컬 또는 LAN 클라이언트용 OpenAI 호환 API로 노출합니다.",
+      "openPage": "API 서비스 열기",
+      "openFullPage": "전체 기능 보기",
+      "tabs": {
+        "overview": "서비스 개요",
+        "keys": "클라이언트 키",
+        "accounts": "계정 풀",
+        "models": "모델 및 기능",
+        "logs": "통계 및 로그"
+      },
+      "healthTitle": "서비스 상태",
+      "health": {
+        "availableAccounts": "사용 가능 계정",
+        "cooldowns": "쿨다운",
+        "imageUnavailable": "이미지 사용 불가",
+        "keys": "클라이언트 키"
+      },
+      "accountHealth": {
+        "failures": "연속 실패 {{count}}회",
+        "image": "이미지 {{status}}"
+      },
+      "models": {
+        "availableTitle": "사용 가능 모델",
+        "capabilityTitle": "기능 스위치",
+        "capabilityDesc": "gpt-image-2는 서비스 스위치, 계정 플랜, 기록된 이미지 기능 상태에 따라 자동으로 표시되거나 숨겨집니다.",
+        "rulesTitle": "모델 규칙",
+        "aliasTitle": "모델 별칭",
+        "aliasPlaceholder": "gpt-5 => g5; 원래 모델 유지 시 + 추가",
+        "excludedTitle": "숨김 모델",
+        "excludedPlaceholder": "줄마다 모델 또는 와일드카드, 예: gpt-5-*",
+        "saveRules": "규칙 저장",
+        "rulesSaved": "모델 규칙 저장됨"
+      },
+      "keys": {
+        "policyTitle": "모델 정책",
+        "advancedPolicyTitle": "고급 기능: 모델 정책",
+        "modelPrefix": "모델 접두사",
+        "modelPrefixPlaceholder": "예: codex",
+        "allowedModels": "허용 모델",
+        "allowedModelsPlaceholder": "비우면 전체 허용; 줄마다 모델 또는 와일드카드",
+        "excludedModels": "제외 모델",
+        "excludedModelsPlaceholder": "줄마다 모델 또는 와일드카드",
+        "savePolicy": "정책 저장",
+        "policySaved": "Key 모델 정책 저장됨"
+      },
+      "routing": {
+        "optionsTitle": "라우팅 옵션",
+        "sessionAffinity": "세션 고정",
+        "sessionAffinityTtl": "고정 TTL",
+        "maxRetryCredentials": "재시도 계정",
+        "maxRetryInterval": "재시도 대기",
+        "disableCooling": "쿨다운 끄기",
+        "saveOptions": "옵션 저장",
+        "optionsSaved": "라우팅 옵션 저장됨"
+      },
+      "validation": {
+        "numberRange": "{{min}}에서 {{max}} 사이 숫자를 입력하세요"
+      },
+      "logs": {
+        "allKinds": "전체 유형",
+        "allStatuses": "전체 상태",
+        "modelFilter": "모델",
+        "modelPlaceholder": "모델 ID",
+        "accountFilter": "계정",
+        "accountPlaceholder": "이메일 또는 계정 ID",
+        "apiKeyFilter": "API 키",
+        "apiKeyPlaceholder": "이름 또는 ID",
+        "kindFilter": "유형",
+        "statusFilter": "상태",
+        "errorFilter": "오류",
+        "errorPlaceholder": "오류 분류",
+        "clearFilters": "필터 지우기",
+        "loading": "요청 로그 로드 중"
+      }
     }
   },
   "githubCopilot": {

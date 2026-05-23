@@ -1098,6 +1098,8 @@
       "noGroups": "Aucun groupe",
       "noGroupsDesc": "Créez des groupes pour gérer vos comptes",
       "manage": "Gérer",
+      "refresh": "Actualiser le groupe",
+      "refreshEmpty": "Aucun compte actualisable dans ce groupe",
       "error": {
         "duplicate": "Le nom du groupe existe déjà",
         "createFailed": "Échec de la création du groupe : {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Désactiver le service",
       "enableService": "Activer le service",
       "saveSuccess": "La collection du service API a été mise à jour",
+      "noEligibleAccountsSelected": "Les comptes sélectionnés ne sont pas dans cet environnement ou ne peuvent pas être utilisés par le service API. Importez d'abord un compte Codex utilisable dans cet environnement.",
       "removeSuccess": "Le compte a été retiré du service API",
       "rotateSuccess": "La clé du service API a été réinitialisée",
       "enabledSuccess": "Service API activé",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} requêtes",
         "accountTokens": "{{count}} jetons",
         "accountResult": "Succès {{success}} / Échec {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Requêtes image",
+        "imagesDetail": "Génération {{generate}} / Retouche {{edit}} / Droit {{blocked}}"
       },
       "routingLabel": "Routage",
       "routingSaveSuccess": "Le routage du service API a été mis à jour",
@@ -1900,7 +1905,7 @@
         "empty": "Aucune statistique de quota pour l’instant"
       },
       "oauthBinding": {
-        "desc": "Facultatif. Sans liaison, le service API conserve le flux API Key existant ; une fois lié, la session utilise le compte OAuth et le Provider utilise la configuration du service API.",
+        "desc": "Facultatif. Seuls les comptes OAuth avec une indication de période d’abonnement peuvent être sélectionnés ; les périodes expirées sont acceptées. Sans liaison, le service API conserve le flux API Key existant ; une fois lié, la session utilise le compte OAuth et le Provider utilise la configuration du service API.",
         "currentService": "Service API : {{name}}"
       },
       "customRoutingEdit": "Modifier le routage personnalisé",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "URL du proxy API",
       "upstreamProxySaveSuccess": "URL du proxy API mise à jour",
       "upstreamProxyUrlPlaceholder": "Vide = proxy global",
-      "upstreamProxySaveAction": "Enregistrer proxy"
+      "upstreamProxySaveAction": "Enregistrer proxy",
+      "imageGenerationLabel": "Outil image_generation",
+      "imageGenerationDesc": "Contrôle si les conversations texte déclarent l’outil image et si les endpoints image sont disponibles.",
+      "imageGenerationSaveSuccess": "Réglage image_generation mis à jour",
+      "apiKeysTitle": "Clés client",
+      "apiKeyAdd": "Ajouter une clé",
+      "apiKeyLabel": "Nom de clé",
+      "apiKeySaveLabel": "Enregistrer le nom",
+      "apiKeyDefaultLabel": "Poste {{index}}",
+      "apiKeyCreateSuccess": "API Key créée",
+      "apiKeyUpdateSuccess": "API Key mise à jour",
+      "apiKeyRotateSuccess": "API Key réinitialisée",
+      "apiKeyDeleteSuccess": "API Key supprimée",
+      "apiKeyRotateConfirm": "Cette API Key cessera immédiatement de fonctionner après réinitialisation. Continuer ?",
+      "apiKeyDeleteConfirm": "Supprimer cette API Key ?",
+      "apiKeyDelete": "Supprimer la clé",
+      "apiKeyDisable": "Désactiver la clé",
+      "apiKeyEnable": "Activer la clé",
+      "modelStatsTitle": "Par modèle",
+      "apiKeyStatsTitle": "Par clé",
+      "healthAvailable": "Disponible",
+      "healthUnavailable": "Indisponible",
+      "healthCooldown": "Attente {{count}}",
+      "healthImageUnavailable": "Image indisponible",
+      "requestLogTitle": "Journal des requêtes",
+      "requestLogEmpty": "Aucun journal de requêtes",
+      "requestLogSuccess": "Succès",
+      "requestLogFailed": "Échec",
+      "requestLogTokens": "{{value}} jetons",
+      "imageGenerationMode": {
+        "enabled": "Activé",
+        "imagesOnly": "Images seules",
+        "disabled": "Désactivé"
+      },
+      "requestKind": {
+        "text": "Texte",
+        "imageGeneration": "Image",
+        "imageEdit": "Retouche",
+        "other": "Autre"
+      },
+      "testSuccessInline": "Test du service API réussi"
     },
     "local": {
       "desc": "Importer le compte connecté depuis ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Lier OAuth",
         "actionShort": "Lier",
         "title": "Lier un compte OAuth",
-        "desc": "Facultatif. Sans liaison, ce compte bascule avec le flux API Key existant ; une fois lié, la session utilise le compte OAuth et le Provider utilise la configuration de ce compte API Key.",
+        "desc": "Facultatif. Seuls les comptes OAuth avec une indication de période d’abonnement peuvent être sélectionnés ; les périodes expirées sont acceptées. Sans liaison, ce compte bascule avec le flux API Key existant ; une fois lié, la session utilise le compte OAuth et le Provider utilise la configuration de ce compte API Key.",
         "currentAccount": "Compte API Key : {{name}}",
         "selectLabel": "Choisir un compte OAuth",
         "empty": "Aucun compte OAuth. Ajoutez d’abord un compte autorisé OAuth.",
+        "emptyEligible": "Aucun compte OAuth avec période d’abonnement. Actualisez le quota ou ajoutez d’abord un compte OAuth éligible.",
         "validationRequired": "Choisissez un compte OAuth",
+        "validationSubscriptionRequired": "Seuls les comptes OAuth avec période d’abonnement peuvent être liés",
         "saveSuccess": "Lien OAuth mis à jour",
         "saveFailed": "Échec du lien OAuth : {{error}}",
         "switchRequiresBinding": "Liez d’abord un compte OAuth",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Vitesse 1,5x, usage accru",
       "saveSuccess": "Vitesse mise à jour",
       "saveFailed": "Impossible d’enregistrer la vitesse : {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Service API Codex",
+      "title": "Service API Codex",
+      "subtitle": "Expose le pool de comptes OAuth Codex sous forme d’API compatible OpenAI pour les clients locaux ou LAN.",
+      "openPage": "Ouvrir le service API",
+      "openFullPage": "Voir toutes les fonctions",
+      "tabs": {
+        "overview": "Vue d’ensemble du service",
+        "keys": "Clés client",
+        "accounts": "Pool de comptes",
+        "models": "Modèles et capacités",
+        "logs": "Stats et journaux"
+      },
+      "healthTitle": "Santé du service",
+      "health": {
+        "availableAccounts": "Comptes disponibles",
+        "cooldowns": "Refroidissements",
+        "imageUnavailable": "Images indisponibles",
+        "keys": "Clés client"
+      },
+      "accountHealth": {
+        "failures": "{{count}} échecs consécutifs",
+        "image": "Images {{status}}"
+      },
+      "models": {
+        "availableTitle": "Modèles disponibles",
+        "capabilityTitle": "Commutateurs de capacité",
+        "capabilityDesc": "gpt-image-2 est affiché ou masqué automatiquement selon le commutateur du service, le forfait du compte et l’état enregistré de capacité image.",
+        "rulesTitle": "Règles modèles",
+        "aliasTitle": "Alias modèles",
+        "aliasPlaceholder": "gpt-5 => g5 ; + garde le modèle original",
+        "excludedTitle": "Modèles masqués",
+        "excludedPlaceholder": "Un modèle ou motif par ligne, ex. gpt-5-*",
+        "saveRules": "Enregistrer",
+        "rulesSaved": "Règles modèles enregistrées"
+      },
+      "keys": {
+        "policyTitle": "Politique de modèles",
+        "advancedPolicyTitle": "Avancé : stratégie de modèles",
+        "modelPrefix": "Préfixe modèle",
+        "modelPrefixPlaceholder": "Exemple : codex",
+        "allowedModels": "Modèles autorisés",
+        "allowedModelsPlaceholder": "Vide autorise tout ; un modèle ou motif par ligne",
+        "excludedModels": "Modèles exclus",
+        "excludedModelsPlaceholder": "Un modèle ou motif par ligne",
+        "savePolicy": "Enregistrer",
+        "policySaved": "Politique du Key enregistrée"
+      },
+      "routing": {
+        "optionsTitle": "Options de routage",
+        "sessionAffinity": "Affinité session",
+        "sessionAffinityTtl": "TTL affinité",
+        "maxRetryCredentials": "Comptes retry",
+        "maxRetryInterval": "Attente retry",
+        "disableCooling": "Désactiver cooldown",
+        "saveOptions": "Enregistrer",
+        "optionsSaved": "Options de routage enregistrées"
+      },
+      "validation": {
+        "numberRange": "Saisissez un nombre de {{min}} à {{max}}"
+      },
+      "logs": {
+        "allKinds": "Tous types",
+        "allStatuses": "Tous états",
+        "modelFilter": "Modèle",
+        "modelPlaceholder": "ID modèle",
+        "accountFilter": "Compte",
+        "accountPlaceholder": "E-mail ou ID compte",
+        "apiKeyFilter": "Clé API",
+        "apiKeyPlaceholder": "Nom ou ID",
+        "kindFilter": "Type",
+        "statusFilter": "État",
+        "errorFilter": "Erreur",
+        "errorPlaceholder": "Catégorie erreur",
+        "clearFilters": "Effacer filtres",
+        "loading": "Chargement des logs"
+      }
     }
   },
   "githubCopilot": {

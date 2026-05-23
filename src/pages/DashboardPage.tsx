@@ -108,6 +108,10 @@ const DASHBOARD_DEFERRED_PREFETCH_BATCH_SIZE = 1;
 const DASHBOARD_DEFERRED_PREFETCH_BATCH_DELAY_MS = 1200;
 let dashboardStartupPrefetched = false;
 
+function normalizeDashboardCardPlatformId(platformId: PlatformId): PlatformId {
+  return platformId === 'antigravity_ide' ? 'antigravity' : platformId;
+}
+
 function toFiniteNumber(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -2050,7 +2054,19 @@ export function DashboardPage({
     return result;
   }, [visibleEntryOrder, platformGroups, platformCounts]);
 
-  const visibleCardPlatformIds = visiblePlatformOrder;
+  const visibleCardPlatformIds = useMemo(() => {
+    const seen = new Set<PlatformId>();
+    const result: PlatformId[] = [];
+    for (const platformId of visiblePlatformOrder) {
+      const normalizedPlatformId = normalizeDashboardCardPlatformId(platformId);
+      if (seen.has(normalizedPlatformId)) {
+        continue;
+      }
+      seen.add(normalizedPlatformId);
+      result.push(normalizedPlatformId);
+    }
+    return result;
+  }, [visiblePlatformOrder]);
   const isSinglePlatformMode = visibleCardPlatformIds.length === 1;
   const cardRows = useMemo(() => {
     const rows: PlatformId[][] = [];
@@ -2062,7 +2078,7 @@ export function DashboardPage({
 
   const handleHidePlatformCard = useCallback((platformId: PlatformId) => {
     const entryId = orderedEntryIds.find(
-      (candidate) => resolveEntryDefaultPlatformId(candidate, platformGroups) === platformId,
+      (candidate) => resolveEntryPlatformIds(candidate, platformGroups).includes(platformId),
     );
     if (!entryId) {
       return;

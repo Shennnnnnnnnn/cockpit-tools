@@ -1,21 +1,20 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::{types::Value, Connection, OpenFlags, Transaction};
 use serde::Serialize;
 use serde_json::{json, Value as JsonValue};
-use url::Url;
 
 use crate::modules;
 
 const DEFAULT_INSTANCE_ID: &str = "__default__";
 const DEFAULT_INSTANCE_NAME: &str = "默认实例";
-const STATE_DB_FILE: &str = "state_5.sqlite";
 const SESSION_INDEX_FILE: &str = "session_index.jsonl";
-const BACKUP_FILE_NAMES: [&str; 2] = [STATE_DB_FILE, SESSION_INDEX_FILE];
+const BACKUP_FILE_NAMES: [&str; 1] = [SESSION_INDEX_FILE];
+const SESSION_DIRS: [&str; 2] = ["sessions", "archived_sessions"];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,51 +63,12 @@ struct CodexSyncInstance {
 }
 
 #[derive(Debug, Clone)]
-struct ThreadRowData {
-    columns: Vec<String>,
-    values: Vec<Value>,
-}
-
-impl ThreadRowData {
-    fn get_value(&self, column: &str) -> Option<&Value> {
-        self.columns
-            .iter()
-            .position(|item| item == column)
-            .and_then(|index| self.values.get(index))
-    }
-
-    fn get_text(&self, column: &str) -> Option<String> {
-        match self.get_value(column)? {
-            Value::Text(value) => Some(value.clone()),
-            Value::Integer(value) => Some(value.to_string()),
-            Value::Real(value) => Some(value.to_string()),
-            _ => None,
-        }
-    }
-
-    fn get_i64(&self, column: &str) -> Option<i64> {
-        match self.get_value(column)? {
-            Value::Integer(value) => Some(*value),
-            Value::Text(value) => value.parse::<i64>().ok(),
-            _ => None,
-        }
-    }
-
-    fn set_text(&mut self, column: &str, value: String) {
-        if let Some(index) = self.columns.iter().position(|item| item == column) {
-            if let Some(slot) = self.values.get_mut(index) {
-                *slot = Value::Text(value);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 struct ThreadSnapshot {
     id: String,
     rollout_path: PathBuf,
+    rollout_actual_modified_at: Option<SystemTime>,
+    rollout_modified_at: Option<SystemTime>,
     merged_rollout_content: Option<String>,
-    row_data: ThreadRowData,
     session_index_entry: JsonValue,
     source_root: PathBuf,
     freshness: ThreadFreshness,
@@ -196,7 +156,8 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
             match existing_snapshots.get(id) {
                 Some(existing)
                     if existing.freshness >= best_snapshot.freshness
-                        && snapshot_rollout_matches(existing, best_snapshot) => {}
+                        && snapshot_rollout_matches(existing, best_snapshot)
+                        && snapshot_modified_time_matches(existing, best_snapshot) => {}
                 Some(existing) => {
                     updated_thread_count += 1;
                     plan_items.push(ThreadSyncPlanItem {
@@ -251,7 +212,7 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
         "所有 Codex 实例会话已是最新，无需同步".to_string()
     } else if mutated_running_instance_count > 0 {
         format!(
-            "已为 {} 个实例同步 {} 条会话（新增 {} 条，更新 {} 条），运行中的实例可能需要重启后显示",
+            "已为 {} 个实例同步 {} 条会话（新增 {} 条，更新 {} 条），并已触发官方 Codex 重建会话索引；运行中的实例可能需要刷新或重启后显示",
             mutated_instance_count,
             total_synced_thread_count,
             total_added_thread_count,
@@ -259,7 +220,7 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
         )
     } else {
         format!(
-            "已为 {} 个实例同步 {} 条会话（新增 {} 条，更新 {} 条）",
+            "已为 {} 个实例同步 {} 条会话（新增 {} 条，更新 {} 条），并已触发官方 Codex 重建会话索引",
             mutated_instance_count,
             total_synced_thread_count,
             total_added_thread_count,
@@ -389,12 +350,12 @@ pub fn sync_sessions_to_instance(
     let synced_session_count = snapshots_to_sync.len();
     let message = if running {
         format!(
-            "已恢复 {} 条会话到「{}」，目标实例运行中，可能需要重启后显示",
+            "已恢复 {} 条会话到「{}」，并已触发官方 Codex 重建会话索引；目标实例运行中，可能需要刷新或重启后显示",
             synced_session_count, target.name
         )
     } else {
         format!(
-            "已恢复 {} 条会话到「{}」",
+            "已恢复 {} 条会话到「{}」，并已触发官方 Codex 重建会话索引",
             synced_session_count, target.name
         )
     };
@@ -453,111 +414,121 @@ fn is_instance_running(
 }
 
 fn load_thread_snapshots(instance: &CodexSyncInstance) -> Result<Vec<ThreadSnapshot>, String> {
-    let db_path = instance.data_dir.join(STATE_DB_FILE);
-    if !db_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let connection = match open_readonly_connection(&db_path) {
-        Ok(connection) => connection,
-        Err(error) if should_skip_state_db_message(&error) => {
-            log_skipped_state_db(&instance.name, &db_path, &error);
-            return Ok(Vec::new());
-        }
-        Err(error) => return Err(error),
-    };
-    let columns = match read_thread_columns(&connection) {
-        Ok(columns) => columns,
-        Err(error) if should_skip_state_db_message(&error) => {
-            log_skipped_state_db(&instance.name, &db_path, &error);
-            return Ok(Vec::new());
-        }
-        Err(error) => return Err(error),
-    };
-    let select_columns = columns
-        .iter()
-        .map(|column| quote_identifier(column))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let query = format!("SELECT {} FROM threads", select_columns);
-    let mut statement = match connection.prepare(&query) {
-        Ok(statement) => statement,
-        Err(error) if should_skip_state_db_error(&error) => {
-            log_skipped_state_db(&instance.name, &db_path, &error.to_string());
-            return Ok(Vec::new());
-        }
-        Err(error) => {
-            return Err(format!("读取实例线程失败 ({}): {}", instance.name, error));
-        }
-    };
-    let mut rows = match statement.query([]) {
-        Ok(rows) => rows,
-        Err(error) if should_skip_state_db_error(&error) => {
-            log_skipped_state_db(&instance.name, &db_path, &error.to_string());
-            return Ok(Vec::new());
-        }
-        Err(error) => {
-            return Err(format!("查询实例线程失败 ({}): {}", instance.name, error));
-        }
-    };
     let session_index_map = read_session_index_map(&instance.data_dir)?;
-
     let mut snapshots = Vec::new();
-    loop {
-        let Some(row) = (match rows.next() {
-            Ok(row) => row,
-            Err(error) if should_skip_state_db_error(&error) => {
-                log_skipped_state_db(&instance.name, &db_path, &error.to_string());
-                return Ok(Vec::new());
-            }
-            Err(error) => {
-                return Err(format!("迭代实例线程失败 ({}): {}", instance.name, error));
-            }
-        }) else {
-            break;
-        };
-
-        let mut values = Vec::with_capacity(columns.len());
-        for index in 0..columns.len() {
-            values.push(
-                row.get::<usize, Value>(index)
-                    .map_err(|error| format!("解析线程记录失败 ({}): {}", instance.name, error))?,
-            );
+    for dir_name in SESSION_DIRS {
+        let root_dir = instance.data_dir.join(dir_name);
+        if !root_dir.exists() {
+            continue;
         }
+        for rollout_path in list_rollout_files(&root_dir)? {
+            let Some(session_meta) = read_rollout_session_meta(&rollout_path)? else {
+                continue;
+            };
+            let Some(id) = session_meta_id(&session_meta) else {
+                continue;
+            };
+            let freshness = build_thread_freshness(session_index_map.get(&id), &rollout_path);
+            let title = session_index_map
+                .get(&id)
+                .and_then(session_index_title)
+                .unwrap_or_else(|| id.clone());
+            let updated_at = session_index_map
+                .get(&id)
+                .and_then(session_index_updated_at_text)
+                .or_else(|| format_timestamp_from_ms(freshness.activity_ms));
+            let session_index_entry = session_index_map.get(&id).cloned().unwrap_or_else(|| {
+                build_fallback_session_index_entry(&id, &title, updated_at.as_deref())
+            });
+            let rollout_actual_modified_at =
+                modules::codex_session_file_time::read_modified_time(&rollout_path);
+            let rollout_modified_at =
+                modules::codex_session_file_time::system_time_from_unix_millis(
+                    freshness.activity_ms,
+                )
+                .or(rollout_actual_modified_at);
 
-        let row_data = ThreadRowData {
-            columns: columns.clone(),
-            values,
-        };
-        let id = row_data
-            .get_text("id")
-            .ok_or_else(|| format!("线程缺少 id 字段 ({})", instance.name))?;
-        let rollout_path = row_data
-            .get_text("rollout_path")
-            .ok_or_else(|| format!("线程 {} 缺少 rollout_path ({})", id, instance.name))?;
-        let title = row_data
-            .get_text("title")
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| id.clone());
-        let updated_at = row_data.get_i64("updated_at").and_then(format_timestamp);
-        let session_index_entry = session_index_map.get(&id).cloned().unwrap_or_else(|| {
-            build_fallback_session_index_entry(&id, &title, updated_at.as_deref())
-        });
-        let rollout_path = PathBuf::from(rollout_path);
-        let freshness = build_thread_freshness(&row_data, &session_index_entry, &rollout_path);
-
-        snapshots.push(ThreadSnapshot {
-            id,
-            rollout_path,
-            merged_rollout_content: None,
-            row_data,
-            session_index_entry,
-            source_root: instance.data_dir.clone(),
-            freshness,
-        });
+            snapshots.push(ThreadSnapshot {
+                id,
+                rollout_path,
+                rollout_actual_modified_at,
+                rollout_modified_at,
+                merged_rollout_content: None,
+                session_index_entry,
+                source_root: instance.data_dir.clone(),
+                freshness,
+            });
+        }
     }
 
     Ok(snapshots)
+}
+
+fn list_rollout_files(root_dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut result = Vec::new();
+    let entries = fs::read_dir(root_dir)
+        .map_err(|error| format!("读取目录失败 ({}): {}", root_dir.display(), error))?;
+
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("读取目录项失败 ({}): {}", root_dir.display(), error))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("读取文件类型失败 ({}): {}", path.display(), error))?;
+        if file_type.is_dir() {
+            result.extend(list_rollout_files(&path)?);
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|item| item.to_str())
+            .unwrap_or_default();
+        if file_name.starts_with("rollout-") && file_name.ends_with(".jsonl") {
+            result.push(path);
+        }
+    }
+
+    result.sort();
+    Ok(result)
+}
+
+fn read_rollout_session_meta(path: &Path) -> Result<Option<JsonValue>, String> {
+    let file = fs::File::open(path)
+        .map_err(|error| format!("打开 rollout 文件失败 ({}): {}", path.display(), error))?;
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let line =
+            line.map_err(|error| format!("读取 rollout 文件失败 ({}): {}", path.display(), error))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(parsed) = serde_json::from_str::<JsonValue>(trimmed) else {
+            return Ok(None);
+        };
+        if parsed.get("type").and_then(JsonValue::as_str) == Some("session_meta") {
+            return Ok(Some(parsed));
+        }
+        return Ok(None);
+    }
+    Ok(None)
+}
+
+fn session_meta_id(meta: &JsonValue) -> Option<String> {
+    meta.get("payload")
+        .and_then(|payload| payload.get("id").or_else(|| payload.get("session_id")))
+        .and_then(JsonValue::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            meta.get("id")
+                .or_else(|| meta.get("session_id"))
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+        })
 }
 
 fn sync_missing_threads_to_instance(
@@ -585,35 +556,25 @@ fn sync_thread_plan_to_instance(
         modules::codex_session_visibility::read_history_visibility_provider_for_dir(
             &target.data_dir,
         )?;
-    let db_path = target.data_dir.join(STATE_DB_FILE);
-    let mut connection = Connection::open(&db_path)
-        .map_err(|error| format!("打开目标实例数据库失败 ({}): {}", target.name, error))?;
-    let target_columns = read_thread_columns(&connection)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("开启目标实例事务失败 ({}): {}", target.name, error))?;
 
     for item in plan_items {
         let target_rollout_path = copy_rollout_file_for_plan(item, &target.data_dir, &backup_dir)?;
         rewrite_rollout_provider_for_target(&target_rollout_path, &target_provider)?;
-        let mut row_data = item.snapshot.row_data.clone();
-        row_data.set_text(
-            "rollout_path",
-            target_rollout_path.to_string_lossy().to_string(),
-        );
-        row_data.set_text("model_provider", target_provider.clone());
-        insert_thread_row(&transaction, &target_columns, &row_data)?;
     }
-
-    transaction
-        .commit()
-        .map_err(|error| format!("提交目标实例事务失败 ({}): {}", target.name, error))?;
 
     let snapshots = plan_items
         .iter()
         .map(|item| item.snapshot.clone())
         .collect::<Vec<_>>();
     upsert_session_index_entries(&target.data_dir, &snapshots)?;
+    modules::codex_official_app_server::rebuild_thread_metadata(&target.data_dir).map_err(
+        |error| {
+            format!(
+                "已同步 rollout/session_index，但官方 Codex 重建会话索引失败 ({}): {}",
+                target.name, error
+            )
+        },
+    )?;
     Ok(backup_dir)
 }
 
@@ -639,6 +600,16 @@ fn merge_thread_snapshots(snapshots: &[ThreadSnapshot]) -> Result<ThreadSnapshot
             .max()
             .unwrap_or(merged.freshness.rollout_modified_ms),
     };
+    merged.rollout_modified_at = ordered
+        .iter()
+        .filter_map(|snapshot| snapshot.rollout_modified_at)
+        .max_by_key(|modified_at| {
+            modified_at
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        });
+    merged.rollout_actual_modified_at = merged.rollout_modified_at;
     merged.merged_rollout_content = Some(merged_rollout_content);
     Ok(merged)
 }
@@ -771,20 +742,32 @@ fn snapshot_rollout_matches(existing: &ThreadSnapshot, expected: &ThreadSnapshot
         .unwrap_or(false)
 }
 
+fn snapshot_modified_time_matches(existing: &ThreadSnapshot, expected: &ThreadSnapshot) -> bool {
+    modules::codex_session_file_time::same_modified_time_millis(
+        existing.rollout_actual_modified_at,
+        expected.rollout_modified_at,
+    )
+}
+
 fn build_thread_freshness(
-    row_data: &ThreadRowData,
-    session_index_entry: &JsonValue,
+    session_index_entry: Option<&JsonValue>,
     rollout_path: &Path,
 ) -> ThreadFreshness {
-    let row_activity_ms = row_data
-        .get_i64("updated_at")
-        .map(normalize_codex_timestamp_ms)
+    let index_activity_ms = session_index_entry
+        .and_then(parse_session_index_updated_at_ms)
         .unwrap_or(0);
-    let index_activity_ms = parse_session_index_updated_at_ms(session_index_entry).unwrap_or(0);
     let (rollout_modified_ms, rollout_len) = rollout_file_metadata(rollout_path);
+    let rollout_activity_ms = rollout_file_activity_ms(rollout_path).unwrap_or(0);
+    let activity_ms = index_activity_ms.max(rollout_activity_ms).max(
+        if index_activity_ms == 0 && rollout_activity_ms == 0 {
+            rollout_modified_ms
+        } else {
+            0
+        },
+    );
 
     ThreadFreshness {
-        activity_ms: row_activity_ms.max(index_activity_ms),
+        activity_ms,
         rollout_len,
         rollout_modified_ms,
     }
@@ -820,6 +803,35 @@ fn parse_session_index_updated_at_ms(entry: &JsonValue) -> Option<i128> {
     })
 }
 
+fn session_index_title(entry: &JsonValue) -> Option<String> {
+    ["thread_name", "threadName", "title", "name"]
+        .iter()
+        .filter_map(|key| entry.get(*key))
+        .find_map(|value| value.as_str().map(str::trim))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn session_index_updated_at_text(entry: &JsonValue) -> Option<String> {
+    [
+        "updated_at",
+        "updatedAt",
+        "last_updated_at",
+        "lastUpdatedAt",
+    ]
+    .iter()
+    .filter_map(|key| entry.get(*key))
+    .find_map(|value| value.as_str().map(str::trim))
+    .filter(|value| !value.is_empty())
+    .map(str::to_string)
+}
+
+fn rollout_file_activity_ms(path: &Path) -> Option<i128> {
+    let content = fs::read_to_string(path).ok()?;
+    let (activity_ms, _) = rollout_content_activity_and_len(&content);
+    (activity_ms > 0).then_some(activity_ms)
+}
+
 fn rollout_file_metadata(path: &Path) -> (i128, u64) {
     let Ok(metadata) = fs::metadata(path) else {
         return (0, 0);
@@ -831,67 +843,6 @@ fn rollout_file_metadata(path: &Path) -> (i128, u64) {
         .map(|value| value.as_millis() as i128)
         .unwrap_or(0);
     (modified_ms, metadata.len())
-}
-
-fn open_readonly_connection(db_path: &Path) -> Result<Connection, String> {
-    let mut uri = Url::from_file_path(db_path)
-        .map_err(|_| format!("无法构建只读数据库 URI: {}", db_path.display()))?;
-    uri.set_query(Some("mode=ro"));
-    Connection::open_with_flags(
-        uri.as_str(),
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
-    )
-    .map_err(|error| format!("打开只读数据库失败 ({}): {}", db_path.display(), error))
-}
-
-fn should_skip_state_db_error(error: &rusqlite::Error) -> bool {
-    modules::db::is_unusable_sqlite_database_error(error)
-        || error
-            .to_string()
-            .to_ascii_lowercase()
-            .contains("no such table: threads")
-}
-
-fn should_skip_state_db_message(message: &str) -> bool {
-    let lowered = message.to_ascii_lowercase();
-    modules::db::is_unusable_sqlite_database_message(message)
-        || lowered.contains("no such table: threads")
-        || message.contains("threads 表不存在或没有列定义")
-}
-
-fn log_skipped_state_db(instance_name: &str, db_path: &Path, reason: &str) {
-    modules::logger::log_warn(&format!(
-        "跳过无法读取的 Codex 线程数据库 ({} / {}): {}",
-        instance_name,
-        db_path.display(),
-        reason
-    ));
-}
-
-fn read_thread_columns(connection: &Connection) -> Result<Vec<String>, String> {
-    let mut statement = connection
-        .prepare("PRAGMA table_info(threads)")
-        .map_err(|error| format!("读取 threads 表结构失败: {}", error))?;
-    let mut rows = statement
-        .query([])
-        .map_err(|error| format!("查询 threads 表结构失败: {}", error))?;
-    let mut columns = Vec::new();
-
-    while let Some(row) = rows
-        .next()
-        .map_err(|error| format!("解析 threads 表结构失败: {}", error))?
-    {
-        columns.push(
-            row.get::<usize, String>(1)
-                .map_err(|error| format!("解析 threads 列失败: {}", error))?,
-        );
-    }
-
-    if columns.is_empty() {
-        return Err("threads 表不存在或没有列定义".to_string());
-    }
-
-    Ok(columns)
 }
 
 fn backup_instance_files(data_dir: &Path) -> Result<PathBuf, String> {
@@ -1099,6 +1050,10 @@ fn copy_rollout_file_to_path(
             .map(|existing| existing == content)
             .unwrap_or(false)
         {
+            modules::codex_session_file_time::restore_modified_time(
+                target_path,
+                snapshot.rollout_modified_at,
+            )?;
             return Ok(target_path.to_path_buf());
         }
         fs::write(target_path, content).map_err(|error| {
@@ -1108,10 +1063,18 @@ fn copy_rollout_file_to_path(
                 error
             )
         })?;
+        modules::codex_session_file_time::restore_modified_time(
+            target_path,
+            snapshot.rollout_modified_at,
+        )?;
         return Ok(target_path.to_path_buf());
     }
 
     if paths_point_to_same_file(&snapshot.rollout_path, target_path) {
+        modules::codex_session_file_time::restore_modified_time(
+            target_path,
+            snapshot.rollout_modified_at,
+        )?;
         return Ok(target_path.to_path_buf());
     }
 
@@ -1128,6 +1091,10 @@ fn copy_rollout_file_to_path(
             error
         )
     })?;
+    modules::codex_session_file_time::restore_modified_time(
+        &target_path,
+        snapshot.rollout_modified_at,
+    )?;
     Ok(target_path.to_path_buf())
 }
 
@@ -1165,6 +1132,10 @@ fn backup_existing_rollout_file(
             error
         )
     })?;
+    modules::codex_session_file_time::restore_modified_time(
+        &backup_path,
+        modules::codex_session_file_time::read_modified_time(rollout_path),
+    )?;
     Ok(())
 }
 
@@ -1193,6 +1164,7 @@ fn rewrite_rollout_provider_for_target(
     rollout_path: &Path,
     target_provider: &str,
 ) -> Result<(), String> {
+    let original_modified_at = modules::codex_session_file_time::read_modified_time(rollout_path);
     let content = fs::read_to_string(rollout_path).map_err(|error| {
         format!(
             "读取目标 rollout 文件失败 ({}): {}",
@@ -1231,64 +1203,7 @@ fn rewrite_rollout_provider_for_target(
             error
         )
     })?;
-    Ok(())
-}
-
-fn insert_thread_row(
-    transaction: &Transaction<'_>,
-    target_columns: &[String],
-    row_data: &ThreadRowData,
-) -> Result<(), String> {
-    let mut columns = Vec::new();
-    let mut values = Vec::new();
-
-    for column in target_columns {
-        if let Some(value) = row_data.get_value(column) {
-            columns.push(quote_identifier(column));
-            values.push(to_sql_literal(value));
-        }
-    }
-
-    if columns.is_empty() {
-        return Err("没有可写入的 threads 列".to_string());
-    }
-
-    let sql = format!(
-        "INSERT OR REPLACE INTO threads ({}) VALUES ({})",
-        columns.join(", "),
-        values.join(", ")
-    );
-
-    transaction
-        .execute(&sql, [])
-        .map_err(|error| format!("写入 threads 表失败: {}", error))?;
-    Ok(())
-}
-
-fn quote_identifier(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
-}
-
-fn to_sql_literal(value: &Value) -> String {
-    match value {
-        Value::Null => "NULL".to_string(),
-        Value::Integer(number) => number.to_string(),
-        Value::Real(number) => {
-            if number.is_finite() {
-                number.to_string()
-            } else {
-                "NULL".to_string()
-            }
-        }
-        Value::Text(text) => format!("'{}'", text.replace('\'', "''")),
-        Value::Blob(bytes) => format!(
-            "X'{}'",
-            bytes
-                .iter()
-                .map(|byte| format!("{:02X}", byte))
-                .collect::<String>()
-        ),
-    }
+    modules::codex_session_file_time::restore_modified_time(rollout_path, original_modified_at)
 }
 
 fn format_timestamp(timestamp: i64) -> Option<String> {
@@ -1298,5 +1213,112 @@ fn format_timestamp(timestamp: i64) -> Option<String> {
     } else {
         chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)
             .map(|value| value.to_rfc3339_opts(SecondsFormat::Micros, true))
+    }
+}
+
+fn format_timestamp_from_ms(timestamp_ms: i128) -> Option<String> {
+    if timestamp_ms <= 0 || timestamp_ms > i64::MAX as i128 {
+        return None;
+    }
+    format_timestamp(timestamp_ms as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn make_temp_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let base_dir =
+            std::env::temp_dir().join(format!("{}-{}-{}", prefix, std::process::id(), unique));
+        if base_dir.exists() {
+            fs::remove_dir_all(&base_dir).expect("cleanup old temp dir");
+        }
+        fs::create_dir_all(&base_dir).expect("create temp dir");
+        base_dir
+    }
+
+    #[test]
+    fn copied_rollout_preserves_source_modified_time() {
+        let temp_dir = make_temp_dir("codex-thread-sync-mtime-copy-test");
+        let source_root = temp_dir.join("source");
+        let target_root = temp_dir.join("target");
+        let rollout_dir = source_root
+            .join("sessions")
+            .join("2026")
+            .join("05")
+            .join("23");
+        fs::create_dir_all(&rollout_dir).expect("create source rollout dir");
+        let rollout_path = rollout_dir.join("rollout-test.jsonl");
+        fs::write(
+            &rollout_path,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"s1\",\"model_provider\":\"openai\"}}\n{\"type\":\"event\"}\n",
+        )
+        .expect("write source rollout");
+        let source_modified_at = UNIX_EPOCH + Duration::from_secs(1_710_000_000);
+        fs::File::open(&rollout_path)
+            .expect("open source rollout")
+            .set_modified(source_modified_at)
+            .expect("set source mtime");
+
+        let snapshot = ThreadSnapshot {
+            id: "s1".to_string(),
+            rollout_path: rollout_path.clone(),
+            rollout_actual_modified_at: Some(source_modified_at),
+            rollout_modified_at: Some(source_modified_at),
+            merged_rollout_content: None,
+            session_index_entry: json!({"id":"s1"}),
+            source_root: source_root.clone(),
+            freshness: ThreadFreshness {
+                activity_ms: 0,
+                rollout_len: 0,
+                rollout_modified_ms: 0,
+            },
+        };
+        let target_path = target_root.join("sessions/2026/05/23/rollout-test.jsonl");
+
+        copy_rollout_file_to_path(&snapshot, &target_path).expect("copy rollout");
+
+        assert_eq!(
+            fs::metadata(&target_path)
+                .expect("target metadata")
+                .modified()
+                .expect("target mtime"),
+            source_modified_at
+        );
+        fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn provider_rewrite_preserves_rollout_modified_time() {
+        let temp_dir = make_temp_dir("codex-thread-sync-mtime-provider-test");
+        let rollout_path = temp_dir.join("rollout-test.jsonl");
+        fs::write(
+            &rollout_path,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"s1\",\"model_provider\":\"old\"}}\n{\"type\":\"event\"}\n",
+        )
+        .expect("write rollout");
+        let original_modified_at = UNIX_EPOCH + Duration::from_secs(1_720_000_000);
+        fs::File::open(&rollout_path)
+            .expect("open rollout")
+            .set_modified(original_modified_at)
+            .expect("set rollout mtime");
+
+        rewrite_rollout_provider_for_target(&rollout_path, "relay").expect("rewrite provider");
+
+        let content = fs::read_to_string(&rollout_path).expect("read rollout");
+        assert!(content.contains("\"model_provider\":\"relay\""));
+        assert_eq!(
+            fs::metadata(&rollout_path)
+                .expect("rollout metadata")
+                .modified()
+                .expect("rollout mtime"),
+            original_modified_at
+        );
+        fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
     }
 }

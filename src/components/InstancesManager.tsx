@@ -2194,7 +2194,6 @@ export function InstancesManager<TAccount extends AccountLike>({
     speed: CodexAppSpeed,
   ) => {
     if (!isCodexApp) return;
-    if ((instance.appSpeed ?? "standard") === speed) return;
     setActionLoading(instance.id);
     try {
       await updateInstance({

@@ -1180,6 +1180,8 @@
       "noGroups": "No Groups",
       "noGroupsDesc": "Create groups to manage your accounts in batches",
       "manage": "Manage",
+      "refresh": "Refresh Group",
+      "refreshEmpty": "No refreshable accounts in this group",
       "error": {
         "duplicate": "Group name already exists",
         "createFailed": "Failed to create group: {{error}}",
@@ -1817,6 +1819,14 @@
       "accessScopeLocalhostShort": "Local Only",
       "accessScopeLanShort": "Local+LAN",
       "accessScopeSaveSuccess": "API service access scope updated",
+      "imageGenerationLabel": "image_generation",
+      "imageGenerationDesc": "Controls whether chat requests declare the image tool and whether image endpoints are available.",
+      "imageGenerationSaveSuccess": "image_generation setting updated",
+      "imageGenerationMode": {
+        "enabled": "Enabled",
+        "imagesOnly": "Images Only",
+        "disabled": "Disabled"
+      },
       "apiPortUrl": "API Port URL",
       "apiKey": "API Key",
       "modelId": "Model ID",
@@ -1832,6 +1842,20 @@
       "manageAccounts": "Manage Accounts",
       "rotateKey": "Reset Key",
       "rotateConfirmMessage": "The current API service key will stop working immediately after reset, and in-flight requests may become unavailable. Continue?",
+      "apiKeysTitle": "Client Keys",
+      "apiKeyAdd": "Add Key",
+      "apiKeyLabel": "Key Label",
+      "apiKeySaveLabel": "Save Label",
+      "apiKeyDefaultLabel": "Client {{index}}",
+      "apiKeyCreateSuccess": "API Key created",
+      "apiKeyUpdateSuccess": "API Key updated",
+      "apiKeyRotateSuccess": "API Key reset",
+      "apiKeyDeleteSuccess": "API Key deleted",
+      "apiKeyRotateConfirm": "This API Key will stop working immediately after reset. Continue?",
+      "apiKeyDeleteConfirm": "Delete this API Key?",
+      "apiKeyDelete": "Delete Key",
+      "apiKeyDisable": "Disable Key",
+      "apiKeyEnable": "Enable Key",
       "disableService": "Disable Service",
       "enableService": "Enable Service",
       "testAction": "Test",
@@ -1863,6 +1887,7 @@
       "enableAndActivateAction": "Enable and Switch",
       "activateSuccess": "Switched to API service",
       "saveSuccess": "API service collection updated",
+      "noEligibleAccountsSelected": "The selected accounts are not in this environment or cannot be used by the API service. Import a usable Codex account in this environment first.",
       "removeSuccess": "Account removed from API service",
       "rotateSuccess": "API service key reset",
       "enabledSuccess": "API service enabled",
@@ -1898,6 +1923,17 @@
       "refreshStats": "Refresh Stats",
       "refreshStatsSuccess": "API service stats have been refreshed",
       "accountStatsTitle": "By Account",
+      "modelStatsTitle": "By Model",
+      "apiKeyStatsTitle": "By Key",
+      "healthAvailable": "Available",
+      "healthUnavailable": "Unavailable",
+      "healthCooldown": "Cooldown {{count}}",
+      "healthImageUnavailable": "Image unavailable",
+      "requestLogTitle": "Request Logs",
+      "requestLogEmpty": "No request logs yet",
+      "requestLogSuccess": "Success",
+      "requestLogFailed": "Failed",
+      "requestLogTokens": "{{value}} Tokens",
       "statsEmpty": "No stats yet",
       "summaryMeta": "{{count}} accounts · {{scope}}",
       "summaryMetaUnconfigured": "Not configured · {{scope}}",
@@ -1940,6 +1976,12 @@
         "expirySoonFirst": "Expiry Soon First",
         "custom": "Custom"
       },
+      "requestKind": {
+        "text": "Text",
+        "imageGeneration": "Image",
+        "imageEdit": "Edit",
+        "other": "Other"
+      },
       "stats": {
         "requests": "Requests",
         "requestsDetail": "Success {{success}} / Failed {{failed}}",
@@ -1947,6 +1989,8 @@
         "tokensDetail": "Input {{input}} / Output {{output}}",
         "specialTokens": "Cache / Reasoning",
         "specialTokensDetail": "Cache {{cached}} / Reasoning {{reasoning}}",
+        "images": "Image Requests",
+        "imagesDetail": "Generate {{generate}} / Edit {{edit}} / Capability {{blocked}}",
         "avgLatency": "Avg Latency",
         "successRate": "Success Rate {{rate}}%",
         "accountRequests": "{{count}} requests",
@@ -1956,7 +2000,7 @@
       },
       "modal": {
         "title": "Add to API Service",
-        "desc": "Choose the OAuth accounts to include in the API service collection. Added accounts are hidden from the regular overview and managed only from the API service card.",
+        "desc": "Choose Codex OAuth or API Key accounts to include in the API service collection. Added accounts are hidden from the regular overview and managed only from the API service card.",
         "restrictFreeToggle": "Limit Free Accounts",
         "freeNoticeRestricted": "Free accounts are limited. Turn this off to select them.",
         "freeNoticeUnstable": "Free-account proxying can be unstable. Use with caution.",
@@ -1964,14 +2008,14 @@
         "restrictFreeDisableConfirmMessage": "Free-account proxying can be unstable. Are you sure you want to use them?",
         "freeNotice": "Free accounts are not supported yet. Free accounts cannot be selected.",
         "freeUnsupported": "Free Limited",
-        "empty": "No OAuth accounts available",
+        "empty": "No Codex accounts available",
         "selected": "In API Service",
         "available": "Regular Overview",
         "manageMembers": "Manage Members",
         "save": "Save Collection"
       },
       "oauthBinding": {
-        "desc": "Optional. Without a link, the API service keeps the original API-key flow; after linking, sign-in uses the OAuth account and Provider uses the API service config.",
+        "desc": "Optional. Only OAuth accounts with a subscription term marker can be selected; expired terms are allowed. Without a link, the API service keeps the original API-key flow; after linking, sign-in uses the OAuth account and Provider uses the API service config.",
         "currentService": "API Service: {{name}}"
       },
       "customRoutingEdit": "Edit Custom Routing",
@@ -1995,7 +2039,8 @@
       "upstreamProxyLabel": "API proxy URL",
       "upstreamProxySaveSuccess": "API proxy URL updated",
       "upstreamProxyUrlPlaceholder": "Blank = global proxy",
-      "upstreamProxySaveAction": "Save proxy"
+      "upstreamProxySaveAction": "Save proxy",
+      "testSuccessInline": "API service test passed"
     },
     "api": {
       "baseUrl": "Base URL",
@@ -2093,11 +2138,13 @@
         "action": "Link OAuth",
         "actionShort": "Link",
         "title": "Link OAuth Account",
-        "desc": "Optional. Without a link, this account switches with the original API-key flow; after linking, sign-in uses the OAuth account and Provider uses this API-key config.",
+        "desc": "Optional. Only OAuth accounts with a subscription term marker can be selected; expired terms are allowed. Without a link, this account switches with the original API-key flow; after linking, sign-in uses the OAuth account and Provider uses this API-key config.",
         "currentAccount": "API-key account: {{name}}",
         "selectLabel": "Select OAuth account",
         "empty": "No OAuth accounts yet. Add an OAuth-authorized account first.",
+        "emptyEligible": "No OAuth accounts with a subscription term. Refresh quota or add an eligible OAuth account first.",
         "validationRequired": "Select an OAuth account.",
+        "validationSubscriptionRequired": "Only OAuth accounts with a subscription term can be linked.",
         "saveSuccess": "OAuth link updated.",
         "saveFailed": "Failed to link OAuth: {{error}}",
         "switchRequiresBinding": "Link an OAuth account first.",
@@ -2525,8 +2572,8 @@
       "confirm": {
         "title": "Move to Trash",
         "message": "Selected sessions will be moved to Trash from their instances so they can be restored later. Running instances may need a restart before the change appears. Continue?",
-        "syncMessage": "Missing threads and their session data will be synced to all instances. Existing content will not be written again, and target instance files will be backed up before any write occurs. Continue?",
-        "repairVisibilityMessage": "This will repair provider metadata in rollout files and state_5.sqlite using each instance's root config.toml model_provider (defaulting to openai when missing). Files that will be changed are backed up before writing. Running instances may need a restart before the change appears. Continue?"
+        "syncMessage": "Missing rollout files, session_index entries, and session file times will be synced to all instances, then official Codex will rebuild the session index. Existing content will not be written again, and target files are backed up before writing. Continue?",
+        "repairVisibilityMessage": "This will repair provider metadata in rollout files using each instance's root config.toml model_provider (defaulting to openai when missing), preserve each session file's original modified time, then ask official Codex to rebuild the session index. Changed rollout files are backed up before writing. Continue?"
       },
       "empty": {
         "title": "No sessions to manage",
@@ -2536,8 +2583,8 @@
         "pickOne": "Please select at least one session",
         "pickRestoreOne": "Please select at least one session to restore",
         "syncNeedTwo": "At least two instances are required to sync sessions",
-        "repairVisibilitySkippedOnly": "No writable provider differences were found; skipped {{count}} invalid or corrupted state_5.sqlite file(s). Codex must regenerate them before their SQLite records can be repaired.",
-        "repairVisibilitySkippedWithBase": "{{message}}; skipped {{count}} invalid or corrupted state_5.sqlite file(s). Codex must regenerate them before their SQLite records can be repaired."
+        "repairVisibilitySkippedOnly": "Official Codex now owns session index rebuilds; Cockpit does not write the state database.",
+        "repairVisibilitySkippedWithBase": "{{message}}; official Codex now owns session index rebuilds."
       },
       "groupCount": "{{count}} sessions",
       "updatedAt": "Updated",
@@ -2549,14 +2596,14 @@
       "untitled": "Untitled session",
       "restoreModal": {
         "title": "Restore Sessions",
-        "hint": "Restoring puts the rollout file, SQLite thread row, and session_index entry back into the original instance together.",
+        "hint": "Restoring puts the rollout file, session_index entry, and session file time back into the original instance, then asks official Codex to rebuild the session index.",
         "emptyTitle": "Trash is empty",
         "emptyDesc": "Sessions moved to Trash will appear here.",
         "restoreAction": "Restore Selected Sessions"
       },
       "targetModal": {
         "title": "Copy to Instance",
-        "hint": "Copies the selected sessions into the target instance. Sessions with the same ID already present there are skipped. Running target instances may need a restart before they appear.",
+        "hint": "Copies the selected sessions' rollout files, session_index entries, and session file times into the target instance, then asks official Codex to rebuild the session index. Sessions with the same ID already present there are skipped.",
         "targetInstance": "Target instance",
         "pickTarget": "Select a target instance",
         "selectedCount": "{{count}} session(s) selected",
@@ -2575,6 +2622,84 @@
       "fastDesc": "1.5x speed, higher usage",
       "saveSuccess": "Speed updated",
       "saveFailed": "Failed to save speed: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Codex API Service",
+      "title": "Codex API Service",
+      "subtitle": "Expose the Codex OAuth / API Key account pool as an OpenAI-compatible API for local or LAN clients.",
+      "openPage": "Open API Service",
+      "openFullPage": "View All Features",
+      "tabs": {
+        "overview": "Service Overview",
+        "keys": "Client Keys",
+        "accounts": "Account Pool",
+        "models": "Models & Capabilities",
+        "logs": "Stats & Logs"
+      },
+      "healthTitle": "Service Health",
+      "health": {
+        "availableAccounts": "Available Accounts",
+        "cooldowns": "Cooldowns",
+        "imageUnavailable": "Images Unavailable",
+        "keys": "Client Keys"
+      },
+      "accountHealth": {
+        "failures": "{{count}} consecutive failure(s)",
+        "image": "Images {{status}}"
+      },
+      "models": {
+        "availableTitle": "Available Models",
+        "capabilityTitle": "Capability Switches",
+        "capabilityDesc": "gpt-image-2 is shown or hidden automatically based on the service switch, account plan, and recorded image capability state.",
+        "rulesTitle": "Model Rules",
+        "aliasTitle": "Model Aliases",
+        "aliasPlaceholder": "gpt-5 => g5; add + to keep the original model",
+        "excludedTitle": "Hidden Models",
+        "excludedPlaceholder": "One model or wildcard per line, e.g. gpt-5-*",
+        "saveRules": "Save Rules",
+        "rulesSaved": "Model rules saved"
+      },
+      "keys": {
+        "policyTitle": "Model Policy",
+        "advancedPolicyTitle": "Advanced: Model Policy",
+        "modelPrefix": "Model Prefix",
+        "modelPrefixPlaceholder": "Example: codex",
+        "allowedModels": "Allowed Models",
+        "allowedModelsPlaceholder": "Blank allows all; one model or wildcard per line",
+        "excludedModels": "Excluded Models",
+        "excludedModelsPlaceholder": "One model or wildcard per line",
+        "savePolicy": "Save Policy",
+        "policySaved": "Key model policy saved"
+      },
+      "routing": {
+        "optionsTitle": "Routing Options",
+        "sessionAffinity": "Session Affinity",
+        "sessionAffinityTtl": "Affinity TTL",
+        "maxRetryCredentials": "Retry Accounts",
+        "maxRetryInterval": "Retry Wait",
+        "disableCooling": "Disable Cooldown",
+        "saveOptions": "Save Options",
+        "optionsSaved": "Routing options saved"
+      },
+      "validation": {
+        "numberRange": "Enter a number from {{min}} to {{max}}"
+      },
+      "logs": {
+        "allKinds": "All Types",
+        "allStatuses": "All Statuses",
+        "modelFilter": "Model",
+        "modelPlaceholder": "Model ID",
+        "accountFilter": "Account",
+        "accountPlaceholder": "Email or account ID",
+        "apiKeyFilter": "API Key",
+        "apiKeyPlaceholder": "Name or ID",
+        "kindFilter": "Type",
+        "statusFilter": "Status",
+        "errorFilter": "Error",
+        "errorPlaceholder": "Error category",
+        "clearFilters": "Clear Filters",
+        "loading": "Loading request logs"
+      }
     }
   },
   "codebuddy": {

@@ -1098,6 +1098,8 @@
       "noGroups": "Brak grup",
       "noGroupsDesc": "Utwórz grupy, aby zarządzać kontami",
       "manage": "Zarządzaj",
+      "refresh": "Odśwież grupę",
+      "refreshEmpty": "Brak kont do odświeżenia w tej grupie",
       "error": {
         "duplicate": "Nazwa grupy już istnieje",
         "createFailed": "Nie udało się utworzyć grupy: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Wyłącz usługę",
       "enableService": "Włącz usługę",
       "saveSuccess": "Zaktualizowano kolekcję usługi API",
+      "noEligibleAccountsSelected": "Wybrane konta nie znajdują się w tym środowisku albo nie mogą być użyte przez usługę API. Najpierw zaimportuj do tego środowiska użyteczne konto Codex.",
       "removeSuccess": "Usunięto konto z usługi API",
       "rotateSuccess": "Zresetowano klucz usługi API",
       "enabledSuccess": "Usługa API została włączona",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} żądań",
         "accountTokens": "{{count}} tokenów",
         "accountResult": "Sukces {{success}} / Błąd {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Żądania obrazów",
+        "imagesDetail": "Generuj {{generate}} / Edytuj {{edit}} / Uprawnienia {{blocked}}"
       },
       "routingLabel": "Trasowanie",
       "routingSaveSuccess": "Zaktualizowano trasowanie usługi API",
@@ -1900,7 +1905,7 @@
         "empty": "Brak statystyk limitów"
       },
       "oauthBinding": {
-        "desc": "Opcjonalne. Bez powiązania usługa API działa według dotychczasowej logiki API Key; po powiązaniu logowanie używa konta OAuth, a Provider konfiguracji usługi API.",
+        "desc": "Opcjonalne. Można wybrać tylko konta OAuth z oznaczeniem okresu subskrypcji; okresy wygasłe też są dozwolone. Bez powiązania usługa API działa według dotychczasowej logiki API Key; po powiązaniu logowanie używa konta OAuth, a Provider konfiguracji usługi API.",
         "currentService": "Usługa API: {{name}}"
       },
       "customRoutingEdit": "Edytuj niestandardowe routowanie",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "Adres proxy API",
       "upstreamProxySaveSuccess": "Adres proxy API zaktualizowany",
       "upstreamProxyUrlPlaceholder": "Puste = proxy globalne",
-      "upstreamProxySaveAction": "Zapisz proxy"
+      "upstreamProxySaveAction": "Zapisz proxy",
+      "imageGenerationLabel": "Narzędzie image_generation",
+      "imageGenerationDesc": "Określa, czy czaty tekstowe deklarują narzędzie obrazu oraz czy endpointy obrazów są dostępne.",
+      "imageGenerationSaveSuccess": "Ustawienie image_generation zaktualizowane",
+      "apiKeysTitle": "Klucze klienta",
+      "apiKeyAdd": "Dodaj klucz",
+      "apiKeyLabel": "Nazwa klucza",
+      "apiKeySaveLabel": "Zapisz nazwę",
+      "apiKeyDefaultLabel": "Klient {{index}}",
+      "apiKeyCreateSuccess": "API Key utworzony",
+      "apiKeyUpdateSuccess": "API Key zaktualizowany",
+      "apiKeyRotateSuccess": "API Key zresetowany",
+      "apiKeyDeleteSuccess": "API Key usunięty",
+      "apiKeyRotateConfirm": "Ten API Key przestanie działać natychmiast po resecie. Kontynuować?",
+      "apiKeyDeleteConfirm": "Usunąć ten API Key?",
+      "apiKeyDelete": "Usuń klucz",
+      "apiKeyDisable": "Wyłącz klucz",
+      "apiKeyEnable": "Włącz klucz",
+      "modelStatsTitle": "Według modelu",
+      "apiKeyStatsTitle": "Według klucza",
+      "healthAvailable": "Dostępne",
+      "healthUnavailable": "Niedostępne",
+      "healthCooldown": "Oczekiwanie {{count}}",
+      "healthImageUnavailable": "Obraz niedostępny",
+      "requestLogTitle": "Dziennik żądań",
+      "requestLogEmpty": "Brak dziennika żądań",
+      "requestLogSuccess": "Sukces",
+      "requestLogFailed": "Błąd",
+      "requestLogTokens": "{{value}} tokenów",
+      "imageGenerationMode": {
+        "enabled": "Włączone",
+        "imagesOnly": "Tylko obrazy",
+        "disabled": "Wyłączone"
+      },
+      "requestKind": {
+        "text": "Tekst",
+        "imageGeneration": "Obraz",
+        "imageEdit": "Edycja",
+        "other": "Inne"
+      },
+      "testSuccessInline": "Test usługi API zakończony powodzeniem"
     },
     "local": {
       "desc": "Importuj bieżące konto z ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Powiąż OAuth",
         "actionShort": "Powiąż",
         "title": "Powiąż konto OAuth",
-        "desc": "Opcjonalne. Bez powiązania to konto przełącza się według dotychczasowej logiki API Key; po powiązaniu logowanie używa konta OAuth, a Provider konfiguracji tego konta API Key.",
+        "desc": "Opcjonalne. Można wybrać tylko konta OAuth z oznaczeniem okresu subskrypcji; okresy wygasłe też są dozwolone. Bez powiązania to konto przełącza się według dotychczasowej logiki API Key; po powiązaniu logowanie używa konta OAuth, a Provider konfiguracji tego konta API Key.",
         "currentAccount": "Konto API Key: {{name}}",
         "selectLabel": "Wybierz konto OAuth",
         "empty": "Brak kont OAuth. Najpierw dodaj konto z autoryzacją OAuth.",
+        "emptyEligible": "Brak kont OAuth z okresem subskrypcji. Najpierw odśwież limit albo dodaj kwalifikujące się konto OAuth.",
         "validationRequired": "Wybierz konto OAuth",
+        "validationSubscriptionRequired": "Można powiązać tylko konto OAuth z okresem subskrypcji",
         "saveSuccess": "Powiązanie OAuth zaktualizowane",
         "saveFailed": "Nie udało się powiązać OAuth: {{error}}",
         "switchRequiresBinding": "Najpierw powiąż konto OAuth",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Szybkość 1,5x, większe użycie",
       "saveSuccess": "Szybkość zaktualizowana",
       "saveFailed": "Nie udało się zapisać szybkości: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Usługa API Codex",
+      "title": "Usługa API Codex",
+      "subtitle": "Udostępnia pulę kont Codex OAuth jako API zgodne z OpenAI dla klientów lokalnych lub LAN.",
+      "openPage": "Otwórz usługę API",
+      "openFullPage": "Zobacz wszystkie funkcje",
+      "tabs": {
+        "overview": "Przegląd usługi",
+        "keys": "Klucze klienta",
+        "accounts": "Pula kont",
+        "models": "Modele i możliwości",
+        "logs": "Statystyki i dzienniki"
+      },
+      "healthTitle": "Kondycja usługi",
+      "health": {
+        "availableAccounts": "Dostępne konta",
+        "cooldowns": "Czasy odnowienia",
+        "imageUnavailable": "Obrazy niedostępne",
+        "keys": "Klucze klienta"
+      },
+      "accountHealth": {
+        "failures": "{{count}} kolejnych niepowodzeń",
+        "image": "Obrazy {{status}}"
+      },
+      "models": {
+        "availableTitle": "Dostępne modele",
+        "capabilityTitle": "Przełączniki możliwości",
+        "capabilityDesc": "gpt-image-2 jest automatycznie pokazywany lub ukrywany na podstawie przełącznika usługi, planu konta i zapisanego stanu możliwości obrazów.",
+        "rulesTitle": "Reguły modeli",
+        "aliasTitle": "Aliasy modeli",
+        "aliasPlaceholder": "gpt-5 => g5; + zachowuje oryginalny model",
+        "excludedTitle": "Ukryte modele",
+        "excludedPlaceholder": "Model lub wzorzec w każdym wierszu, np. gpt-5-*",
+        "saveRules": "Zapisz reguły",
+        "rulesSaved": "Reguły modeli zapisane"
+      },
+      "keys": {
+        "policyTitle": "Polityka modeli",
+        "advancedPolicyTitle": "Zaawansowane: polityka modeli",
+        "modelPrefix": "Prefiks modelu",
+        "modelPrefixPlaceholder": "Przykład: codex",
+        "allowedModels": "Dozwolone modele",
+        "allowedModelsPlaceholder": "Puste zezwala na wszystko; model lub wzorzec w każdym wierszu",
+        "excludedModels": "Wykluczone modele",
+        "excludedModelsPlaceholder": "Model lub wzorzec w każdym wierszu",
+        "savePolicy": "Zapisz politykę",
+        "policySaved": "Polityka modeli Key zapisana"
+      },
+      "routing": {
+        "optionsTitle": "Opcje routingu",
+        "sessionAffinity": "Przywiązanie sesji",
+        "sessionAffinityTtl": "TTL przywiązania",
+        "maxRetryCredentials": "Konta retry",
+        "maxRetryInterval": "Czas retry",
+        "disableCooling": "Wyłącz cooldown",
+        "saveOptions": "Zapisz opcje",
+        "optionsSaved": "Opcje routingu zapisane"
+      },
+      "validation": {
+        "numberRange": "Wpisz liczbę od {{min}} do {{max}}"
+      },
+      "logs": {
+        "allKinds": "Wszystkie typy",
+        "allStatuses": "Wszystkie statusy",
+        "modelFilter": "Modele",
+        "modelPlaceholder": "ID modelu",
+        "accountFilter": "Konto",
+        "accountPlaceholder": "E-mail lub ID konta",
+        "apiKeyFilter": "Klucz API",
+        "apiKeyPlaceholder": "Nazwa lub ID",
+        "kindFilter": "Typ",
+        "statusFilter": "Stan",
+        "errorFilter": "Błąd",
+        "errorPlaceholder": "Kategoria błędu",
+        "clearFilters": "Wyczyść filtry",
+        "loading": "Ładowanie logów"
+      }
     }
   },
   "githubCopilot": {

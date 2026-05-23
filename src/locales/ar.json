@@ -1144,6 +1144,8 @@
       "noGroups": "لا توجد مجموعات",
       "noGroupsDesc": "أنشئ مجموعات لإدارة حساباتك",
       "manage": "إدارة",
+      "refresh": "تحديث المجموعة",
+      "refreshEmpty": "لا توجد حسابات قابلة للتحديث في هذه المجموعة",
       "error": {
         "duplicate": "اسم المجموعة موجود بالفعل",
         "createFailed": "فشل إنشاء المجموعة: {{error}}",
@@ -1801,6 +1803,7 @@
       "disableService": "تعطيل الخدمة",
       "enableService": "تمكين الخدمة",
       "saveSuccess": "تم تحديث مجموعة خدمة API",
+      "noEligibleAccountsSelected": "الحسابات المحددة غير موجودة في هذه البيئة أو لا يمكن استخدامها بواسطة خدمة API. استورد حساب Codex صالحًا في هذه البيئة أولاً.",
       "removeSuccess": "تمت إزالة الحساب من خدمة API",
       "rotateSuccess": "تمت إعادة تعيين مفتاح خدمة API",
       "enabledSuccess": "تم تمكين خدمة API",
@@ -1878,7 +1881,9 @@
         "accountRequests": "{{count}} طلب",
         "accountTokens": "{{count}} رمز",
         "accountResult": "نجاح {{success}} / فشل {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "طلبات الصور",
+        "imagesDetail": "إنشاء {{generate}} / تعديل {{edit}} / صلاحية {{blocked}}"
       },
       "routingLabel": "توجيه",
       "routingSaveSuccess": "تم تحديث توجيه خدمة API",
@@ -1946,7 +1951,7 @@
         "empty": "لا توجد إحصاءات حصة بعد"
       },
       "oauthBinding": {
-        "desc": "اختياري. بدون ربط، تعمل خدمة API بالمسار السابق لمفتاح API؛ وبعد الربط تستخدم حالة تسجيل الدخول حساب OAuth ويستخدم Provider إعدادات خدمة API الحالية.",
+        "desc": "اختياري. لا يمكن اختيار إلا حساب OAuth لديه علامة مدة اشتراك؛ والحسابات المنتهية مسموحة. بدون ربط، تعمل خدمة API بالمسار السابق لمفتاح API؛ وبعد الربط تستخدم حالة تسجيل الدخول حساب OAuth ويستخدم Provider إعدادات خدمة API الحالية.",
         "currentService": "خدمة API: {{name}}"
       },
       "customRoutingEdit": "تعديل التوجيه المخصص",
@@ -1970,7 +1975,47 @@
       "upstreamProxyLabel": "عنوان وكيل API",
       "upstreamProxySaveSuccess": "تم تحديث عنوان وكيل API",
       "upstreamProxyUrlPlaceholder": "فارغ = الوكيل العام",
-      "upstreamProxySaveAction": "حفظ الوكيل"
+      "upstreamProxySaveAction": "حفظ الوكيل",
+      "imageGenerationLabel": "أداة image_generation",
+      "imageGenerationDesc": "يتحكم في إعلان أداة الصور في محادثات النص وفي إتاحة واجهات الصور.",
+      "imageGenerationSaveSuccess": "تم تحديث إعداد image_generation",
+      "apiKeysTitle": "مفاتيح العملاء",
+      "apiKeyAdd": "إضافة مفتاح",
+      "apiKeyLabel": "اسم المفتاح",
+      "apiKeySaveLabel": "حفظ الاسم",
+      "apiKeyDefaultLabel": "العميل {{index}}",
+      "apiKeyCreateSuccess": "تم إنشاء API Key",
+      "apiKeyUpdateSuccess": "تم تحديث API Key",
+      "apiKeyRotateSuccess": "تمت إعادة ضبط API Key",
+      "apiKeyDeleteSuccess": "تم حذف API Key",
+      "apiKeyRotateConfirm": "سيتوقف هذا API Key فور إعادة الضبط. هل تريد المتابعة؟",
+      "apiKeyDeleteConfirm": "هل تريد حذف API Key هذا؟",
+      "apiKeyDelete": "حذف المفتاح",
+      "apiKeyDisable": "تعطيل المفتاح",
+      "apiKeyEnable": "تفعيل المفتاح",
+      "modelStatsTitle": "حسب النموذج",
+      "apiKeyStatsTitle": "حسب المفتاح",
+      "healthAvailable": "متاح",
+      "healthUnavailable": "غير متاح",
+      "healthCooldown": "تهدئة {{count}}",
+      "healthImageUnavailable": "الصور غير متاحة",
+      "requestLogTitle": "سجل الطلبات",
+      "requestLogEmpty": "لا توجد سجلات طلبات بعد",
+      "requestLogSuccess": "نجح",
+      "requestLogFailed": "فشل",
+      "requestLogTokens": "{{value}} رموز",
+      "imageGenerationMode": {
+        "enabled": "مفعّل",
+        "imagesOnly": "للصور فقط",
+        "disabled": "معطّل"
+      },
+      "requestKind": {
+        "text": "نص",
+        "imageGeneration": "إنشاء صورة",
+        "imageEdit": "تعديل صورة",
+        "other": "أخرى"
+      },
+      "testSuccessInline": "نجح اختبار خدمة API"
     },
     "local": {
       "desc": "استيراد الحساب الحالي من ~/.codex/auth.json",
@@ -2381,11 +2426,13 @@
         "action": "ربط OAuth",
         "actionShort": "ربط",
         "title": "ربط حساب OAuth",
-        "desc": "اختياري. بدون ربط، ينتقل هذا الحساب بالمسار السابق لمفتاح API؛ وبعد الربط تستخدم حالة تسجيل الدخول حساب OAuth ويستخدم Provider إعدادات حساب API Key هذا.",
+        "desc": "اختياري. لا يمكن اختيار إلا حساب OAuth لديه علامة مدة اشتراك؛ والحسابات المنتهية مسموحة. بدون ربط، ينتقل هذا الحساب بالمسار السابق لمفتاح API؛ وبعد الربط تستخدم حالة تسجيل الدخول حساب OAuth ويستخدم Provider إعدادات حساب API Key هذا.",
         "currentAccount": "حساب API Key: {{name}}",
         "selectLabel": "اختر حساب OAuth",
         "empty": "لا توجد حسابات OAuth بعد. أضف حسابا مصرحا عبر OAuth أولا.",
+        "emptyEligible": "لا توجد حسابات OAuth لديها مدة اشتراك. حدّث الحصة أو أضف حساب OAuth مؤهلاً أولاً.",
         "validationRequired": "اختر حساب OAuth",
+        "validationSubscriptionRequired": "يمكن ربط حساب OAuth لديه مدة اشتراك فقط",
         "saveSuccess": "تم تحديث ربط OAuth",
         "saveFailed": "فشل ربط OAuth: {{error}}",
         "switchRequiresBinding": "اربط حساب OAuth أولا",
@@ -2575,6 +2622,84 @@
       "fastDesc": "سرعة 1.5x، استخدام أعلى",
       "saveSuccess": "تم تحديث السرعة",
       "saveFailed": "فشل حفظ السرعة: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "خدمة Codex API",
+      "title": "خدمة Codex API",
+      "subtitle": "اعرض مجموعة حسابات Codex OAuth كواجهة API متوافقة مع OpenAI للعملاء المحليين أو عملاء الشبكة المحلية.",
+      "openPage": "فتح خدمة API",
+      "openFullPage": "عرض كل الميزات",
+      "tabs": {
+        "overview": "نظرة عامة على الخدمة",
+        "keys": "مفاتيح العميل",
+        "accounts": "مجموعة الحسابات",
+        "models": "النماذج والقدرات",
+        "logs": "الإحصاءات والسجلات"
+      },
+      "healthTitle": "صحة الخدمة",
+      "health": {
+        "availableAccounts": "الحسابات المتاحة",
+        "cooldowns": "فترات التهدئة",
+        "imageUnavailable": "الصور غير متاحة",
+        "keys": "مفاتيح العميل"
+      },
+      "accountHealth": {
+        "failures": "{{count}} إخفاقات متتالية",
+        "image": "الصور {{status}}"
+      },
+      "models": {
+        "availableTitle": "النماذج المتاحة",
+        "capabilityTitle": "مفاتيح القدرات",
+        "capabilityDesc": "يتم إظهار gpt-image-2 أو إخفاؤه تلقائيًا حسب مفتاح الخدمة وخطة الحساب وحالة قدرة الصور المسجلة.",
+        "rulesTitle": "قواعد النماذج",
+        "aliasTitle": "أسماء النماذج البديلة",
+        "aliasPlaceholder": "gpt-5 => g5؛ أضف + للإبقاء على النموذج الأصلي",
+        "excludedTitle": "نماذج مخفية",
+        "excludedPlaceholder": "نموذج أو نمط في كل سطر، مثل gpt-5-*",
+        "saveRules": "حفظ القواعد",
+        "rulesSaved": "تم حفظ قواعد النماذج"
+      },
+      "keys": {
+        "policyTitle": "سياسة النماذج",
+        "advancedPolicyTitle": "ميزة متقدمة: سياسة النماذج",
+        "modelPrefix": "بادئة النموذج",
+        "modelPrefixPlaceholder": "مثال: codex",
+        "allowedModels": "النماذج المسموحة",
+        "allowedModelsPlaceholder": "فارغ يعني الكل؛ نموذج أو نمط في كل سطر",
+        "excludedModels": "النماذج المستبعدة",
+        "excludedModelsPlaceholder": "نموذج أو نمط في كل سطر",
+        "savePolicy": "حفظ السياسة",
+        "policySaved": "تم حفظ سياسة نماذج Key"
+      },
+      "routing": {
+        "optionsTitle": "خيارات التوجيه",
+        "sessionAffinity": "تثبيت الجلسة",
+        "sessionAffinityTtl": "TTL للتثبيت",
+        "maxRetryCredentials": "حسابات retry",
+        "maxRetryInterval": "انتظار retry",
+        "disableCooling": "تعطيل cooldown",
+        "saveOptions": "حفظ الخيارات",
+        "optionsSaved": "تم حفظ خيارات التوجيه"
+      },
+      "validation": {
+        "numberRange": "أدخل رقما بين {{min}} و {{max}}"
+      },
+      "logs": {
+        "allKinds": "كل الأنواع",
+        "allStatuses": "كل الحالات",
+        "modelFilter": "النموذج",
+        "modelPlaceholder": "معرّف النموذج",
+        "accountFilter": "الحساب",
+        "accountPlaceholder": "البريد أو معرّف الحساب",
+        "apiKeyFilter": "مفتاح API",
+        "apiKeyPlaceholder": "الاسم أو المعرّف",
+        "kindFilter": "النوع",
+        "statusFilter": "الحالة",
+        "errorFilter": "الخطأ",
+        "errorPlaceholder": "تصنيف الخطأ",
+        "clearFilters": "مسح الفلاتر",
+        "loading": "جار تحميل سجلات الطلبات"
+      }
     }
   },
   "githubCopilot": {

@@ -1098,6 +1098,8 @@
       "noGroups": "Sem grupos",
       "noGroupsDesc": "Crie grupos para gerenciar suas contas",
       "manage": "Gerenciar",
+      "refresh": "Atualizar grupo",
+      "refreshEmpty": "Nenhuma conta atualizável neste grupo",
       "error": {
         "duplicate": "Nome do grupo já existe",
         "createFailed": "Falha ao criar grupo: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Desativar serviço",
       "enableService": "Ativar serviço",
       "saveSuccess": "Coleção do serviço de API atualizada",
+      "noEligibleAccountsSelected": "As contas selecionadas não estão neste ambiente ou não podem ser usadas pelo serviço de API. Importe primeiro uma conta Codex utilizável neste ambiente.",
       "removeSuccess": "Conta removida do serviço de API",
       "rotateSuccess": "Chave do serviço de API redefinida",
       "enabledSuccess": "Serviço de API ativado",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} requisições",
         "accountTokens": "{{count}} tokens totais",
         "accountResult": "Sucesso {{success}} / Falha {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Requisições de imagem",
+        "imagesDetail": "Gerar {{generate}} / Editar {{edit}} / Permissão {{blocked}}"
       },
       "routingLabel": "Roteamento",
       "routingSaveSuccess": "Roteamento do serviço API atualizado",
@@ -1900,7 +1905,7 @@
         "empty": "Ainda sem estatísticas de cota"
       },
       "oauthBinding": {
-        "desc": "Opcional. Sem vínculo, o serviço API mantém o fluxo de API Key original; ao vincular, o login usa a conta OAuth e o Provider usa a configuração do serviço API.",
+        "desc": "Opcional. Só é possível selecionar contas OAuth com indicação de período de assinatura; períodos expirados também são aceitos. Sem vínculo, o serviço API mantém o fluxo de API Key original; ao vincular, o login usa a conta OAuth e o Provider usa a configuração do serviço API.",
         "currentService": "Serviço de API: {{name}}"
       },
       "customRoutingEdit": "Editar roteamento personalizado",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "URL do proxy da API",
       "upstreamProxySaveSuccess": "URL do proxy da API atualizada",
       "upstreamProxyUrlPlaceholder": "Vazio = proxy global",
-      "upstreamProxySaveAction": "Salvar proxy"
+      "upstreamProxySaveAction": "Salvar proxy",
+      "imageGenerationLabel": "Ferramenta image_generation",
+      "imageGenerationDesc": "Controla se conversas de texto declaram a ferramenta de imagem e se endpoints de imagem ficam disponíveis.",
+      "imageGenerationSaveSuccess": "Configuração de image_generation atualizada",
+      "apiKeysTitle": "Chaves de cliente",
+      "apiKeyAdd": "Adicionar chave",
+      "apiKeyLabel": "Nome da chave",
+      "apiKeySaveLabel": "Salvar nome",
+      "apiKeyDefaultLabel": "Cliente {{index}}",
+      "apiKeyCreateSuccess": "API Key criada",
+      "apiKeyUpdateSuccess": "API Key atualizada",
+      "apiKeyRotateSuccess": "API Key redefinida",
+      "apiKeyDeleteSuccess": "API Key excluída",
+      "apiKeyRotateConfirm": "Esta API Key deixará de funcionar imediatamente após redefinir. Continuar?",
+      "apiKeyDeleteConfirm": "Excluir esta API Key?",
+      "apiKeyDelete": "Excluir chave",
+      "apiKeyDisable": "Desativar chave",
+      "apiKeyEnable": "Ativar chave",
+      "modelStatsTitle": "Por modelo",
+      "apiKeyStatsTitle": "Por chave",
+      "healthAvailable": "Disponível",
+      "healthUnavailable": "Indisponível",
+      "healthCooldown": "Espera {{count}}",
+      "healthImageUnavailable": "Imagem indisponível",
+      "requestLogTitle": "Log de requisições",
+      "requestLogEmpty": "Ainda não há logs",
+      "requestLogSuccess": "Sucesso",
+      "requestLogFailed": "Falhou",
+      "requestLogTokens": "{{value}} tokens",
+      "imageGenerationMode": {
+        "enabled": "Ativado",
+        "imagesOnly": "Só imagens",
+        "disabled": "Desativado"
+      },
+      "requestKind": {
+        "text": "Texto",
+        "imageGeneration": "Imagem",
+        "imageEdit": "Edição",
+        "other": "Outro"
+      },
+      "testSuccessInline": "Teste do serviço API aprovado"
     },
     "local": {
       "desc": "Importe a conta atual de ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Vincular OAuth",
         "actionShort": "Vincular",
         "title": "Vincular conta OAuth",
-        "desc": "Opcional. Sem vínculo, esta conta alterna pelo fluxo de API Key original; ao vincular, o login usa a conta OAuth e o Provider usa a configuração desta conta API Key.",
+        "desc": "Opcional. Só é possível selecionar contas OAuth com indicação de período de assinatura; períodos expirados também são aceitos. Sem vínculo, esta conta alterna pelo fluxo de API Key original; ao vincular, o login usa a conta OAuth e o Provider usa a configuração desta conta API Key.",
         "currentAccount": "Conta API Key: {{name}}",
         "selectLabel": "Selecione a conta OAuth",
         "empty": "Nenhuma conta OAuth. Adicione primeiro uma conta autorizada por OAuth.",
+        "emptyEligible": "Nenhuma conta OAuth com período de assinatura. Atualize a cota ou adicione primeiro uma conta OAuth elegível.",
         "validationRequired": "Selecione uma conta OAuth",
+        "validationSubscriptionRequired": "Só é possível vincular contas OAuth com período de assinatura",
         "saveSuccess": "Vínculo OAuth atualizado",
         "saveFailed": "Falha ao vincular OAuth: {{error}}",
         "switchRequiresBinding": "Vincule uma conta OAuth primeiro",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Velocidade 1,5x, uso maior",
       "saveSuccess": "Velocidade atualizada",
       "saveFailed": "Falha ao salvar a velocidade: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Serviço API Codex",
+      "title": "Serviço API Codex",
+      "subtitle": "Expõe o pool de contas OAuth do Codex como uma API compatível com OpenAI para clientes locais ou de LAN.",
+      "openPage": "Abrir serviço API",
+      "openFullPage": "Ver todos os recursos",
+      "tabs": {
+        "overview": "Visão geral do serviço",
+        "keys": "Chaves cliente",
+        "accounts": "Pool de contas",
+        "models": "Modelos e capacidades",
+        "logs": "Estatísticas e logs"
+      },
+      "healthTitle": "Saúde do serviço",
+      "health": {
+        "availableAccounts": "Contas disponíveis",
+        "cooldowns": "Resfriamentos",
+        "imageUnavailable": "Imagens indisponíveis",
+        "keys": "Chaves cliente"
+      },
+      "accountHealth": {
+        "failures": "{{count}} falhas seguidas",
+        "image": "Imagens {{status}}"
+      },
+      "models": {
+        "availableTitle": "Modelos disponíveis",
+        "capabilityTitle": "Chaves de capacidade",
+        "capabilityDesc": "gpt-image-2 é exibido ou ocultado automaticamente conforme a chave do serviço, o plano da conta e o estado registrado da capacidade de imagem.",
+        "rulesTitle": "Regras de modelos",
+        "aliasTitle": "Aliases de modelos",
+        "aliasPlaceholder": "gpt-5 => g5; adicione + para manter o modelo original",
+        "excludedTitle": "Modelos ocultos",
+        "excludedPlaceholder": "Um modelo ou padrão por linha, ex. gpt-5-*",
+        "saveRules": "Salvar regras",
+        "rulesSaved": "Regras de modelos salvas"
+      },
+      "keys": {
+        "policyTitle": "Política de modelos",
+        "advancedPolicyTitle": "Avançado: política de modelos",
+        "modelPrefix": "Prefixo do modelo",
+        "modelPrefixPlaceholder": "Exemplo: codex",
+        "allowedModels": "Modelos permitidos",
+        "allowedModelsPlaceholder": "Vazio libera todos; um modelo ou padrão por linha",
+        "excludedModels": "Modelos excluídos",
+        "excludedModelsPlaceholder": "Um modelo ou padrão por linha",
+        "savePolicy": "Salvar política",
+        "policySaved": "Política de modelos do Key salva"
+      },
+      "routing": {
+        "optionsTitle": "Opções de rota",
+        "sessionAffinity": "Afinidade de sessão",
+        "sessionAffinityTtl": "TTL de afinidade",
+        "maxRetryCredentials": "Contas retry",
+        "maxRetryInterval": "Espera retry",
+        "disableCooling": "Desativar cooldown",
+        "saveOptions": "Salvar opções",
+        "optionsSaved": "Opções de rota salvas"
+      },
+      "validation": {
+        "numberRange": "Digite um número de {{min}} a {{max}}"
+      },
+      "logs": {
+        "allKinds": "Todos os tipos",
+        "allStatuses": "Todos os status",
+        "modelFilter": "Modelo",
+        "modelPlaceholder": "ID do modelo",
+        "accountFilter": "Conta",
+        "accountPlaceholder": "E-mail ou ID da conta",
+        "apiKeyFilter": "Chave API",
+        "apiKeyPlaceholder": "Nome ou ID",
+        "kindFilter": "Tipo",
+        "statusFilter": "Situação",
+        "errorFilter": "Erro",
+        "errorPlaceholder": "Categoria do erro",
+        "clearFilters": "Limpar filtros",
+        "loading": "Carregando logs"
+      }
     }
   },
   "githubCopilot": {

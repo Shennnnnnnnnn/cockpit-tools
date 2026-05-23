@@ -1078,6 +1078,36 @@ fn mark_account_requires_reauth(account: &mut CodexAccount, reason: &str) -> Res
     save_account(account)
 }
 
+fn is_missing_refresh_token_reason(reason: &str) -> bool {
+    reason.contains("缺少 refresh_token") || reason.contains("无 refresh_token")
+}
+
+fn account_has_refresh_token(account: &CodexAccount) -> bool {
+    account
+        .tokens
+        .refresh_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .is_some()
+}
+
+fn clear_stale_missing_refresh_token_reauth(account: &mut CodexAccount) -> Result<(), String> {
+    let is_missing_refresh_token_reauth = account
+        .reauth_reason
+        .as_deref()
+        .map(is_missing_refresh_token_reason)
+        .unwrap_or(false);
+
+    if !account.requires_reauth || !is_missing_refresh_token_reauth {
+        return Ok(());
+    }
+
+    account.requires_reauth = false;
+    account.reauth_reason = None;
+    save_account(account)
+}
+
 pub fn extract_chatgpt_account_id_from_access_token(access_token: &str) -> Option<String> {
     let payload = decode_jwt_payload_value(access_token)?;
     let auth_data = payload.get("https://api.openai.com/auth")?;
@@ -2130,7 +2160,7 @@ fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, St
         tokens: Some(CodexAuthTokens {
             id_token: account.tokens.id_token.clone(),
             access_token: account.tokens.access_token.clone(),
-            refresh_token: account.tokens.refresh_token.clone(),
+            refresh_token: Some(account.tokens.refresh_token.clone().unwrap_or_default()),
             account_id: account.account_id.clone(),
         }),
         last_refresh: Some(serde_json::Value::String(
@@ -2446,6 +2476,12 @@ async fn refresh_managed_account_locked(
     if account.is_api_key_auth() {
         return Ok(account);
     }
+    if let Err(err) = clear_stale_missing_refresh_token_reauth(&mut account) {
+        logger::log_warn(&format!(
+            "Codex 清理缺失 refresh_token 的过期重登标记失败，继续处理: account_id={}, error={}",
+            account.id, err
+        ));
+    }
     if account.requires_reauth {
         return Err(account
             .reauth_reason
@@ -2456,12 +2492,14 @@ async fn refresh_managed_account_locked(
         return Ok(account);
     }
 
-    let refresh_token = account
-        .tokens
-        .refresh_token
-        .clone()
-        .filter(|token| !token.trim().is_empty())
-        .ok_or_else(|| "Token 已过期且无 refresh_token，请重新登录".to_string())?;
+    if !account_has_refresh_token(&account) {
+        logger::log_warn(&format!(
+            "Codex Token Authority 跳过刷新：账号缺少 refresh_token，按 access-token-only 模式继续使用当前 access_token: account_id={}, email={}, force={}, reason={}",
+            account.id, account.email, force, reason
+        ));
+        return Ok(account);
+    }
+    let refresh_token = account.tokens.refresh_token.clone().unwrap_or_default();
 
     logger::log_info(&format!(
         "Codex Token Authority 开始刷新: account_id={}, email={}, force={}, reason={}",
@@ -3201,7 +3239,15 @@ fn extract_codex_tokens_from_value(
         first_json_string(value, &[&["id_token"], &["idToken"]]),
         first_json_string(value, &[&["access_token"], &["accessToken"]]),
     ) {
-        let refresh_token = first_json_string(value, &[&["refresh_token"], &["refreshToken"]]);
+        let refresh_token = first_json_string(
+            value,
+            &[
+                &["refresh_token"],
+                &["refreshToken"],
+                &["session_token"],
+                &["sessionToken"],
+            ],
+        );
         let account_id_hint = first_json_string(value, &[&["account_id"], &["accountId"]]);
         return Some((
             CodexTokens {
@@ -3224,7 +3270,14 @@ fn extract_codex_tokens_from_value(
         ) {
             let refresh_token = first_json_string(
                 value,
-                &[&["tokens", "refresh_token"], &["tokens", "refreshToken"]],
+                &[
+                    &["tokens", "refresh_token"],
+                    &["tokens", "refreshToken"],
+                    &["tokens", "session_token"],
+                    &["tokens", "sessionToken"],
+                    &["session_token"],
+                    &["sessionToken"],
+                ],
             );
             let account_id_hint = first_json_string(
                 value,
@@ -3252,14 +3305,15 @@ fn extract_codex_tokens_from_value(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_account_storage_id, decode_jwt_payload_value,
-        extract_codex_import_candidate_from_value, extract_codex_tokens_from_value,
-        get_accounts_dir, get_accounts_storage_path, get_current_account, list_accounts_checked,
-        load_account, load_account_index, looks_like_sub2api_export,
-        read_api_provider_from_config_toml, read_quick_config_from_config_toml,
-        resolve_api_provider_config, save_account, save_account_index, sync_account_from_auth_dir,
-        sync_managed_projection_from_auth_dir, upsert_account_from_access_token,
-        upsert_account_from_auth_tokens, validate_api_key_credentials, write_account_bundle_to_dir,
+        build_account_storage_id, build_auth_file_value, decode_jwt_payload_value,
+        ensure_managed_account_fresh, extract_codex_import_candidate_from_value,
+        extract_codex_tokens_from_value, force_refresh_managed_account, get_accounts_dir,
+        get_accounts_storage_path, get_current_account, list_accounts_checked, load_account,
+        load_account_index, looks_like_sub2api_export, read_api_provider_from_config_toml,
+        read_quick_config_from_config_toml, resolve_api_provider_config, save_account,
+        save_account_index, sync_account_from_auth_dir, sync_managed_projection_from_auth_dir,
+        upsert_account_from_access_token, upsert_account_from_auth_tokens,
+        validate_api_key_credentials, write_account_bundle_to_dir,
         write_api_key_provider_to_config_toml, write_api_provider_to_config_toml,
         write_quick_config_to_config_toml, ApiProviderConfig, CodexAccountIndex,
         CodexAccountSummary, CodexAuthFile, CodexAuthTokens, CodexJsonImportCandidate,
@@ -3425,6 +3479,82 @@ mod tests {
     }
 
     #[test]
+    fn build_auth_file_value_keeps_empty_refresh_token_field_for_cpa_accounts() {
+        let mut account = CodexAccount::new(
+            "codex-cpa-account".to_string(),
+            "cpa@example.com".to_string(),
+            CodexTokens {
+                id_token: "id.jwt.token".to_string(),
+                access_token: "access.jwt.token".to_string(),
+                refresh_token: None,
+            },
+        );
+        account.account_id = Some("acc-cpa".to_string());
+
+        let auth_file = build_auth_file_value(&account).expect("build auth file");
+        let tokens = auth_file
+            .get("tokens")
+            .and_then(|value| value.as_object())
+            .expect("tokens object");
+
+        assert!(tokens.contains_key("refresh_token"));
+        assert_eq!(
+            tokens.get("refresh_token").and_then(|value| value.as_str()),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn force_refresh_keeps_access_token_only_accounts_usable() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _env = TestEnvGuard::new("codex-core-access-token-only-refresh-test");
+        let mut tokens = make_codex_tokens(
+            "demo@example.com",
+            "acc-current",
+            "org-current",
+            "access-only",
+            "rt-unused",
+        );
+        tokens.refresh_token = None;
+        let account = seed_oauth_account(tokens);
+
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+        let refreshed = runtime
+            .block_on(force_refresh_managed_account(&account.id, "test"))
+            .expect("access-token-only account should skip refresh without failing");
+
+        assert_eq!(refreshed.tokens.refresh_token, None);
+    }
+
+    #[test]
+    fn stale_missing_refresh_token_reauth_is_cleared() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _env = TestEnvGuard::new("codex-core-access-token-only-reauth-clear-test");
+        let mut tokens = make_codex_tokens(
+            "demo@example.com",
+            "acc-current",
+            "org-current",
+            "access-only",
+            "rt-unused",
+        );
+        tokens.refresh_token = None;
+        let mut account = seed_oauth_account(tokens);
+        account.requires_reauth = true;
+        account.reauth_reason = Some("Token 已过期且无 refresh_token，请重新登录".to_string());
+        save_account(&account).expect("save access-token-only reauth account");
+
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+        let prepared = runtime
+            .block_on(ensure_managed_account_fresh(&account.id))
+            .expect("missing-refresh reauth marker should be cleared");
+
+        assert!(!prepared.requires_reauth);
+        let persisted = load_account(&account.id).expect("persisted account");
+        assert!(!persisted.requires_reauth);
+        assert_eq!(persisted.reauth_reason, None);
+    }
+
+    #[test]
     fn extract_tokens_from_flat_codex_json() {
         let value = serde_json::json!({
             "id_token": "id.jwt.token",
@@ -3445,6 +3575,29 @@ mod tests {
     }
 
     #[test]
+    fn extract_tokens_from_flat_codex_json_falls_back_to_session_token() {
+        let value = serde_json::json!({
+            "id_token": "id.jwt.token",
+            "access_token": "access.jwt.token",
+            "refresh_token": "",
+            "session_token": "encrypted-session-token",
+            "account_id": "acc_cpa",
+            "type": "codex"
+        });
+
+        let (tokens, account_id_hint) =
+            extract_codex_tokens_from_value(&value).expect("should extract tokens");
+
+        assert_eq!(tokens.id_token, "id.jwt.token");
+        assert_eq!(tokens.access_token, "access.jwt.token");
+        assert_eq!(
+            tokens.refresh_token.as_deref(),
+            Some("encrypted-session-token")
+        );
+        assert_eq!(account_id_hint.as_deref(), Some("acc_cpa"));
+    }
+
+    #[test]
     fn extract_tokens_from_nested_tokens_json() {
         let value = serde_json::json!({
             "tokens": {
@@ -3462,6 +3615,30 @@ mod tests {
         assert_eq!(tokens.access_token, "access.jwt.token");
         assert_eq!(tokens.refresh_token.as_deref(), Some("rt_456"));
         assert_eq!(account_id_hint.as_deref(), Some("acc_2"));
+    }
+
+    #[test]
+    fn extract_tokens_from_nested_tokens_json_falls_back_to_session_token() {
+        let value = serde_json::json!({
+            "tokens": {
+                "id_token": "id.jwt.token",
+                "access_token": "access.jwt.token",
+                "refresh_token": ""
+            },
+            "session_token": "encrypted-session-token",
+            "account_id": "acc_nested"
+        });
+
+        let (tokens, account_id_hint) =
+            extract_codex_tokens_from_value(&value).expect("should extract tokens");
+
+        assert_eq!(tokens.id_token, "id.jwt.token");
+        assert_eq!(tokens.access_token, "access.jwt.token");
+        assert_eq!(
+            tokens.refresh_token.as_deref(),
+            Some("encrypted-session-token")
+        );
+        assert_eq!(account_id_hint.as_deref(), Some("acc_nested"));
     }
 
     #[test]

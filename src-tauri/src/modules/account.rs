@@ -28,6 +28,9 @@ const LIST_ACCOUNTS_CACHE_TTL_MS: u64 = 800;
 
 // 使用与 AntigravityCockpit 插件相同的数据目录
 const DATA_DIR: &str = ".antigravity_cockpit";
+const DEV_DATA_DIR: &str = ".antigravity_cockpit_dev";
+const DATA_DIR_ENV: &str = "COCKPIT_TOOLS_DATA_DIR";
+const PROFILE_ENV: &str = "COCKPIT_TOOLS_PROFILE";
 
 /// 对邮箱地址进行脱敏，仅保留首字符和域名，例如 "u***@example.com"
 #[inline]
@@ -193,9 +196,31 @@ fn clear_deleted_account_fingerprint(email: &str) -> Result<(), String> {
 }
 
 /// 获取数据目录路径
-pub fn get_data_dir() -> Result<PathBuf, String> {
+pub fn is_dev_profile() -> bool {
+    std::env::var(PROFILE_ENV)
+        .map(|value| value.trim().eq_ignore_ascii_case("dev"))
+        .unwrap_or(false)
+}
+
+pub fn resolve_data_dir() -> Result<PathBuf, String> {
+    if let Ok(raw) = std::env::var(DATA_DIR_ENV) {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+
     let home = dirs::home_dir().ok_or("无法获取用户主目录")?;
-    let data_dir = home.join(DATA_DIR);
+    let dir_name = if is_dev_profile() {
+        DEV_DATA_DIR
+    } else {
+        DATA_DIR
+    };
+    Ok(home.join(dir_name))
+}
+
+pub fn get_data_dir() -> Result<PathBuf, String> {
+    let data_dir = resolve_data_dir()?;
 
     if !data_dir.exists() {
         fs::create_dir_all(&data_dir).map_err(|e| format!("创建数据目录失败: {}", e))?;

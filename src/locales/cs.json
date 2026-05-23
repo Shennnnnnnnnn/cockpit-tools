@@ -1098,6 +1098,8 @@
       "noGroups": "Žádné skupiny",
       "noGroupsDesc": "Vytvořte skupiny pro správu účtů",
       "manage": "Spravovat",
+      "refresh": "Obnovit skupinu",
+      "refreshEmpty": "V této skupině nejsou žádné obnovitelné účty",
       "error": {
         "duplicate": "Název skupiny již existuje",
         "createFailed": "Nepodařilo se vytvořit skupinu: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Vypnout službu",
       "enableService": "Zapnout službu",
       "saveSuccess": "Kolekce API služby byla aktualizována",
+      "noEligibleAccountsSelected": "Vybrané účty nejsou v tomto prostředí nebo je služba API nemůže použít. Nejprve do tohoto prostředí importujte použitelný účet Codex.",
       "removeSuccess": "Účet byl odebrán z API služby",
       "rotateSuccess": "Klíč API služby byl obnoven",
       "enabledSuccess": "API služba byla povolena",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} požadavků",
         "accountTokens": "{{count}} tokenů",
         "accountResult": "Úspěch {{success}} / Chyba {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Obrazové požadavky",
+        "imagesDetail": "Generování {{generate}} / Úpravy {{edit}} / Oprávnění {{blocked}}"
       },
       "routingLabel": "Směrování",
       "routingSaveSuccess": "Směrování služby API bylo aktualizováno",
@@ -1900,7 +1905,7 @@
         "empty": "Zatím žádné statistiky kvóty"
       },
       "oauthBinding": {
-        "desc": "Volitelné. Bez propojení služba API používá původní logiku API Key; po propojení se přihlášení bere z účtu OAuth a Provider z konfigurace služby API.",
+        "desc": "Volitelné. Vybrat lze pouze účet OAuth s údajem o době předplatného; prošlé údaje jsou povolené. Bez propojení služba API používá původní logiku API Key; po propojení se přihlášení bere z účtu OAuth a Provider z konfigurace služby API.",
         "currentService": "Služba API: {{name}}"
       },
       "customRoutingEdit": "Upravit vlastní směrování",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "Adresa API proxy",
       "upstreamProxySaveSuccess": "Adresa API proxy byla aktualizována",
       "upstreamProxyUrlPlaceholder": "Prázdné = globální proxy",
-      "upstreamProxySaveAction": "Uložit proxy"
+      "upstreamProxySaveAction": "Uložit proxy",
+      "imageGenerationLabel": "Nástroj image_generation",
+      "imageGenerationDesc": "Řídí, zda textové konverzace deklarují obrazový nástroj a zda jsou dostupné obrazové endpointy.",
+      "imageGenerationSaveSuccess": "Nastavení image_generation bylo aktualizováno",
+      "apiKeysTitle": "Klientské klíče",
+      "apiKeyAdd": "Přidat klíč",
+      "apiKeyLabel": "Název klíče",
+      "apiKeySaveLabel": "Uložit název",
+      "apiKeyDefaultLabel": "Klient {{index}}",
+      "apiKeyCreateSuccess": "API Key vytvořen",
+      "apiKeyUpdateSuccess": "API Key aktualizován",
+      "apiKeyRotateSuccess": "API Key resetován",
+      "apiKeyDeleteSuccess": "API Key smazán",
+      "apiKeyRotateConfirm": "Tento API Key po resetu okamžitě přestane platit. Pokračovat?",
+      "apiKeyDeleteConfirm": "Smazat tento API Key?",
+      "apiKeyDelete": "Smazat klíč",
+      "apiKeyDisable": "Vypnout klíč",
+      "apiKeyEnable": "Zapnout klíč",
+      "modelStatsTitle": "Podle modelu",
+      "apiKeyStatsTitle": "Podle klíče",
+      "healthAvailable": "Dostupné",
+      "healthUnavailable": "Nedostupné",
+      "healthCooldown": "Čekání {{count}}",
+      "healthImageUnavailable": "Obrázky nedostupné",
+      "requestLogTitle": "Log požadavků",
+      "requestLogEmpty": "Zatím žádné logy požadavků",
+      "requestLogSuccess": "Úspěch",
+      "requestLogFailed": "Selhalo",
+      "requestLogTokens": "{{value}} tokenů",
+      "imageGenerationMode": {
+        "enabled": "Zapnuto",
+        "imagesOnly": "Jen obrázky",
+        "disabled": "Vypnuto"
+      },
+      "requestKind": {
+        "text": "Textový",
+        "imageGeneration": "Obrázek",
+        "imageEdit": "Úprava",
+        "other": "Jiné"
+      },
+      "testSuccessInline": "Test služby API prošel"
     },
     "local": {
       "desc": "Importovat aktuální účet z ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Připojit OAuth",
         "actionShort": "Připojit",
         "title": "Připojit účet OAuth",
-        "desc": "Volitelné. Bez propojení se tento účet přepíná původní logikou API Key; po propojení se přihlášení bere z účtu OAuth a Provider z konfigurace tohoto účtu API Key.",
+        "desc": "Volitelné. Vybrat lze pouze účet OAuth s údajem o době předplatného; prošlé údaje jsou povolené. Bez propojení se tento účet přepíná původní logikou API Key; po propojení se přihlášení bere z účtu OAuth a Provider z konfigurace tohoto účtu API Key.",
         "currentAccount": "Účet API Key: {{name}}",
         "selectLabel": "Vyberte účet OAuth",
         "empty": "Zatím není žádný účet OAuth. Nejdříve přidejte účet s autorizací OAuth.",
+        "emptyEligible": "Žádný účet OAuth s údajem o době předplatného. Nejdříve obnovte kvótu nebo přidejte způsobilý účet OAuth.",
         "validationRequired": "Vyberte účet OAuth",
+        "validationSubscriptionRequired": "Propojit lze pouze účet OAuth s údajem o době předplatného",
         "saveSuccess": "Vazba OAuth aktualizována",
         "saveFailed": "Připojení OAuth selhalo: {{error}}",
         "switchRequiresBinding": "Nejdříve připojte účet OAuth",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Rychlost 1,5x, vyšší využití",
       "saveSuccess": "Rychlost aktualizována",
       "saveFailed": "Rychlost se nepodařilo uložit: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Služba Codex API",
+      "title": "Služba Codex API",
+      "subtitle": "Zpřístupní fond účtů Codex OAuth jako API kompatibilní s OpenAI pro místní klienty nebo LAN.",
+      "openPage": "Otevřít službu API",
+      "openFullPage": "Zobrazit všechny funkce",
+      "tabs": {
+        "overview": "Přehled služby",
+        "keys": "Klientské klíče",
+        "accounts": "Fond účtů",
+        "models": "Modely a schopnosti",
+        "logs": "Statistiky a protokoly"
+      },
+      "healthTitle": "Stav služby",
+      "health": {
+        "availableAccounts": "Dostupné účty",
+        "cooldowns": "Prodlevy",
+        "imageUnavailable": "Obrázky nedostupné",
+        "keys": "Klientské klíče"
+      },
+      "accountHealth": {
+        "failures": "{{count}} po sobě jdoucích selhání",
+        "image": "Obrázky {{status}}"
+      },
+      "models": {
+        "availableTitle": "Dostupné modely",
+        "capabilityTitle": "Přepínače schopností",
+        "capabilityDesc": "gpt-image-2 se automaticky zobrazí nebo skryje podle přepínače služby, tarifu účtu a zaznamenaného stavu obrazových schopností.",
+        "rulesTitle": "Pravidla modelů",
+        "aliasTitle": "Aliasy modelů",
+        "aliasPlaceholder": "gpt-5 => g5; + ponechá původní model",
+        "excludedTitle": "Skryté modely",
+        "excludedPlaceholder": "Jeden model nebo vzor na řádek, např. gpt-5-*",
+        "saveRules": "Uložit pravidla",
+        "rulesSaved": "Pravidla modelů uložena"
+      },
+      "keys": {
+        "policyTitle": "Zásady modelů",
+        "advancedPolicyTitle": "Pokročilé: zásady modelů",
+        "modelPrefix": "Předpona modelu",
+        "modelPrefixPlaceholder": "Příklad: codex",
+        "allowedModels": "Povolené modely",
+        "allowedModelsPlaceholder": "Prázdné povolí vše; jeden model nebo vzor na řádek",
+        "excludedModels": "Vyloučené modely",
+        "excludedModelsPlaceholder": "Jeden model nebo vzor na řádek",
+        "savePolicy": "Uložit zásady",
+        "policySaved": "Zásady modelů pro Key uloženy"
+      },
+      "routing": {
+        "optionsTitle": "Volby směrování",
+        "sessionAffinity": "Vazba relace",
+        "sessionAffinityTtl": "TTL vazby",
+        "maxRetryCredentials": "Retry účty",
+        "maxRetryInterval": "Čekání retry",
+        "disableCooling": "Vypnout cooldown",
+        "saveOptions": "Uložit volby",
+        "optionsSaved": "Volby směrování uloženy"
+      },
+      "validation": {
+        "numberRange": "Zadejte číslo od {{min}} do {{max}}"
+      },
+      "logs": {
+        "allKinds": "Všechny typy",
+        "allStatuses": "Všechny stavy",
+        "modelFilter": "Modely",
+        "modelPlaceholder": "ID modelu",
+        "accountFilter": "Účet",
+        "accountPlaceholder": "E-mail nebo ID účtu",
+        "apiKeyFilter": "Klíč API",
+        "apiKeyPlaceholder": "Název nebo ID",
+        "kindFilter": "Typ",
+        "statusFilter": "Stav",
+        "errorFilter": "Chyba",
+        "errorPlaceholder": "Kategorie chyby",
+        "clearFilters": "Vymazat filtry",
+        "loading": "Načítání protokolů"
+      }
     }
   },
   "githubCopilot": {

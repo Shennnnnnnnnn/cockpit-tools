@@ -1098,6 +1098,8 @@
       "noGroups": "Keine Gruppen",
       "noGroupsDesc": "Erstellen Sie Gruppen, um Ihre Konten zu verwalten",
       "manage": "Verwalten",
+      "refresh": "Gruppe aktualisieren",
+      "refreshEmpty": "Keine aktualisierbaren Konten in dieser Gruppe",
       "error": {
         "duplicate": "Gruppenname existiert bereits",
         "createFailed": "Gruppe konnte nicht erstellt werden: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Dienst deaktivieren",
       "enableService": "Dienst aktivieren",
       "saveSuccess": "API-Dienst-Sammlung aktualisiert",
+      "noEligibleAccountsSelected": "Die ausgewählten Konten befinden sich nicht in dieser Umgebung oder können vom API-Dienst nicht verwendet werden. Importiere zuerst ein nutzbares Codex-Konto in diese Umgebung.",
       "removeSuccess": "Konto aus dem API-Dienst entfernt",
       "rotateSuccess": "API-Dienst-Schlüssel erneuert",
       "enabledSuccess": "API-Dienst aktiviert",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} Anfragen",
         "accountTokens": "{{count}} Token",
         "accountResult": "Erfolg {{success}} / Fehler {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Bildanfragen",
+        "imagesDetail": "Erzeugen {{generate}} / Bearbeiten {{edit}} / Berechtigung {{blocked}}"
       },
       "routingLabel": "Routing",
       "routingSaveSuccess": "API-Service-Routing wurde aktualisiert",
@@ -1900,7 +1905,7 @@
         "empty": "Noch keine Kontingentstatistik"
       },
       "oauthBinding": {
-        "desc": "Optional. Ohne Verknüpfung nutzt der API-Dienst weiter den bisherigen API-Key-Ablauf; nach der Verknüpfung verwendet die Anmeldung das OAuth-Konto und der Provider die API-Dienst-Konfiguration.",
+        "desc": "Optional. Es können nur OAuth-Konten mit Abo-Laufzeitangabe ausgewählt werden; abgelaufene Laufzeiten sind zulässig. Ohne Verknüpfung nutzt der API-Dienst weiter den bisherigen API-Key-Ablauf; nach der Verknüpfung verwendet die Anmeldung das OAuth-Konto und der Provider die API-Dienst-Konfiguration.",
         "currentService": "API-Dienst: {{name}}"
       },
       "customRoutingEdit": "Benutzerdefiniertes Routing bearbeiten",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "API-Proxy-URL",
       "upstreamProxySaveSuccess": "API-Proxy-URL aktualisiert",
       "upstreamProxyUrlPlaceholder": "Leer = globaler Proxy",
-      "upstreamProxySaveAction": "Proxy speichern"
+      "upstreamProxySaveAction": "Proxy speichern",
+      "imageGenerationLabel": "image_generation-Tool",
+      "imageGenerationDesc": "Steuert, ob Text-Chats das Bildwerkzeug deklarieren und ob Bild-Endpunkte verfügbar sind.",
+      "imageGenerationSaveSuccess": "image_generation-Einstellung aktualisiert",
+      "apiKeysTitle": "Client-Schlüssel",
+      "apiKeyAdd": "Schlüssel hinzufügen",
+      "apiKeyLabel": "Schlüsselname",
+      "apiKeySaveLabel": "Namen speichern",
+      "apiKeyDefaultLabel": "Kunde {{index}}",
+      "apiKeyCreateSuccess": "API Key erstellt",
+      "apiKeyUpdateSuccess": "API Key aktualisiert",
+      "apiKeyRotateSuccess": "API Key zurückgesetzt",
+      "apiKeyDeleteSuccess": "API Key gelöscht",
+      "apiKeyRotateConfirm": "Dieser API Key ist nach dem Zurücksetzen sofort ungültig. Fortfahren?",
+      "apiKeyDeleteConfirm": "Diesen API Key löschen?",
+      "apiKeyDelete": "Schlüssel löschen",
+      "apiKeyDisable": "Schlüssel deaktivieren",
+      "apiKeyEnable": "Schlüssel aktivieren",
+      "modelStatsTitle": "Nach Modell",
+      "apiKeyStatsTitle": "Nach Schlüssel",
+      "healthAvailable": "Verfügbar",
+      "healthUnavailable": "Nicht verfügbar",
+      "healthCooldown": "Abklingzeit {{count}}",
+      "healthImageUnavailable": "Bilder nicht verfügbar",
+      "requestLogTitle": "Anfragenprotokoll",
+      "requestLogEmpty": "Noch keine Anfragenprotokolle",
+      "requestLogSuccess": "Erfolg",
+      "requestLogFailed": "Fehlgeschlagen",
+      "requestLogTokens": "{{value}} Token",
+      "imageGenerationMode": {
+        "enabled": "Aktiv",
+        "imagesOnly": "Nur Bilder",
+        "disabled": "Aus"
+      },
+      "requestKind": {
+        "text": "Textmodus",
+        "imageGeneration": "Bild",
+        "imageEdit": "Bearbeitung",
+        "other": "Sonstige"
+      },
+      "testSuccessInline": "API-Diensttest bestanden"
     },
     "local": {
       "desc": "Aktuell eingeloggtes Konto aus ~/.codex/auth.json importieren",
@@ -2335,11 +2380,13 @@
         "action": "OAuth binden",
         "actionShort": "Binden",
         "title": "OAuth-Konto binden",
-        "desc": "Optional. Ohne Verknüpfung wechselt dieses Konto mit dem bisherigen API-Key-Ablauf; nach der Verknüpfung verwendet die Anmeldung das OAuth-Konto und der Provider die Konfiguration dieses API-Key-Kontos.",
+        "desc": "Optional. Es können nur OAuth-Konten mit Abo-Laufzeitangabe ausgewählt werden; abgelaufene Laufzeiten sind zulässig. Ohne Verknüpfung wechselt dieses Konto mit dem bisherigen API-Key-Ablauf; nach der Verknüpfung verwendet die Anmeldung das OAuth-Konto und der Provider die Konfiguration dieses API-Key-Kontos.",
         "currentAccount": "API-Key-Konto: {{name}}",
         "selectLabel": "OAuth-Konto wählen",
         "empty": "Noch kein OAuth-Konto vorhanden. Bitte zuerst ein OAuth-Konto hinzufügen.",
+        "emptyEligible": "Keine OAuth-Konten mit Abo-Laufzeitangabe. Bitte Kontingent aktualisieren oder zuerst ein geeignetes OAuth-Konto hinzufügen.",
         "validationRequired": "Bitte ein OAuth-Konto wählen",
+        "validationSubscriptionRequired": "Es können nur OAuth-Konten mit Abo-Laufzeitangabe verknüpft werden",
         "saveSuccess": "OAuth-Bindung aktualisiert",
         "saveFailed": "OAuth-Bindung fehlgeschlagen: {{error}}",
         "switchRequiresBinding": "Bitte zuerst ein OAuth-Konto binden",
@@ -2529,6 +2576,84 @@
       "fastDesc": "1,5-faches Tempo, höherer Verbrauch",
       "saveSuccess": "Tempo aktualisiert",
       "saveFailed": "Tempo konnte nicht gespeichert werden: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Codex-API-Dienst",
+      "title": "Codex-API-Dienst",
+      "subtitle": "Stellt den Codex-OAuth-Kontopool als OpenAI-kompatible API für lokale oder LAN-Clients bereit.",
+      "openPage": "API-Dienst öffnen",
+      "openFullPage": "Alle Funktionen anzeigen",
+      "tabs": {
+        "overview": "Dienstübersicht",
+        "keys": "Client-Schlüssel",
+        "accounts": "Kontopool",
+        "models": "Modelle & Fähigkeiten",
+        "logs": "Statistik & Protokolle"
+      },
+      "healthTitle": "Dienstzustand",
+      "health": {
+        "availableAccounts": "Verfügbare Konten",
+        "cooldowns": "Abklingzeiten",
+        "imageUnavailable": "Bilder nicht verfügbar",
+        "keys": "Client-Schlüssel"
+      },
+      "accountHealth": {
+        "failures": "{{count}} Fehlversuche in Folge",
+        "image": "Bilder {{status}}"
+      },
+      "models": {
+        "availableTitle": "Verfügbare Modelle",
+        "capabilityTitle": "Fähigkeitsschalter",
+        "capabilityDesc": "gpt-image-2 wird je nach Dienstschalter, Kontotarif und aufgezeichnetem Bildfähigkeitsstatus automatisch angezeigt oder ausgeblendet.",
+        "rulesTitle": "Modellregeln",
+        "aliasTitle": "Modellaliasse",
+        "aliasPlaceholder": "gpt-5 => g5; + erhält das Originalmodell",
+        "excludedTitle": "Versteckte Modelle",
+        "excludedPlaceholder": "Ein Modell oder Muster pro Zeile, z. B. gpt-5-*",
+        "saveRules": "Regeln speichern",
+        "rulesSaved": "Modellregeln gespeichert"
+      },
+      "keys": {
+        "policyTitle": "Modellrichtlinie",
+        "advancedPolicyTitle": "Erweitert: Modellrichtlinie",
+        "modelPrefix": "Modellpräfix",
+        "modelPrefixPlaceholder": "Beispiel: codex",
+        "allowedModels": "Erlaubte Modelle",
+        "allowedModelsPlaceholder": "Leer erlaubt alle; ein Modell oder Muster pro Zeile",
+        "excludedModels": "Ausgeschlossene Modelle",
+        "excludedModelsPlaceholder": "Ein Modell oder Muster pro Zeile",
+        "savePolicy": "Richtlinie speichern",
+        "policySaved": "Key-Modellrichtlinie gespeichert"
+      },
+      "routing": {
+        "optionsTitle": "Routingoptionen",
+        "sessionAffinity": "Sitzungsbindung",
+        "sessionAffinityTtl": "Bindungs-TTL",
+        "maxRetryCredentials": "Retry-Konten",
+        "maxRetryInterval": "Retry-Wartezeit",
+        "disableCooling": "Cooldown deaktivieren",
+        "saveOptions": "Optionen speichern",
+        "optionsSaved": "Routingoptionen gespeichert"
+      },
+      "validation": {
+        "numberRange": "Zahl von {{min}} bis {{max}} eingeben"
+      },
+      "logs": {
+        "allKinds": "Alle Typen",
+        "allStatuses": "Alle Status",
+        "modelFilter": "Modell",
+        "modelPlaceholder": "Modell-ID",
+        "accountFilter": "Konto",
+        "accountPlaceholder": "E-Mail oder Konto-ID",
+        "apiKeyFilter": "API-Schlüssel",
+        "apiKeyPlaceholder": "Name oder ID",
+        "kindFilter": "Typ",
+        "statusFilter": "Zustand",
+        "errorFilter": "Fehler",
+        "errorPlaceholder": "Fehlerkategorie",
+        "clearFilters": "Filter löschen",
+        "loading": "Anfrageprotokolle werden geladen"
+      }
     }
   },
   "githubCopilot": {

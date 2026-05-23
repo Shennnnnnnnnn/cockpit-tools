@@ -398,6 +398,7 @@ Toda contribuição ajuda a manter o desenvolvimento de código aberto. Obrigado
 ## Agradecimentos
 
 - Lógica de troca de contas do Antigravity IDE baseada em: [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)
+- Implementação do serviço Codex API desenvolvida com referência a: [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
 
 Agradecemos ao autor do projeto por suas contribuições de código aberto! Se esses projetos lhe foram úteis, por favor, dê a eles uma ⭐ estrela para demonstrar seu apoio!
 

@@ -52,9 +52,7 @@ fn ensure_legacy_antigravity_switch_supported() -> Result<(), String> {
             "antigravity",
         ))
     else {
-        modules::logger::log_info(
-            "[Antigravity] 未命中旧版安装版本缓存，放行旧版切号逻辑",
-        );
+        modules::logger::log_info("[Antigravity] 未命中旧版安装版本缓存，放行旧版切号逻辑");
         return Ok(());
     };
 
@@ -607,8 +605,7 @@ const GROUPS_FILE: &str = "account_groups.json";
 
 #[tauri::command]
 pub async fn load_account_groups() -> Result<String, String> {
-    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-    let path = home.join(".antigravity_cockpit").join(GROUPS_FILE);
+    let path = modules::account::get_data_dir()?.join(GROUPS_FILE);
     if !path.exists() {
         return Ok("[]".to_string());
     }
@@ -617,8 +614,7 @@ pub async fn load_account_groups() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn save_account_groups(data: String) -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-    let dir = home.join(".antigravity_cockpit");
+    let dir = modules::account::get_data_dir()?;
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {}", e))?;
     }

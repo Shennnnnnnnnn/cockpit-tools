@@ -54,6 +54,7 @@ type PersistedPlatformLayout = {
   orderedEntryIds?: PlatformLayoutEntryId[];
   hiddenEntryIds?: PlatformLayoutEntryId[];
   sidebarEntryIds?: PlatformLayoutEntryId[];
+  antigravityGroupFirstMigrated?: boolean;
 };
 
 interface PlatformLayoutState {
@@ -67,6 +68,7 @@ interface PlatformLayoutState {
   orderedEntryIds: PlatformLayoutEntryId[];
   hiddenEntryIds: PlatformLayoutEntryId[];
   sidebarEntryIds: PlatformLayoutEntryId[];
+  antigravityGroupFirstMigrated: boolean;
 
   movePlatform: (fromIndex: number, toIndex: number) => void;
   toggleHiddenPlatform: (id: PlatformId) => void;
@@ -101,6 +103,7 @@ interface NormalizedLayoutStateData {
   orderedEntryIds: PlatformLayoutEntryId[];
   hiddenEntryIds: PlatformLayoutEntryId[];
   sidebarEntryIds: PlatformLayoutEntryId[];
+  antigravityGroupFirstMigrated: boolean;
 }
 
 let trayLayoutSyncTimer: number | null = null;
@@ -662,7 +665,7 @@ function normalizeEntryOrder(
   const fallback = buildEntryOrderFromPlatformOrder(platformOrder, groups);
 
   if (!Array.isArray(rawEntryIds)) {
-    return promoteDefaultAntigravityGroupEntry(fallback, groups);
+    return fallback;
   }
 
   const seen = new Set<PlatformLayoutEntryId>();
@@ -687,7 +690,7 @@ function normalizeEntryOrder(
     }
   }
 
-  return promoteDefaultAntigravityGroupEntry(entries, groups);
+  return entries;
 }
 
 function normalizeEntryVisibilityList(
@@ -946,15 +949,20 @@ function normalizeStateData(
     orderedEntryIds: PlatformLayoutEntryId[];
     hiddenEntryIds: PlatformLayoutEntryId[];
     sidebarEntryIds: PlatformLayoutEntryId[];
+    antigravityGroupFirstMigrated?: boolean;
   },
   options: {
     allowLegacyTrayMigration?: boolean;
+    promoteAntigravityGroupEntry?: boolean;
   } = {},
 ): NormalizedLayoutStateData {
   const normalizedPlatformOrder = normalizeOrder(raw.orderedPlatformIds);
   const platformGroups = normalizePlatformGroups(raw.platformGroups, false)
     .map((group) => sortGroupPlatformsByOrder(group, normalizedPlatformOrder));
-  const orderedEntryIds = normalizeEntryOrder(raw.orderedEntryIds, platformGroups, normalizedPlatformOrder);
+  const normalizedEntryIds = normalizeEntryOrder(raw.orderedEntryIds, platformGroups, normalizedPlatformOrder);
+  const orderedEntryIds = options.promoteAntigravityGroupEntry === true
+    ? promoteDefaultAntigravityGroupEntry(normalizedEntryIds, platformGroups)
+    : normalizedEntryIds;
   const orderedPlatformIds = derivePlatformOrderFromEntryOrder(
     orderedEntryIds,
     platformGroups,
@@ -991,6 +999,8 @@ function normalizeStateData(
     orderedEntryIds,
     hiddenEntryIds,
     sidebarEntryIds,
+    antigravityGroupFirstMigrated:
+      raw.antigravityGroupFirstMigrated !== false || options.promoteAntigravityGroupEntry === true,
   };
 }
 
@@ -1008,11 +1018,13 @@ function loadPersistedState(): NormalizedLayoutStateData {
         orderedEntryIds: buildEntryOrderFromPlatformOrder(ALL_PLATFORM_IDS, defaultPlatformGroups()),
         hiddenEntryIds: [],
         sidebarEntryIds: [makePlatformEntryId('antigravity'), makePlatformEntryId('codex')],
+        antigravityGroupFirstMigrated: true,
       });
       return defaults;
     }
 
     const parsed = JSON.parse(raw) as PersistedPlatformLayout;
+    const antigravityGroupFirstMigrated = parsed.antigravityGroupFirstMigrated === true;
 
     const orderedPlatformIds = normalizeOrder(parsed.orderedPlatformIds ?? ALL_PLATFORM_IDS);
     const hiddenPlatformIds = normalizeHidden(parsed.hiddenPlatformIds ?? []);
@@ -1041,7 +1053,7 @@ function loadPersistedState(): NormalizedLayoutStateData {
       sidebarPlatformIds,
     );
 
-    return normalizeStateData({
+    const normalized = normalizeStateData({
       orderedPlatformIds,
       hiddenPlatformIds,
       sidebarPlatformIds,
@@ -1055,7 +1067,14 @@ function loadPersistedState(): NormalizedLayoutStateData {
       orderedEntryIds,
       hiddenEntryIds,
       sidebarEntryIds,
+      antigravityGroupFirstMigrated,
+    }, {
+      promoteAntigravityGroupEntry: !antigravityGroupFirstMigrated,
     });
+    if (!antigravityGroupFirstMigrated) {
+      persist(normalized);
+    }
+    return normalized;
   } catch {
     return normalizeStateData({
       orderedPlatformIds: [...ALL_PLATFORM_IDS],
@@ -1067,6 +1086,7 @@ function loadPersistedState(): NormalizedLayoutStateData {
       orderedEntryIds: buildEntryOrderFromPlatformOrder(ALL_PLATFORM_IDS, defaultPlatformGroups()),
       hiddenEntryIds: [],
       sidebarEntryIds: [makePlatformEntryId('antigravity'), makePlatformEntryId('codex')],
+      antigravityGroupFirstMigrated: true,
     });
   }
 }
@@ -1083,6 +1103,7 @@ function persist(
     | 'orderedEntryIds'
     | 'hiddenEntryIds'
     | 'sidebarEntryIds'
+    | 'antigravityGroupFirstMigrated'
   >,
 ) {
   try {

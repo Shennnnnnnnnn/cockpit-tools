@@ -21,9 +21,6 @@ const SERVER_STATUS_FILE: &str = "server.json";
 /// 用户配置文件名
 const USER_CONFIG_FILE: &str = "config.json";
 
-/// 数据目录名
-const DATA_DIR: &str = ".antigravity_cockpit";
-
 /// 服务状态（写入共享文件供其他客户端读取）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStatus {
@@ -1031,16 +1028,14 @@ pub fn sync_global_proxy_env(config: &UserConfig) {
 
 /// 获取数据目录路径
 pub fn get_data_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("无法获取 Home 目录")?;
-    Ok(home.join(DATA_DIR))
+    crate::modules::account::get_data_dir()
 }
 
 /// 获取共享目录路径（供其他模块使用）
 /// 与 get_data_dir 相同，但不返回 Result
 pub fn get_shared_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(DATA_DIR))
-        .unwrap_or_else(|| PathBuf::from(DATA_DIR))
+    crate::modules::account::resolve_data_dir()
+        .unwrap_or_else(|_| PathBuf::from(".antigravity_cockpit"))
 }
 
 /// 获取服务状态文件路径

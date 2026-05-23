@@ -1098,6 +1098,8 @@
       "noGroups": "グループなし",
       "noGroupsDesc": "グループを作成してアカウントを一括管理",
       "manage": "管理",
+      "refresh": "グループを更新",
+      "refreshEmpty": "このグループに更新可能なアカウントはありません",
       "error": {
         "duplicate": "グループ名は既に存在します",
         "createFailed": "グループの作成に失敗しました：{{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "サービスを無効化",
       "enableService": "サービスを有効化",
       "saveSuccess": "API サービスのコレクションを更新しました",
+      "noEligibleAccountsSelected": "選択したアカウントはこの環境に存在しないか、API サービスで使用できません。先にこの環境へ使用可能な Codex アカウントをインポートしてください。",
       "removeSuccess": "アカウントを API サービスから削除しました",
       "rotateSuccess": "API サービスキーを再生成しました",
       "enabledSuccess": "API サービスを有効にしました",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} 件のリクエスト",
         "accountTokens": "{{count}} トークン",
         "accountResult": "成功 {{success}} / 失敗 {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "画像リクエスト",
+        "imagesDetail": "生成 {{generate}} / 編集 {{edit}} / 権限 {{blocked}}"
       },
       "routingLabel": "ルーティング",
       "routingSaveSuccess": "API サービスのルーティングを更新しました",
@@ -1900,7 +1905,7 @@
         "empty": "クォータ統計はまだありません"
       },
       "oauthBinding": {
-        "desc": "任意です。未連携の場合、API サービスは従来の API Key ロジックで動作します。連携後はログイン状態に OAuth アカウントを使い、Provider は現在の API サービス設定を使います。",
+        "desc": "任意です。サブスクリプション期間（有効期限表示）がある OAuth アカウントだけ選択できます。期限切れでも連携できます。未連携の場合、API サービスは従来の API Key ロジックで動作します。連携後はログイン状態に OAuth アカウントを使い、Provider は現在の API サービス設定を使います。",
         "currentService": "API サービス：{{name}}"
       },
       "customRoutingEdit": "カスタムルーティングを編集",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "API プロキシアドレス",
       "upstreamProxySaveSuccess": "API プロキシアドレスを更新しました",
       "upstreamProxyUrlPlaceholder": "空欄 = グローバルプロキシ",
-      "upstreamProxySaveAction": "プロキシを保存"
+      "upstreamProxySaveAction": "プロキシを保存",
+      "imageGenerationLabel": "image_generation ツール",
+      "imageGenerationDesc": "テキスト会話で画像ツールを宣言するか、画像エンドポイントを使えるかを制御します。",
+      "imageGenerationSaveSuccess": "image_generation 設定を更新しました",
+      "apiKeysTitle": "クライアントキー",
+      "apiKeyAdd": "キー追加",
+      "apiKeyLabel": "キー名",
+      "apiKeySaveLabel": "名前を保存",
+      "apiKeyDefaultLabel": "クライアント {{index}}",
+      "apiKeyCreateSuccess": "API Key を作成しました",
+      "apiKeyUpdateSuccess": "API Key を更新しました",
+      "apiKeyRotateSuccess": "API Key をリセットしました",
+      "apiKeyDeleteSuccess": "API Key を削除しました",
+      "apiKeyRotateConfirm": "リセット後、この API Key はすぐに無効になります。続行しますか？",
+      "apiKeyDeleteConfirm": "この API Key を削除しますか？",
+      "apiKeyDelete": "キー削除",
+      "apiKeyDisable": "キー無効化",
+      "apiKeyEnable": "キー有効化",
+      "modelStatsTitle": "モデル別",
+      "apiKeyStatsTitle": "キー別",
+      "healthAvailable": "利用可",
+      "healthUnavailable": "利用不可",
+      "healthCooldown": "待機 {{count}}",
+      "healthImageUnavailable": "画像不可",
+      "requestLogTitle": "リクエストログ",
+      "requestLogEmpty": "リクエストログはまだありません",
+      "requestLogSuccess": "成功",
+      "requestLogFailed": "失敗",
+      "requestLogTokens": "{{value}} トークン",
+      "imageGenerationMode": {
+        "enabled": "有効",
+        "imagesOnly": "画像のみ",
+        "disabled": "無効"
+      },
+      "requestKind": {
+        "text": "テキスト",
+        "imageGeneration": "画像生成",
+        "imageEdit": "画像編集",
+        "other": "その他"
+      },
+      "testSuccessInline": "API サービスのテストに成功しました"
     },
     "local": {
       "desc": "~/.codex/auth.json から現在ログイン中のアカウントをインポート",
@@ -2335,11 +2380,13 @@
         "action": "OAuth 連携",
         "actionShort": "連携",
         "title": "OAuth アカウントを連携",
-        "desc": "任意です。未連携の場合、このアカウントは従来の API Key ロジックで切り替わります。連携後はログイン状態に OAuth アカウントを使い、Provider はこの API Key アカウント設定を使います。",
+        "desc": "任意です。サブスクリプション期間（有効期限表示）がある OAuth アカウントだけ選択できます。期限切れでも連携できます。未連携の場合、このアカウントは従来の API Key ロジックで切り替わります。連携後はログイン状態に OAuth アカウントを使い、Provider はこの API Key アカウント設定を使います。",
         "currentAccount": "API Key アカウント：{{name}}",
         "selectLabel": "OAuth アカウントを選択",
         "empty": "OAuth アカウントがありません。先に OAuth 認証アカウントを追加してください。",
+        "emptyEligible": "サブスクリプション期間がある OAuth アカウントがありません。先にクォータを更新するか、条件を満たす OAuth アカウントを追加してください。",
         "validationRequired": "OAuth アカウントを選択してください",
+        "validationSubscriptionRequired": "サブスクリプション期間がある OAuth アカウントのみ連携できます",
         "saveSuccess": "OAuth 連携を更新しました",
         "saveFailed": "OAuth 連携に失敗しました：{{error}}",
         "switchRequiresBinding": "先に OAuth アカウントを連携してください",
@@ -2529,6 +2576,84 @@
       "fastDesc": "1.5倍速、使用量が増加",
       "saveSuccess": "速度を更新しました",
       "saveFailed": "速度の保存に失敗しました: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Codex API サービス",
+      "title": "Codex API サービス",
+      "subtitle": "Codex OAuth アカウントプールを、ローカルまたは LAN クライアント向けの OpenAI 互換 API として公開します。",
+      "openPage": "API サービスを開く",
+      "openFullPage": "すべての機能を見る",
+      "tabs": {
+        "overview": "サービス概要",
+        "keys": "クライアントキー",
+        "accounts": "アカウントプール",
+        "models": "モデルと機能",
+        "logs": "統計とログ"
+      },
+      "healthTitle": "サービス状態",
+      "health": {
+        "availableAccounts": "利用可能なアカウント",
+        "cooldowns": "クールダウン",
+        "imageUnavailable": "画像不可",
+        "keys": "クライアントキー"
+      },
+      "accountHealth": {
+        "failures": "連続失敗 {{count}} 回",
+        "image": "画像 {{status}}"
+      },
+      "models": {
+        "availableTitle": "利用可能なモデル",
+        "capabilityTitle": "機能スイッチ",
+        "capabilityDesc": "gpt-image-2 は、サービススイッチ、アカウントプラン、記録された画像機能状態に基づいて自動的に表示または非表示になります。",
+        "rulesTitle": "モデルルール",
+        "aliasTitle": "モデル別名",
+        "aliasPlaceholder": "gpt-5 => g5。元モデルを残すには +",
+        "excludedTitle": "非表示モデル",
+        "excludedPlaceholder": "1行にモデルまたはワイルドカード、例 gpt-5-*",
+        "saveRules": "ルール保存",
+        "rulesSaved": "モデルルールを保存しました"
+      },
+      "keys": {
+        "policyTitle": "モデルポリシー",
+        "advancedPolicyTitle": "詳細機能：モデルポリシー",
+        "modelPrefix": "モデル接頭辞",
+        "modelPrefixPlaceholder": "例: codex",
+        "allowedModels": "許可モデル",
+        "allowedModelsPlaceholder": "空なら全許可。1行にモデルまたはワイルドカード",
+        "excludedModels": "除外モデル",
+        "excludedModelsPlaceholder": "1行にモデルまたはワイルドカード",
+        "savePolicy": "ポリシー保存",
+        "policySaved": "Key のモデルポリシーを保存しました"
+      },
+      "routing": {
+        "optionsTitle": "ルーティング設定",
+        "sessionAffinity": "セッション固定",
+        "sessionAffinityTtl": "固定 TTL",
+        "maxRetryCredentials": "再試行アカウント",
+        "maxRetryInterval": "再試行待ち",
+        "disableCooling": "クールダウン無効",
+        "saveOptions": "設定を保存",
+        "optionsSaved": "ルーティング設定を保存しました"
+      },
+      "validation": {
+        "numberRange": "{{min}} から {{max}} の数字を入力してください"
+      },
+      "logs": {
+        "allKinds": "全タイプ",
+        "allStatuses": "全ステータス",
+        "modelFilter": "モデル",
+        "modelPlaceholder": "モデル ID",
+        "accountFilter": "アカウント",
+        "accountPlaceholder": "メールまたはアカウント ID",
+        "apiKeyFilter": "APIキー",
+        "apiKeyPlaceholder": "名前または ID",
+        "kindFilter": "タイプ",
+        "statusFilter": "状態",
+        "errorFilter": "エラー",
+        "errorPlaceholder": "エラー分類",
+        "clearFilters": "フィルター解除",
+        "loading": "リクエストログを読み込み中"
+      }
     }
   },
   "githubCopilot": {

@@ -52,6 +52,7 @@ interface SideNavEntry {
 const PAGE_PLATFORM_MAP: Partial<Record<Page, PlatformId>> = {
   overview: 'antigravity',
   codex: 'codex',
+  'codex-api-service': 'codex',
   zed: 'zed',
   'github-copilot': 'github-copilot',
   windsurf: 'windsurf',
@@ -64,6 +65,9 @@ const PAGE_PLATFORM_MAP: Partial<Record<Page, PlatformId>> = {
   trae: 'trae',
   workbuddy: 'workbuddy',
 };
+
+const APP_DISPLAY_NAME =
+  import.meta.env.VITE_COCKPIT_TOOLS_PROFILE === 'dev' ? 'Cockpit Tools Dev' : 'Cockpit Tools';
 
 const CLASSIC_NAV_MIN_SCALE = 0.5;
 const CLASSIC_NAV_SCALE_EPSILON = 0.004;
@@ -799,7 +803,7 @@ export function SideNav({
           </div>
 
           {isClassicLayout && !isClassicCollapsed && (
-            <div className="side-nav-brand-title">Cockpit Tools</div>
+            <div className="side-nav-brand-title">{APP_DISPLAY_NAME}</div>
           )}
         </div>
 

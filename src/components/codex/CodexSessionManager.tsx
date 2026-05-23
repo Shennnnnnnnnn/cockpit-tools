@@ -394,7 +394,7 @@ export function CodexSessionManager() {
       const confirmed = await confirmDialog(
         t(
           'codex.sessionManager.confirm.syncMessage',
-          '会将缺失会话同步到所有实例中，并对同 ID 会话做事件级合并，尽量保留各实例独有消息；写入前会先备份目标实例关键文件和旧会话文件。确认继续？',
+          '会将缺失会话的 rollout、session_index 条目和会话文件时间同步到所有实例，并对同 ID 会话做事件级合并，随后触发官方 Codex 重建会话索引；写入前会备份目标文件。确认继续？',
         ),
         {
           title: t('codex.sessionManager.actions.syncSessions', '同步会话'),
@@ -459,7 +459,7 @@ export function CodexSessionManager() {
     const confirmed = await confirmDialog(
       t(
         'codex.sessionManager.confirm.repairVisibilityMessage',
-        '会按各实例 config.toml 根级 model_provider（缺失时按 openai）修复 rollout 文件与 state_5.sqlite 中的 provider 元数据，写入前会先备份将要修改的文件。运行中的实例可能需要重启后显示。确认继续？',
+        '会按各实例 config.toml 根级 model_provider（缺失时按 openai）修复 rollout 文件的 provider 元数据，并保留会话文件原修改时间，再触发官方 Codex 重建会话索引。写入前会备份将要修改的 rollout 文件。确认继续？',
       ),
       {
         title: t('codex.sessionManager.actions.repairVisibility', '修复可见性'),
@@ -775,7 +775,7 @@ export function CodexSessionManager() {
               <p className="codex-session-target-modal__hint">
                 {t(
                   'codex.sessionManager.targetModal.hint',
-                  '会把所选会话补到目标实例，已有同 ID 会话会自动跳过；目标实例运行中时可能需要重启后显示。',
+                  '会把所选会话的 rollout、session_index 条目和会话文件时间补到目标实例，并触发官方 Codex 重建会话索引；已有同 ID 会话会自动跳过。',
                 )}
               </p>
               <label className="codex-session-target-modal__field">
@@ -872,7 +872,7 @@ export function CodexSessionManager() {
                   <p className="codex-session-restore-modal__hint">
                     {t(
                       'codex.sessionManager.restoreModal.hint',
-                      '恢复会把 rollout 文件、SQLite 线程记录和 session_index 条目一起放回原实例。',
+                      '恢复会把 rollout 文件、session_index 条目和会话文件时间放回原实例，并触发官方 Codex 重建会话索引。',
                     )}
                   </p>
                   <div className="codex-session-restore-list">

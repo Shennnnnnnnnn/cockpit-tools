@@ -3547,9 +3547,10 @@
 }
 
 .codex-oauth-binding-row-main {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
   flex: 1;
 }
@@ -3570,6 +3571,40 @@
 
 .codex-oauth-binding-row-plan {
   flex-shrink: 0;
+}
+
+.codex-oauth-binding-row-term {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.codex-oauth-binding-row-term svg {
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.codex-oauth-binding-row-term strong {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.codex-oauth-binding-row-term span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.codex-oauth-binding-row-term.warning strong {
+  color: #c2410c;
 }
 
 .codex-oauth-binding-modal .group-account-empty {

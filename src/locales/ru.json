@@ -1098,6 +1098,8 @@
       "noGroups": "Нет групп",
       "noGroupsDesc": "Создайте группы для управления аккаунтами",
       "manage": "Управление",
+      "refresh": "Обновить группу",
+      "refreshEmpty": "В этой группе нет аккаунтов для обновления",
       "error": {
         "duplicate": "Название группы уже существует",
         "createFailed": "Не удалось создать группу: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Отключить сервис",
       "enableService": "Включить сервис",
       "saveSuccess": "Коллекция API-сервиса обновлена",
+      "noEligibleAccountsSelected": "Выбранных аккаунтов нет в этой среде или их нельзя использовать в API-сервисе. Сначала импортируйте в эту среду пригодный аккаунт Codex.",
       "removeSuccess": "Аккаунт удалён из API-сервиса",
       "rotateSuccess": "Ключ API-сервиса сброшен",
       "enabledSuccess": "API-сервис включён",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} запросов",
         "accountTokens": "{{count}} токенов",
         "accountResult": "Успех {{success}} / Ошибка {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Запросы изображений",
+        "imagesDetail": "Создание {{generate}} / Правка {{edit}} / Доступ {{blocked}}"
       },
       "routingLabel": "Маршрутизация",
       "routingSaveSuccess": "Маршрутизация API-сервиса обновлена",
@@ -1900,7 +1905,7 @@
         "empty": "Статистики квот пока нет"
       },
       "oauthBinding": {
-        "desc": "Необязательно. Без привязки API-сервис работает по прежней логике API Key; после привязки вход использует OAuth-аккаунт, а Provider — настройки API-сервиса.",
+        "desc": "Необязательно. Можно выбрать только OAuth-аккаунт с указанным сроком подписки; истекший срок тоже допускается. Без привязки API-сервис работает по прежней логике API Key; после привязки вход использует OAuth-аккаунт, а Provider — настройки API-сервиса.",
         "currentService": "API-сервис: {{name}}"
       },
       "customRoutingEdit": "Изменить настраиваемую маршрутизацию",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "URL API-прокси",
       "upstreamProxySaveSuccess": "URL API-прокси обновлён",
       "upstreamProxyUrlPlaceholder": "Пусто = глобальный прокси",
-      "upstreamProxySaveAction": "Сохранить прокси"
+      "upstreamProxySaveAction": "Сохранить прокси",
+      "imageGenerationLabel": "Инструмент image_generation",
+      "imageGenerationDesc": "Управляет объявлением инструмента изображений в текстовых чатах и доступностью image endpoint.",
+      "imageGenerationSaveSuccess": "Настройка image_generation обновлена",
+      "apiKeysTitle": "Ключи клиентов",
+      "apiKeyAdd": "Добавить ключ",
+      "apiKeyLabel": "Имя ключа",
+      "apiKeySaveLabel": "Сохранить имя",
+      "apiKeyDefaultLabel": "Клиент {{index}}",
+      "apiKeyCreateSuccess": "API Key создан",
+      "apiKeyUpdateSuccess": "API Key обновлён",
+      "apiKeyRotateSuccess": "API Key сброшен",
+      "apiKeyDeleteSuccess": "API Key удалён",
+      "apiKeyRotateConfirm": "Этот API Key сразу перестанет работать после сброса. Продолжить?",
+      "apiKeyDeleteConfirm": "Удалить этот API Key?",
+      "apiKeyDelete": "Удалить ключ",
+      "apiKeyDisable": "Отключить ключ",
+      "apiKeyEnable": "Включить ключ",
+      "modelStatsTitle": "По модели",
+      "apiKeyStatsTitle": "По ключу",
+      "healthAvailable": "Доступно",
+      "healthUnavailable": "Недоступно",
+      "healthCooldown": "Ожидание {{count}}",
+      "healthImageUnavailable": "Изображения недоступны",
+      "requestLogTitle": "Журнал запросов",
+      "requestLogEmpty": "Журнал запросов пуст",
+      "requestLogSuccess": "Успех",
+      "requestLogFailed": "Ошибка",
+      "requestLogTokens": "{{value}} токенов",
+      "imageGenerationMode": {
+        "enabled": "Включено",
+        "imagesOnly": "Только изображения",
+        "disabled": "Выключено"
+      },
+      "requestKind": {
+        "text": "Текст",
+        "imageGeneration": "Изображение",
+        "imageEdit": "Правка",
+        "other": "Другое"
+      },
+      "testSuccessInline": "Проверка API-сервиса пройдена"
     },
     "local": {
       "desc": "Импортировать текущий аккаунт из ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Связать OAuth",
         "actionShort": "Связать",
         "title": "Связать OAuth-аккаунт",
-        "desc": "Необязательно. Без привязки этот аккаунт переключается по прежней логике API Key; после привязки вход использует OAuth-аккаунт, а Provider — настройки этого API Key аккаунта.",
+        "desc": "Необязательно. Можно выбрать только OAuth-аккаунт с указанным сроком подписки; истекший срок тоже допускается. Без привязки этот аккаунт переключается по прежней логике API Key; после привязки вход использует OAuth-аккаунт, а Provider — настройки этого API Key аккаунта.",
         "currentAccount": "API Key аккаунт: {{name}}",
         "selectLabel": "Выберите OAuth-аккаунт",
         "empty": "OAuth-аккаунтов пока нет. Сначала добавьте аккаунт с OAuth-авторизацией.",
+        "emptyEligible": "Нет OAuth-аккаунтов с указанным сроком подписки. Сначала обновите квоту или добавьте подходящий OAuth-аккаунт.",
         "validationRequired": "Выберите OAuth-аккаунт",
+        "validationSubscriptionRequired": "Можно привязать только OAuth-аккаунт с указанным сроком подписки",
         "saveSuccess": "Связь OAuth обновлена",
         "saveFailed": "Не удалось связать OAuth: {{error}}",
         "switchRequiresBinding": "Сначала свяжите OAuth-аккаунт",
@@ -2529,6 +2576,84 @@
       "fastDesc": "Скорость 1,5x, расход выше",
       "saveSuccess": "Скорость обновлена",
       "saveFailed": "Не удалось сохранить скорость: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "API-сервис Codex",
+      "title": "API-сервис Codex",
+      "subtitle": "Открывает пул OAuth-аккаунтов Codex как OpenAI-совместимый API для локальных клиентов или LAN.",
+      "openPage": "Открыть API-сервис",
+      "openFullPage": "Показать все функции",
+      "tabs": {
+        "overview": "Обзор сервиса",
+        "keys": "Ключи клиентов",
+        "accounts": "Пул аккаунтов",
+        "models": "Модели и возможности",
+        "logs": "Статистика и журналы"
+      },
+      "healthTitle": "Состояние сервиса",
+      "health": {
+        "availableAccounts": "Доступные аккаунты",
+        "cooldowns": "Ожидания",
+        "imageUnavailable": "Изображения недоступны",
+        "keys": "Ключи клиентов"
+      },
+      "accountHealth": {
+        "failures": "{{count}} сбоев подряд",
+        "image": "Изображения {{status}}"
+      },
+      "models": {
+        "availableTitle": "Доступные модели",
+        "capabilityTitle": "Переключатели возможностей",
+        "capabilityDesc": "gpt-image-2 автоматически показывается или скрывается по переключателю сервиса, тарифу аккаунта и записанному состоянию возможностей изображений.",
+        "rulesTitle": "Правила моделей",
+        "aliasTitle": "Алиасы моделей",
+        "aliasPlaceholder": "gpt-5 => g5; + оставляет исходную модель",
+        "excludedTitle": "Скрытые модели",
+        "excludedPlaceholder": "Модель или шаблон на строку, напр. gpt-5-*",
+        "saveRules": "Сохранить правила",
+        "rulesSaved": "Правила моделей сохранены"
+      },
+      "keys": {
+        "policyTitle": "Политика моделей",
+        "advancedPolicyTitle": "Дополнительно: политика моделей",
+        "modelPrefix": "Префикс модели",
+        "modelPrefixPlaceholder": "Например: codex",
+        "allowedModels": "Разрешенные модели",
+        "allowedModelsPlaceholder": "Пусто значит все; модель или шаблон на строку",
+        "excludedModels": "Исключенные модели",
+        "excludedModelsPlaceholder": "Модель или шаблон на строку",
+        "savePolicy": "Сохранить политику",
+        "policySaved": "Политика моделей Key сохранена"
+      },
+      "routing": {
+        "optionsTitle": "Параметры маршрута",
+        "sessionAffinity": "Привязка сессии",
+        "sessionAffinityTtl": "TTL привязки",
+        "maxRetryCredentials": "Аккаунты retry",
+        "maxRetryInterval": "Ожидание retry",
+        "disableCooling": "Отключить cooldown",
+        "saveOptions": "Сохранить параметры",
+        "optionsSaved": "Параметры маршрута сохранены"
+      },
+      "validation": {
+        "numberRange": "Введите число от {{min}} до {{max}}"
+      },
+      "logs": {
+        "allKinds": "Все типы",
+        "allStatuses": "Все статусы",
+        "modelFilter": "Модель",
+        "modelPlaceholder": "ID модели",
+        "accountFilter": "Аккаунт",
+        "accountPlaceholder": "Почта или ID аккаунта",
+        "apiKeyFilter": "Ключ API",
+        "apiKeyPlaceholder": "Имя или ID",
+        "kindFilter": "Тип",
+        "statusFilter": "Статус",
+        "errorFilter": "Ошибка",
+        "errorPlaceholder": "Категория ошибки",
+        "clearFilters": "Сбросить фильтры",
+        "loading": "Загрузка журналов"
+      }
     }
   },
   "githubCopilot": {

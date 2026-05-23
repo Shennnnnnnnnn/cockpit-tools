@@ -1098,6 +1098,8 @@
       "noGroups": "Sin grupos",
       "noGroupsDesc": "Crea grupos para gestionar tus cuentas",
       "manage": "Gestionar",
+      "refresh": "Actualizar grupo",
+      "refreshEmpty": "No hay cuentas actualizables en este grupo",
       "error": {
         "duplicate": "El nombre del grupo ya existe",
         "createFailed": "Error al crear el grupo: {{error}}",
@@ -1755,6 +1757,7 @@
       "disableService": "Desactivar servicio",
       "enableService": "Activar servicio",
       "saveSuccess": "Se actualizó la colección del servicio API",
+      "noEligibleAccountsSelected": "Las cuentas seleccionadas no están en este entorno o no se pueden usar con el servicio API. Importa primero una cuenta de Codex usable en este entorno.",
       "removeSuccess": "La cuenta se quitó del servicio API",
       "rotateSuccess": "Se restableció la clave del servicio API",
       "enabledSuccess": "Servicio API habilitado",
@@ -1832,7 +1835,9 @@
         "accountRequests": "{{count}} solicitudes",
         "accountTokens": "{{count}} tokens totales",
         "accountResult": "Correctas {{success}} / Fallidas {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Solicitudes de imagen",
+        "imagesDetail": "Generar {{generate}} / Editar {{edit}} / Permiso {{blocked}}"
       },
       "routingLabel": "Enrutamiento",
       "routingSaveSuccess": "Se actualizó el enrutamiento del servicio API",
@@ -1900,7 +1905,7 @@
         "empty": "Aún no hay estadísticas de cuota"
       },
       "oauthBinding": {
-        "desc": "Opcional. Sin enlace, el servicio API mantiene el flujo de API Key anterior; al enlazar, la sesión usa la cuenta OAuth y el Provider usa la configuración del servicio API.",
+        "desc": "Opcional. Solo se pueden seleccionar cuentas OAuth con marca de plazo de suscripción; los plazos caducados también cuentan. Sin enlace, el servicio API mantiene el flujo de API Key anterior; al enlazar, la sesión usa la cuenta OAuth y el Provider usa la configuración del servicio API.",
         "currentService": "Servicio API: {{name}}"
       },
       "customRoutingEdit": "Editar enrutamiento personalizado",
@@ -1924,7 +1929,47 @@
       "upstreamProxyLabel": "URL de proxy API",
       "upstreamProxySaveSuccess": "URL de proxy API actualizada",
       "upstreamProxyUrlPlaceholder": "Vacío = proxy global",
-      "upstreamProxySaveAction": "Guardar proxy"
+      "upstreamProxySaveAction": "Guardar proxy",
+      "imageGenerationLabel": "Herramienta image_generation",
+      "imageGenerationDesc": "Controla si los chats de texto declaran la herramienta de imagen y si los endpoints de imagen están disponibles.",
+      "imageGenerationSaveSuccess": "Configuración de image_generation actualizada",
+      "apiKeysTitle": "Claves de cliente",
+      "apiKeyAdd": "Añadir clave",
+      "apiKeyLabel": "Nombre de clave",
+      "apiKeySaveLabel": "Guardar nombre",
+      "apiKeyDefaultLabel": "Cliente {{index}}",
+      "apiKeyCreateSuccess": "API Key creada",
+      "apiKeyUpdateSuccess": "API Key actualizada",
+      "apiKeyRotateSuccess": "API Key restablecida",
+      "apiKeyDeleteSuccess": "API Key eliminada",
+      "apiKeyRotateConfirm": "Esta API Key dejará de funcionar inmediatamente tras restablecerla. ¿Continuar?",
+      "apiKeyDeleteConfirm": "¿Eliminar esta API Key?",
+      "apiKeyDelete": "Eliminar clave",
+      "apiKeyDisable": "Desactivar clave",
+      "apiKeyEnable": "Activar clave",
+      "modelStatsTitle": "Por modelo",
+      "apiKeyStatsTitle": "Por clave",
+      "healthAvailable": "Disponible",
+      "healthUnavailable": "No disponible",
+      "healthCooldown": "En espera {{count}}",
+      "healthImageUnavailable": "Imagen no disponible",
+      "requestLogTitle": "Registro de solicitudes",
+      "requestLogEmpty": "Aún no hay registros",
+      "requestLogSuccess": "Correcto",
+      "requestLogFailed": "Falló",
+      "requestLogTokens": "{{value}} tokens",
+      "imageGenerationMode": {
+        "enabled": "Activado",
+        "imagesOnly": "Solo imágenes",
+        "disabled": "Desactivado"
+      },
+      "requestKind": {
+        "text": "Texto",
+        "imageGeneration": "Imagen",
+        "imageEdit": "Edición",
+        "other": "Otro"
+      },
+      "testSuccessInline": "Prueba del servicio API superada"
     },
     "local": {
       "desc": "Importa la cuenta actual desde ~/.codex/auth.json",
@@ -2335,11 +2380,13 @@
         "action": "Vincular OAuth",
         "actionShort": "Vincular",
         "title": "Vincular cuenta OAuth",
-        "desc": "Opcional. Sin enlace, esta cuenta cambia con el flujo de API Key anterior; al enlazar, la sesión usa la cuenta OAuth y el Provider usa la configuración de esta cuenta API Key.",
+        "desc": "Opcional. Solo se pueden seleccionar cuentas OAuth con marca de plazo de suscripción; los plazos caducados también cuentan. Sin enlace, esta cuenta cambia con el flujo de API Key anterior; al enlazar, la sesión usa la cuenta OAuth y el Provider usa la configuración de esta cuenta API Key.",
         "currentAccount": "Cuenta API Key: {{name}}",
         "selectLabel": "Selecciona cuenta OAuth",
         "empty": "No hay cuentas OAuth. Añade primero una cuenta autorizada con OAuth.",
+        "emptyEligible": "No hay cuentas OAuth con plazo de suscripción. Actualiza la cuota o añade primero una cuenta OAuth apta.",
         "validationRequired": "Selecciona una cuenta OAuth",
+        "validationSubscriptionRequired": "Solo se pueden vincular cuentas OAuth con plazo de suscripción",
         "saveSuccess": "Vínculo OAuth actualizado",
         "saveFailed": "Error al vincular OAuth: {{error}}",
         "switchRequiresBinding": "Vincula primero una cuenta OAuth",
@@ -2529,6 +2576,84 @@
       "fastDesc": "1,5 veces más rápida, mayor uso",
       "saveSuccess": "Velocidad actualizada",
       "saveFailed": "No se pudo guardar la velocidad: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Servicio API de Codex",
+      "title": "Servicio API de Codex",
+      "subtitle": "Expone el grupo de cuentas OAuth de Codex como una API compatible con OpenAI para clientes locales o de LAN.",
+      "openPage": "Abrir servicio API",
+      "openFullPage": "Ver todas las funciones",
+      "tabs": {
+        "overview": "Resumen del servicio",
+        "keys": "Claves cliente",
+        "accounts": "Grupo de cuentas",
+        "models": "Modelos y capacidades",
+        "logs": "Estadísticas y registros"
+      },
+      "healthTitle": "Estado del servicio",
+      "health": {
+        "availableAccounts": "Cuentas disponibles",
+        "cooldowns": "En espera",
+        "imageUnavailable": "Imágenes no disponibles",
+        "keys": "Claves cliente"
+      },
+      "accountHealth": {
+        "failures": "{{count}} fallos seguidos",
+        "image": "Imágenes {{status}}"
+      },
+      "models": {
+        "availableTitle": "Modelos disponibles",
+        "capabilityTitle": "Interruptores de capacidad",
+        "capabilityDesc": "gpt-image-2 se muestra u oculta automáticamente según el interruptor del servicio, el plan de la cuenta y el estado registrado de capacidad de imagen.",
+        "rulesTitle": "Reglas de modelos",
+        "aliasTitle": "Alias de modelos",
+        "aliasPlaceholder": "gpt-5 => g5; añade + para conservar el modelo original",
+        "excludedTitle": "Modelos ocultos",
+        "excludedPlaceholder": "Un modelo o patrón por línea, ej. gpt-5-*",
+        "saveRules": "Guardar reglas",
+        "rulesSaved": "Reglas de modelos guardadas"
+      },
+      "keys": {
+        "policyTitle": "Política de modelos",
+        "advancedPolicyTitle": "Avanzado: política de modelos",
+        "modelPrefix": "Prefijo de modelo",
+        "modelPrefixPlaceholder": "Ejemplo: codex",
+        "allowedModels": "Modelos permitidos",
+        "allowedModelsPlaceholder": "Vacío permite todos; un modelo o patrón por línea",
+        "excludedModels": "Modelos excluidos",
+        "excludedModelsPlaceholder": "Un modelo o patrón por línea",
+        "savePolicy": "Guardar política",
+        "policySaved": "Política de modelos del Key guardada"
+      },
+      "routing": {
+        "optionsTitle": "Opciones de ruta",
+        "sessionAffinity": "Afinidad de sesión",
+        "sessionAffinityTtl": "TTL de afinidad",
+        "maxRetryCredentials": "Cuentas retry",
+        "maxRetryInterval": "Espera retry",
+        "disableCooling": "Desactivar cooldown",
+        "saveOptions": "Guardar opciones",
+        "optionsSaved": "Opciones de ruta guardadas"
+      },
+      "validation": {
+        "numberRange": "Ingresa un número de {{min}} a {{max}}"
+      },
+      "logs": {
+        "allKinds": "Todos los tipos",
+        "allStatuses": "Todos los estados",
+        "modelFilter": "Modelo",
+        "modelPlaceholder": "ID de modelo",
+        "accountFilter": "Cuenta",
+        "accountPlaceholder": "Correo o ID de cuenta",
+        "apiKeyFilter": "Clave API",
+        "apiKeyPlaceholder": "Nombre o ID",
+        "kindFilter": "Tipo",
+        "statusFilter": "Estado",
+        "errorFilter": "Fallo",
+        "errorPlaceholder": "Categoría de error",
+        "clearFilters": "Borrar filtros",
+        "loading": "Cargando registros"
+      }
     }
   },
   "githubCopilot": {

@@ -1180,6 +1180,8 @@
       "noGroups": "Tidak Ada Grup",
       "noGroupsDesc": "Buat grup untuk mengelola akun Anda secara berkelompok",
       "manage": "Kelola",
+      "refresh": "Segarkan grup",
+      "refreshEmpty": "Tidak ada akun yang dapat disegarkan di grup ini",
       "error": {
         "duplicate": "Nama grup sudah ada",
         "createFailed": "Gagal membuat grup: {{error}}",
@@ -1804,6 +1806,7 @@
       "disableService": "Nonaktifkan layanan",
       "enableService": "Aktifkan layanan",
       "saveSuccess": "Koleksi layanan API diperbarui",
+      "noEligibleAccountsSelected": "Akun yang dipilih tidak ada di lingkungan ini atau tidak dapat digunakan oleh layanan API. Impor akun Codex yang dapat digunakan di lingkungan ini terlebih dahulu.",
       "removeSuccess": "Akun dihapus dari layanan API",
       "rotateSuccess": "Kunci layanan API direset",
       "enabledSuccess": "Layanan API diaktifkan",
@@ -1881,7 +1884,9 @@
         "accountRequests": "{{count}} permintaan",
         "accountTokens": "{{count}} token",
         "accountResult": "Berhasil {{success}} / Gagal {{failed}}",
-        "accountTokensCompact": "{{value}}"
+        "accountTokensCompact": "{{value}}",
+        "images": "Permintaan gambar",
+        "imagesDetail": "Buat {{generate}} / Edit {{edit}} / Izin {{blocked}}"
       },
       "routingLabel": "Rute",
       "routingSaveSuccess": "Rute layanan API diperbarui",
@@ -1949,7 +1954,7 @@
         "empty": "Belum ada statistik kuota"
       },
       "oauthBinding": {
-        "desc": "Opsional. Tanpa tautan, layanan API tetap memakai alur API Key lama; setelah ditautkan, status masuk memakai akun OAuth dan Provider memakai konfigurasi layanan API.",
+        "desc": "Opsional. Hanya akun OAuth dengan penanda masa langganan yang dapat dipilih; masa yang sudah kedaluwarsa juga boleh. Tanpa tautan, layanan API tetap memakai alur API Key lama; setelah ditautkan, status masuk memakai akun OAuth dan Provider memakai konfigurasi layanan API.",
         "currentService": "Layanan API: {{name}}"
       },
       "customRoutingEdit": "Edit routing kustom",
@@ -1973,7 +1978,47 @@
       "upstreamProxyLabel": "URL proxy API",
       "upstreamProxySaveSuccess": "URL proxy API diperbarui",
       "upstreamProxyUrlPlaceholder": "Kosong = proxy global",
-      "upstreamProxySaveAction": "Simpan proxy"
+      "upstreamProxySaveAction": "Simpan proxy",
+      "imageGenerationLabel": "Alat image_generation",
+      "imageGenerationDesc": "Mengatur apakah chat teks mendeklarasikan alat gambar dan apakah endpoint gambar tersedia.",
+      "imageGenerationSaveSuccess": "Pengaturan image_generation diperbarui",
+      "apiKeysTitle": "Kunci klien",
+      "apiKeyAdd": "Tambah kunci",
+      "apiKeyLabel": "Nama kunci",
+      "apiKeySaveLabel": "Simpan nama",
+      "apiKeyDefaultLabel": "Klien {{index}}",
+      "apiKeyCreateSuccess": "API Key dibuat",
+      "apiKeyUpdateSuccess": "API Key diperbarui",
+      "apiKeyRotateSuccess": "API Key direset",
+      "apiKeyDeleteSuccess": "API Key dihapus",
+      "apiKeyRotateConfirm": "API Key ini akan langsung tidak valid setelah direset. Lanjutkan?",
+      "apiKeyDeleteConfirm": "Hapus API Key ini?",
+      "apiKeyDelete": "Hapus kunci",
+      "apiKeyDisable": "Nonaktifkan kunci",
+      "apiKeyEnable": "Aktifkan kunci",
+      "modelStatsTitle": "Per model",
+      "apiKeyStatsTitle": "Per kunci",
+      "healthAvailable": "Tersedia",
+      "healthUnavailable": "Tidak tersedia",
+      "healthCooldown": "Jeda {{count}}",
+      "healthImageUnavailable": "Gambar tidak tersedia",
+      "requestLogTitle": "Log permintaan",
+      "requestLogEmpty": "Belum ada log permintaan",
+      "requestLogSuccess": "Berhasil",
+      "requestLogFailed": "Gagal",
+      "requestLogTokens": "{{value}} token",
+      "imageGenerationMode": {
+        "enabled": "Aktif",
+        "imagesOnly": "Gambar saja",
+        "disabled": "Nonaktif"
+      },
+      "requestKind": {
+        "text": "Teks",
+        "imageGeneration": "Gambar",
+        "imageEdit": "Edit",
+        "other": "Lainnya"
+      },
+      "testSuccessInline": "Uji layanan API berhasil"
     },
     "api": {
       "baseUrl": "URL Dasar",
@@ -2071,11 +2116,13 @@
         "action": "Tautkan OAuth",
         "actionShort": "Tautkan",
         "title": "Tautkan Akun OAuth",
-        "desc": "Opsional. Tanpa tautan, akun ini beralih dengan alur API Key lama; setelah ditautkan, status masuk memakai akun OAuth dan Provider memakai konfigurasi akun API Key ini.",
+        "desc": "Opsional. Hanya akun OAuth dengan penanda masa langganan yang dapat dipilih; masa yang sudah kedaluwarsa juga boleh. Tanpa tautan, akun ini beralih dengan alur API Key lama; setelah ditautkan, status masuk memakai akun OAuth dan Provider memakai konfigurasi akun API Key ini.",
         "currentAccount": "Akun API Key: {{name}}",
         "selectLabel": "Pilih akun OAuth",
         "empty": "Belum ada akun OAuth. Tambahkan akun berotorisasi OAuth terlebih dahulu.",
+        "emptyEligible": "Tidak ada akun OAuth dengan masa langganan. Segarkan kuota atau tambahkan akun OAuth yang memenuhi syarat terlebih dahulu.",
         "validationRequired": "Pilih akun OAuth",
+        "validationSubscriptionRequired": "Hanya akun OAuth dengan masa langganan yang dapat ditautkan",
         "saveSuccess": "Tautan OAuth diperbarui",
         "saveFailed": "Gagal menautkan OAuth: {{error}}",
         "switchRequiresBinding": "Tautkan akun OAuth terlebih dahulu",
@@ -2575,6 +2622,84 @@
       "fastDesc": "Kecepatan 1,5x, pemakaian lebih tinggi",
       "saveSuccess": "Kecepatan diperbarui",
       "saveFailed": "Gagal menyimpan kecepatan: {{error}}"
+    },
+    "apiService": {
+      "navTitle": "Layanan API Codex",
+      "title": "Layanan API Codex",
+      "subtitle": "Mengekspos kumpulan akun OAuth Codex sebagai API yang kompatibel dengan OpenAI untuk klien lokal atau LAN.",
+      "openPage": "Buka layanan API",
+      "openFullPage": "Lihat semua fitur",
+      "tabs": {
+        "overview": "Ringkasan Layanan",
+        "keys": "Kunci klien",
+        "accounts": "Kumpulan akun",
+        "models": "Model dan kemampuan",
+        "logs": "Statistik dan log"
+      },
+      "healthTitle": "Kesehatan layanan",
+      "health": {
+        "availableAccounts": "Akun tersedia",
+        "cooldowns": "Cooldown",
+        "imageUnavailable": "Gambar tidak tersedia",
+        "keys": "Kunci klien"
+      },
+      "accountHealth": {
+        "failures": "{{count}} kegagalan beruntun",
+        "image": "Gambar {{status}}"
+      },
+      "models": {
+        "availableTitle": "Model tersedia",
+        "capabilityTitle": "Sakelar kemampuan",
+        "capabilityDesc": "gpt-image-2 ditampilkan atau disembunyikan otomatis berdasarkan sakelar layanan, paket akun, dan status kemampuan gambar yang tercatat.",
+        "rulesTitle": "Aturan Model",
+        "aliasTitle": "Alias Model",
+        "aliasPlaceholder": "gpt-5 => g5; tambah + untuk mempertahankan model asli",
+        "excludedTitle": "Model Tersembunyi",
+        "excludedPlaceholder": "Satu model atau pola per baris, mis. gpt-5-*",
+        "saveRules": "Simpan Aturan",
+        "rulesSaved": "Aturan model tersimpan"
+      },
+      "keys": {
+        "policyTitle": "Kebijakan Model",
+        "advancedPolicyTitle": "Lanjutan: Kebijakan Model",
+        "modelPrefix": "Prefiks Model",
+        "modelPrefixPlaceholder": "Contoh: codex",
+        "allowedModels": "Model Diizinkan",
+        "allowedModelsPlaceholder": "Kosong berarti semua; satu model atau pola per baris",
+        "excludedModels": "Model Dikecualikan",
+        "excludedModelsPlaceholder": "Satu model atau pola per baris",
+        "savePolicy": "Simpan Kebijakan",
+        "policySaved": "Kebijakan model Key tersimpan"
+      },
+      "routing": {
+        "optionsTitle": "Opsi Routing",
+        "sessionAffinity": "Afinitas Sesi",
+        "sessionAffinityTtl": "TTL Afinitas",
+        "maxRetryCredentials": "Akun retry",
+        "maxRetryInterval": "Tunggu retry",
+        "disableCooling": "Matikan cooldown",
+        "saveOptions": "Simpan Opsi",
+        "optionsSaved": "Opsi routing tersimpan"
+      },
+      "validation": {
+        "numberRange": "Masukkan angka dari {{min}} hingga {{max}}"
+      },
+      "logs": {
+        "allKinds": "Semua Jenis",
+        "allStatuses": "Semua Status",
+        "modelFilter": "Model layanan",
+        "modelPlaceholder": "ID model",
+        "accountFilter": "Akun",
+        "accountPlaceholder": "Email atau ID akun",
+        "apiKeyFilter": "Kunci API",
+        "apiKeyPlaceholder": "Nama atau ID",
+        "kindFilter": "Jenis",
+        "statusFilter": "Keadaan",
+        "errorFilter": "Kesalahan",
+        "errorPlaceholder": "Kategori error",
+        "clearFilters": "Hapus Filter",
+        "loading": "Memuat log permintaan"
+      }
     }
   },
   "codebuddy": {

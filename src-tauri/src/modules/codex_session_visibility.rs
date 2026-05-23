@@ -1,11 +1,10 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::SystemTime;
 
-use chrono::Utc;
-use rusqlite::Connection;
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{json, Value as JsonValue};
 use toml_edit::Document;
@@ -15,8 +14,8 @@ use crate::modules;
 const DEFAULT_INSTANCE_ID: &str = "__default__";
 const DEFAULT_INSTANCE_NAME: &str = "默认实例";
 const DEFAULT_PROVIDER_ID: &str = "openai";
-const STATE_DB_FILE: &str = "state_5.sqlite";
 const CONFIG_FILE_NAME: &str = "config.toml";
+const SESSION_INDEX_FILE: &str = "session_index.jsonl";
 const SESSION_DIRS: [&str; 2] = ["sessions", "archived_sessions"];
 const SESSION_VISIBILITY_REPAIR_BACKUP_PREFIX: &str = "backup-";
 const SESSION_VISIBILITY_REPAIR_BACKUP_SUFFIX: &str = "-session-visibility-repair";
@@ -60,21 +59,8 @@ struct CodexSyncInstance {
 struct RolloutProviderChange {
     relative_path: PathBuf,
     absolute_path: PathBuf,
-    updated_first_line: String,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SqliteProviderScan {
-    rows_to_update: usize,
-    skipped_unusable_database: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ThreadsTableColumns {
-    model_provider: bool,
-    has_user_event: bool,
-    first_user_message: bool,
-    thread_source: bool,
+    updated_first_line: Option<String>,
+    target_modified_at: Option<SystemTime>,
 }
 
 pub fn repair_session_visibility_across_instances(
@@ -85,8 +71,6 @@ pub fn repair_session_visibility_across_instances(
     let mut backup_dirs = Vec::new();
     let mut mutated_instance_count = 0usize;
     let mut changed_rollout_file_count = 0usize;
-    let mut updated_sqlite_row_count = 0usize;
-    let mut skipped_sqlite_file_count = 0usize;
     let mut mutated_running_instance_count = 0usize;
 
     for instance in &instances {
@@ -94,52 +78,29 @@ pub fn repair_session_visibility_across_instances(
         let target_provider = read_target_provider(&instance.data_dir)?;
         let rollout_changes =
             collect_rollout_provider_changes(&instance.data_dir, &target_provider)?;
-        let sqlite_scan = count_sqlite_rows_to_update(&instance.data_dir, &target_provider)?;
-        let sqlite_rows_to_update = sqlite_scan.rows_to_update;
-        if sqlite_scan.skipped_unusable_database {
-            skipped_sqlite_file_count += 1;
-        }
 
-        if rollout_changes.is_empty() && sqlite_rows_to_update == 0 {
-            items.push(CodexSessionVisibilityRepairItem {
-                instance_id: instance.id.clone(),
-                instance_name: instance.name.clone(),
-                target_provider,
-                changed_rollout_file_count: 0,
-                updated_sqlite_row_count: 0,
-                skipped_sqlite_file: sqlite_scan.skipped_unusable_database,
-                backup_dir: None,
-                running,
-            });
-            continue;
-        }
+        let backup_dir = if rollout_changes.is_empty() {
+            None
+        } else {
+            Some(backup_instance_files(
+                &instance.data_dir,
+                &rollout_changes,
+                &instance.id,
+                &target_provider,
+            )?)
+        };
+        let backup_dir_string = backup_dir
+            .as_ref()
+            .map(|value| value.to_string_lossy().to_string());
 
-        let backup_dir = backup_instance_files(
-            &instance.data_dir,
-            &rollout_changes,
-            sqlite_rows_to_update > 0,
-            &instance.id,
-            &target_provider,
-        )?;
-        let backup_dir_string = backup_dir.to_string_lossy().to_string();
-
-        let repaired = repair_single_instance(
-            &instance.data_dir,
-            &target_provider,
-            &rollout_changes,
-            sqlite_rows_to_update > 0,
-        );
-        let sqlite_rows_updated = match repaired {
-            Ok(value) => value,
-            Err(error) => {
-                let restore_result = restore_instance_files_from_backup(
-                    &instance.data_dir,
-                    &backup_dir,
-                    sqlite_rows_to_update > 0,
-                );
+        let repaired = repair_single_instance(&rollout_changes);
+        if let Err(error) = repaired {
+            if let Some(backup_dir) = backup_dir.as_ref() {
+                let restore_result =
+                    restore_instance_files_from_backup(&instance.data_dir, backup_dir);
                 if let Err(restore_error) = restore_result {
                     return Err(format!(
-                        "修复实例历史会话可见性失败 ({}): {}；自动回滚也失败: {}；备份目录: {}",
+                        "修复实例历史会话可见性失败 ({}): {}；自动回滚 rollout 也失败: {}；备份目录: {}",
                         instance.name,
                         error,
                         restore_error,
@@ -147,29 +108,63 @@ pub fn repair_session_visibility_across_instances(
                     ));
                 }
                 return Err(format!(
-                    "修复实例历史会话可见性失败 ({}): {}；已自动回滚，备份目录: {}",
+                    "修复实例历史会话可见性失败 ({}): {}；已自动回滚 rollout，备份目录: {}",
                     instance.name,
                     error,
                     backup_dir.display()
                 ));
             }
-        };
+            return Err(format!(
+                "修复实例历史会话可见性失败 ({}): {}",
+                instance.name, error
+            ));
+        }
+
+        match modules::codex_official_app_server::rebuild_thread_metadata(&instance.data_dir) {
+            Ok(()) => {}
+            Err(error) => {
+                if let Some(backup_dir) = backup_dir.as_ref() {
+                    let restore_result =
+                        restore_instance_files_from_backup(&instance.data_dir, backup_dir);
+                    if let Err(restore_error) = restore_result {
+                        return Err(format!(
+                            "官方 Codex 重建会话索引失败 ({}): {}；自动回滚 rollout 也失败: {}；备份目录: {}",
+                            instance.name,
+                            error,
+                            restore_error,
+                            backup_dir.display()
+                        ));
+                    }
+                    return Err(format!(
+                        "官方 Codex 重建会话索引失败 ({}): {}；已自动回滚 rollout，备份目录: {}",
+                        instance.name,
+                        error,
+                        backup_dir.display()
+                    ));
+                };
+                return Err(format!(
+                    "官方 Codex 重建会话索引失败 ({}): {}",
+                    instance.name, error
+                ));
+            }
+        }
 
         mutated_instance_count += 1;
         changed_rollout_file_count += rollout_changes.len();
-        updated_sqlite_row_count += sqlite_rows_updated;
         if running {
             mutated_running_instance_count += 1;
         }
-        backup_dirs.push(backup_dir_string.clone());
+        if let Some(backup_dir_string) = backup_dir_string.as_ref() {
+            backup_dirs.push(backup_dir_string.clone());
+        }
         items.push(CodexSessionVisibilityRepairItem {
             instance_id: instance.id.clone(),
             instance_name: instance.name.clone(),
             target_provider,
             changed_rollout_file_count: rollout_changes.len(),
-            updated_sqlite_row_count: sqlite_rows_updated,
-            skipped_sqlite_file: sqlite_scan.skipped_unusable_database,
-            backup_dir: Some(backup_dir_string),
+            updated_sqlite_row_count: 0,
+            skipped_sqlite_file: false,
+            backup_dir: backup_dir_string,
             running,
         });
     }
@@ -179,17 +174,15 @@ pub fn repair_session_visibility_across_instances(
     let message = build_summary_message(
         mutated_instance_count,
         changed_rollout_file_count,
-        updated_sqlite_row_count,
         mutated_running_instance_count,
-        skipped_sqlite_file_count,
     );
 
     Ok(CodexSessionVisibilityRepairSummary {
         instance_count: instances.len(),
         mutated_instance_count,
         changed_rollout_file_count,
-        updated_sqlite_row_count,
-        skipped_sqlite_file_count,
+        updated_sqlite_row_count: 0,
+        skipped_sqlite_file_count: 0,
         items,
         backup_dirs,
         message,
@@ -200,45 +193,32 @@ pub fn read_history_visibility_provider_for_dir(data_dir: &Path) -> Result<Strin
     read_target_provider(data_dir)
 }
 
-fn repair_single_instance(
-    data_dir: &Path,
-    target_provider: &str,
-    rollout_changes: &[RolloutProviderChange],
-    update_sqlite: bool,
-) -> Result<usize, String> {
-    let sqlite_rows_updated = if update_sqlite {
-        update_sqlite_provider(data_dir, target_provider)?
-    } else {
-        0
-    };
+fn repair_single_instance(rollout_changes: &[RolloutProviderChange]) -> Result<(), String> {
     for change in rollout_changes {
         rewrite_rollout_provider(change)?;
     }
-    Ok(sqlite_rows_updated)
+    Ok(())
 }
 
 fn build_summary_message(
     mutated_instance_count: usize,
     changed_rollout_file_count: usize,
-    updated_sqlite_row_count: usize,
     mutated_running_instance_count: usize,
-    _skipped_sqlite_file_count: usize,
 ) -> String {
     if mutated_instance_count == 0 {
-        return "所有 Codex 实例的历史会话 provider 元数据已与当前 provider 一致，无需修复"
-            .to_string();
+        return "未找到可处理的 Codex 实例".to_string();
     }
 
     if mutated_running_instance_count > 0 {
         return format!(
-            "已为 {} 个实例修复历史会话可见性：改写 {} 个 rollout 文件，更新 {} 条 SQLite 记录。运行中的实例可能需要重启后显示",
-            mutated_instance_count, changed_rollout_file_count, updated_sqlite_row_count
+            "已为 {} 个实例修复历史会话可见性：改写 {} 个 rollout 文件，并已触发官方 Codex 重建会话索引。运行中的实例可能需要刷新或重启后显示",
+            mutated_instance_count, changed_rollout_file_count
         );
     }
 
     format!(
-        "已为 {} 个实例修复历史会话可见性：改写 {} 个 rollout 文件，更新 {} 条 SQLite 记录",
-        mutated_instance_count, changed_rollout_file_count, updated_sqlite_row_count
+        "已为 {} 个实例修复历史会话可见性：改写 {} 个 rollout 文件，并已触发官方 Codex 重建会话索引",
+        mutated_instance_count, changed_rollout_file_count
     )
 }
 
@@ -319,6 +299,7 @@ fn collect_rollout_provider_changes(
     data_dir: &Path,
     target_provider: &str,
 ) -> Result<Vec<RolloutProviderChange>, String> {
+    let session_index_map = read_session_index_map(data_dir)?;
     let mut changes = Vec::new();
 
     for dir_name in SESSION_DIRS {
@@ -334,20 +315,45 @@ fn collect_rollout_provider_changes(
             let Some(mut parsed) = parse_session_meta_record(&first_line) else {
                 continue;
             };
+            let session_id = session_meta_id(&parsed);
+            let target_modified_at = session_id
+                .as_deref()
+                .and_then(|id| session_index_map.get(id))
+                .and_then(parse_session_index_updated_at_ms)
+                .or_else(|| rollout_file_activity_ms(&rollout_path))
+                .and_then(modules::codex_session_file_time::system_time_from_unix_millis);
+            let current_modified_at =
+                modules::codex_session_file_time::read_modified_time(&rollout_path);
             let current_provider = parsed["payload"]
                 .get("model_provider")
                 .and_then(JsonValue::as_str)
                 .unwrap_or("");
-            if current_provider == target_provider {
+            let provider_matches = current_provider == target_provider;
+            let modified_time_matches = target_modified_at.is_none()
+                || modules::codex_session_file_time::same_modified_time_millis(
+                    current_modified_at,
+                    target_modified_at,
+                );
+            if provider_matches && modified_time_matches {
                 continue;
             }
 
-            if let Some(payload) = parsed.get_mut("payload").and_then(JsonValue::as_object_mut) {
+            let updated_first_line = if provider_matches {
+                None
+            } else if let Some(payload) =
+                parsed.get_mut("payload").and_then(JsonValue::as_object_mut)
+            {
                 payload.insert(
                     "model_provider".to_string(),
                     JsonValue::String(target_provider.to_string()),
                 );
-            }
+                Some(
+                    serde_json::to_string(&parsed)
+                        .map_err(|error| format!("序列化 session_meta 失败: {}", error))?,
+                )
+            } else {
+                None
+            };
 
             let relative_path = rollout_path
                 .strip_prefix(data_dir)
@@ -355,8 +361,8 @@ fn collect_rollout_provider_changes(
             changes.push(RolloutProviderChange {
                 relative_path: relative_path.to_path_buf(),
                 absolute_path: rollout_path,
-                updated_first_line: serde_json::to_string(&parsed)
-                    .map_err(|error| format!("序列化 session_meta 失败: {}", error))?,
+                updated_first_line,
+                target_modified_at,
             });
         }
     }
@@ -441,290 +447,137 @@ fn parse_session_meta_record(first_line: &str) -> Option<JsonValue> {
     Some(parsed)
 }
 
-fn is_missing_threads_table_error(error: &rusqlite::Error) -> bool {
-    error
-        .to_string()
-        .to_ascii_lowercase()
-        .contains("no such table: threads")
-}
-
-fn log_skipped_sqlite_database(path: &Path, reason: &str) {
-    modules::logger::log_warn(&format!(
-        "跳过无效或损坏的 Codex state_5.sqlite ({}): {}",
-        path.display(),
-        reason
-    ));
-}
-
-fn count_sqlite_rows_to_update(
-    data_dir: &Path,
-    target_provider: &str,
-) -> Result<SqliteProviderScan, String> {
-    let db_path = data_dir.join(STATE_DB_FILE);
-    if !db_path.exists() {
-        return Ok(SqliteProviderScan {
-            rows_to_update: 0,
-            skipped_unusable_database: false,
-        });
-    }
-
-    let connection = match Connection::open(&db_path) {
-        Ok(connection) => connection,
-        Err(error) if modules::db::is_unusable_sqlite_database_error(&error) => {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(SqliteProviderScan {
-                rows_to_update: 0,
-                skipped_unusable_database: true,
-            });
-        }
-        Err(error) => {
-            return Err(format!(
-                "打开实例数据库失败 ({}): {}",
-                db_path.display(),
-                error
-            ));
-        }
-    };
-    let columns = match read_threads_table_columns(&connection) {
-        Ok(columns) => columns,
-        Err(error) if modules::db::is_unusable_sqlite_database_error(&error) => {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(SqliteProviderScan {
-                rows_to_update: 0,
-                skipped_unusable_database: true,
-            });
-        }
-        Err(error) => {
-            return Err(format_sqlite_read_error(
-                &db_path,
-                "读取 SQLite threads 表结构失败",
-                &error,
-            ));
-        }
-    };
-    let Some(columns) = columns else {
-        return Ok(SqliteProviderScan {
-            rows_to_update: 0,
-            skipped_unusable_database: false,
-        });
-    };
-    let Some(where_clause) = build_threads_repair_where_clause(columns) else {
-        return Ok(SqliteProviderScan {
-            rows_to_update: 0,
-            skipped_unusable_database: false,
-        });
-    };
-    let sql = format!("SELECT COUNT(*) FROM threads WHERE {where_clause}");
-    let count_result = if columns.model_provider {
-        connection.query_row(sql.as_str(), [target_provider], |row| {
-            row.get::<usize, i64>(0)
+fn session_meta_id(meta: &JsonValue) -> Option<String> {
+    meta.get("payload")
+        .and_then(|payload| payload.get("id").or_else(|| payload.get("session_id")))
+        .and_then(JsonValue::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            meta.get("id")
+                .or_else(|| meta.get("session_id"))
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
         })
-    } else {
-        connection.query_row(sql.as_str(), [], |row| row.get::<usize, i64>(0))
-    };
-    let count = match count_result {
-        Ok(count) => count,
-        Err(error) if modules::db::is_unusable_sqlite_database_error(&error) => {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(SqliteProviderScan {
-                rows_to_update: 0,
-                skipped_unusable_database: true,
-            });
-        }
-        Err(error) if is_missing_threads_table_error(&error) => {
-            return Ok(SqliteProviderScan {
-                rows_to_update: 0,
-                skipped_unusable_database: false,
-            });
-        }
-        Err(error) => {
-            return Err(format!(
-                "统计 SQLite 会话可见性差异失败 ({}): {}",
-                db_path.display(),
-                error
-            ));
-        }
-    };
-    Ok(SqliteProviderScan {
-        rows_to_update: count.max(0) as usize,
-        skipped_unusable_database: false,
-    })
 }
 
-fn update_sqlite_provider(data_dir: &Path, target_provider: &str) -> Result<usize, String> {
-    let db_path = data_dir.join(STATE_DB_FILE);
-    if !db_path.exists() {
-        return Ok(0);
+fn read_session_index_map(root_dir: &Path) -> Result<HashMap<String, JsonValue>, String> {
+    let path = root_dir.join(SESSION_INDEX_FILE);
+    if !path.exists() {
+        return Ok(HashMap::new());
     }
 
-    let mut connection = match Connection::open(&db_path) {
-        Ok(connection) => connection,
-        Err(error) if modules::db::is_unusable_sqlite_database_error(&error) => {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(0);
-        }
-        Err(error) => {
-            return Err(format!(
-                "打开实例数据库失败 ({}): {}",
-                db_path.display(),
-                error
-            ));
-        }
-    };
-    connection
-        .busy_timeout(Duration::from_secs(3))
-        .map_err(|error| {
-            format!(
-                "设置 SQLite busy_timeout 失败 ({}): {}",
-                db_path.display(),
-                error
-            )
-        })?;
-    let columns = match read_threads_table_columns(&connection) {
-        Ok(columns) => columns,
-        Err(error) if modules::db::is_unusable_sqlite_database_error(&error) => {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(0);
-        }
-        Err(error) => {
-            return Err(format_sqlite_read_error(
-                &db_path,
-                "读取 SQLite threads 表结构失败",
-                &error,
-            ));
-        }
-    };
-    let Some(columns) = columns else {
-        return Ok(0);
-    };
-    let Some(where_clause) = build_threads_repair_where_clause(columns) else {
-        return Ok(0);
-    };
-    let set_clause = build_threads_repair_set_clause(columns);
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format_sqlite_write_error(&db_path, &error))?;
-    let sql = format!("UPDATE threads SET {set_clause} WHERE {where_clause}");
-    let update_result = if columns.model_provider {
-        transaction.execute(sql.as_str(), [target_provider])
-    } else {
-        transaction.execute(sql.as_str(), [])
-    };
-    let updated_rows = match update_result {
-        Ok(updated_rows) => updated_rows,
-        Err(error) if modules::db::is_unusable_sqlite_database_error(&error) => {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(0);
-        }
-        Err(error) if is_missing_threads_table_error(&error) => {
-            return Ok(0);
-        }
-        Err(error) => return Err(format_sqlite_write_error(&db_path, &error)),
-    };
-    if let Err(error) = transaction.commit() {
-        if modules::db::is_unusable_sqlite_database_error(&error) {
-            log_skipped_sqlite_database(&db_path, &error.to_string());
-            return Ok(0);
-        }
-        return Err(format_sqlite_write_error(&db_path, &error));
-    }
-    Ok(updated_rows)
-}
-
-fn read_threads_table_columns(
-    connection: &Connection,
-) -> Result<Option<ThreadsTableColumns>, rusqlite::Error> {
-    let mut statement = connection.prepare("PRAGMA table_info(threads)")?;
-    let rows = statement.query_map([], |row| row.get::<usize, String>(1))?;
-    let mut names = HashSet::new();
-    for row in rows {
-        let name = row?;
-        names.insert(name);
-    }
-    if names.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(ThreadsTableColumns {
-        model_provider: names.contains("model_provider"),
-        has_user_event: names.contains("has_user_event"),
-        first_user_message: names.contains("first_user_message"),
-        thread_source: names.contains("thread_source"),
-    }))
-}
-
-fn build_threads_repair_where_clause(columns: ThreadsTableColumns) -> Option<String> {
-    let mut predicates = Vec::new();
-    if columns.model_provider {
-        predicates.push("COALESCE(model_provider, '') <> ?1");
-    }
-    if columns.has_user_event && columns.first_user_message {
-        predicates
-            .push("(COALESCE(first_user_message, '') <> '' AND COALESCE(has_user_event, 0) <> 1)");
-    }
-    if columns.thread_source && columns.first_user_message {
-        predicates
-            .push("(COALESCE(first_user_message, '') <> '' AND COALESCE(thread_source, '') = '')");
-    }
-    if predicates.is_empty() {
-        None
-    } else {
-        Some(predicates.join(" OR "))
-    }
-}
-
-fn build_threads_repair_set_clause(columns: ThreadsTableColumns) -> String {
-    let mut assignments = Vec::new();
-    if columns.model_provider {
-        assignments.push("model_provider = ?1");
-    }
-    if columns.has_user_event && columns.first_user_message {
-        assignments.push(
-            "has_user_event = CASE WHEN COALESCE(first_user_message, '') <> '' THEN 1 ELSE has_user_event END",
-        );
-    }
-    if columns.thread_source && columns.first_user_message {
-        assignments.push(
-            "thread_source = CASE WHEN COALESCE(thread_source, '') = '' AND COALESCE(first_user_message, '') <> '' THEN 'user' ELSE thread_source END",
-        );
-    }
-    assignments.join(", ")
-}
-
-fn format_sqlite_read_error(path: &Path, action: &str, error: &rusqlite::Error) -> String {
-    format!("{} ({}): {}", action, path.display(), error)
-}
-
-fn format_sqlite_write_error(path: &Path, error: &rusqlite::Error) -> String {
-    let message = error.to_string();
-    let lowered = message.to_ascii_lowercase();
-    if lowered.contains("database is locked") || lowered.contains("database busy") {
-        return format!(
-            "state_5.sqlite 当前被占用，请关闭 Codex / Codex App 后重试 ({}): {}",
-            path.display(),
-            message
-        );
-    }
-    format!(
-        "更新 SQLite 会话可见性失败 ({}): {}",
-        path.display(),
-        message
-    )
-}
-
-fn rewrite_rollout_provider(change: &RolloutProviderChange) -> Result<(), String> {
-    let bytes = fs::read(&change.absolute_path).map_err(|error| {
+    let content = fs::read_to_string(&path).map_err(|error| {
         format!(
-            "读取 rollout 文件失败 ({}): {}",
-            change.absolute_path.display(),
+            "读取 session_index.jsonl 失败 ({}): {}",
+            path.display(),
             error
         )
     })?;
-    let (offset, separator) = detect_first_line_boundary(&bytes);
-    let mut next_bytes = Vec::with_capacity(change.updated_first_line.len() + bytes.len());
-    next_bytes.extend_from_slice(change.updated_first_line.as_bytes());
-    next_bytes.extend_from_slice(separator.as_bytes());
-    next_bytes.extend_from_slice(&bytes[offset..]);
-    write_bytes_atomic(&change.absolute_path, &next_bytes)
+    let mut entries = HashMap::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(parsed) = serde_json::from_str::<JsonValue>(trimmed) else {
+            continue;
+        };
+        let Some(id) = parsed.get("id").and_then(JsonValue::as_str) else {
+            continue;
+        };
+        entries.insert(id.to_string(), parsed);
+    }
+
+    Ok(entries)
+}
+
+fn parse_session_index_updated_at_ms(entry: &JsonValue) -> Option<i128> {
+    [
+        "updated_at",
+        "updatedAt",
+        "last_updated_at",
+        "lastUpdatedAt",
+    ]
+    .iter()
+    .filter_map(|key| entry.get(*key))
+    .find_map(parse_json_timestamp_ms)
+}
+
+fn rollout_file_activity_ms(path: &Path) -> Option<i128> {
+    let content = fs::read_to_string(path).ok()?;
+    content
+        .lines()
+        .filter_map(|line| serde_json::from_str::<JsonValue>(line.trim()).ok())
+        .filter_map(|value| parse_rollout_line_timestamp_ms(&value))
+        .max()
+}
+
+fn parse_rollout_line_timestamp_ms(value: &JsonValue) -> Option<i128> {
+    value
+        .get("timestamp")
+        .or_else(|| value.get("time"))
+        .or_else(|| value.get("created_at"))
+        .or_else(|| value.get("createdAt"))
+        .and_then(parse_json_timestamp_ms)
+        .or_else(|| {
+            value
+                .get("payload")
+                .and_then(|payload| {
+                    payload
+                        .get("timestamp")
+                        .or_else(|| payload.get("time"))
+                        .or_else(|| payload.get("created_at"))
+                        .or_else(|| payload.get("createdAt"))
+                })
+                .and_then(parse_json_timestamp_ms)
+        })
+}
+
+fn parse_json_timestamp_ms(value: &JsonValue) -> Option<i128> {
+    match value {
+        JsonValue::Number(number) => number.as_i64().map(normalize_codex_timestamp_ms),
+        JsonValue::String(text) => DateTime::parse_from_rfc3339(text)
+            .ok()
+            .map(|value| value.timestamp_millis() as i128)
+            .or_else(|| text.parse::<i64>().ok().map(normalize_codex_timestamp_ms)),
+        _ => None,
+    }
+}
+
+fn normalize_codex_timestamp_ms(timestamp: i64) -> i128 {
+    let timestamp = timestamp as i128;
+    if timestamp > 10_000_000_000_000 {
+        timestamp / 1_000
+    } else if timestamp > 10_000_000_000 {
+        timestamp
+    } else {
+        timestamp * 1_000
+    }
+}
+
+fn rewrite_rollout_provider(change: &RolloutProviderChange) -> Result<(), String> {
+    let original_modified_at =
+        modules::codex_session_file_time::read_modified_time(&change.absolute_path);
+    if let Some(updated_first_line) = change.updated_first_line.as_deref() {
+        let bytes = fs::read(&change.absolute_path).map_err(|error| {
+            format!(
+                "读取 rollout 文件失败 ({}): {}",
+                change.absolute_path.display(),
+                error
+            )
+        })?;
+        let (offset, separator) = detect_first_line_boundary(&bytes);
+        let mut next_bytes = Vec::with_capacity(updated_first_line.len() + bytes.len());
+        next_bytes.extend_from_slice(updated_first_line.as_bytes());
+        next_bytes.extend_from_slice(separator.as_bytes());
+        next_bytes.extend_from_slice(&bytes[offset..]);
+        write_bytes_atomic(&change.absolute_path, &next_bytes)?;
+    }
+    modules::codex_session_file_time::restore_modified_time(
+        &change.absolute_path,
+        change.target_modified_at.or(original_modified_at),
+    )
 }
 
 fn detect_first_line_boundary(bytes: &[u8]) -> (usize, &'static str) {
@@ -766,7 +619,6 @@ fn write_bytes_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
 fn backup_instance_files(
     data_dir: &Path,
     rollout_changes: &[RolloutProviderChange],
-    include_sqlite: bool,
     instance_id: &str,
     target_provider: &str,
 ) -> Result<PathBuf, String> {
@@ -800,22 +652,11 @@ fn backup_instance_files(
                 error
             )
         })?;
+        modules::codex_session_file_time::restore_modified_time(
+            &target,
+            modules::codex_session_file_time::read_modified_time(&change.absolute_path),
+        )?;
         backed_up_files.push(change.relative_path.to_string_lossy().to_string());
-    }
-
-    if include_sqlite {
-        let db_path = data_dir.join(STATE_DB_FILE);
-        if db_path.exists() {
-            let target = backup_dir.join(STATE_DB_FILE);
-            fs::copy(&db_path, &target).map_err(|error| {
-                format!(
-                    "备份 state_5.sqlite 失败 ({} -> {}): {}",
-                    db_path.display(),
-                    target.display(),
-                    error
-                )
-            })?;
-        }
     }
 
     let manifest = json!({
@@ -823,7 +664,6 @@ fn backup_instance_files(
         "instanceRoot": data_dir,
         "targetProvider": target_provider,
         "createdAt": Utc::now().to_rfc3339(),
-        "hasSqliteBackup": include_sqlite && data_dir.join(STATE_DB_FILE).exists(),
         "rolloutFiles": backed_up_files,
     });
     fs::write(
@@ -930,29 +770,10 @@ fn prune_instance_session_visibility_repair_backups(data_dir: &Path) -> Result<(
     Ok(())
 }
 
-fn restore_instance_files_from_backup(
-    data_dir: &Path,
-    backup_dir: &Path,
-    include_sqlite: bool,
-) -> Result<(), String> {
+fn restore_instance_files_from_backup(data_dir: &Path, backup_dir: &Path) -> Result<(), String> {
     let files_root = backup_dir.join("files");
     if files_root.exists() {
         restore_directory_contents(&files_root, data_dir)?;
-    }
-
-    if include_sqlite {
-        let backup_db_path = backup_dir.join(STATE_DB_FILE);
-        if backup_db_path.exists() {
-            let target_db_path = data_dir.join(STATE_DB_FILE);
-            fs::copy(&backup_db_path, &target_db_path).map_err(|error| {
-                format!(
-                    "恢复 state_5.sqlite 失败 ({} -> {}): {}",
-                    backup_db_path.display(),
-                    target_db_path.display(),
-                    error
-                )
-            })?;
-        }
     }
 
     Ok(())
@@ -998,6 +819,10 @@ fn restore_directory_contents(source_root: &Path, target_root: &Path) -> Result<
                 error
             )
         })?;
+        modules::codex_session_file_time::restore_modified_time(
+            &target_path,
+            modules::codex_session_file_time::read_modified_time(&source_path),
+        )?;
     }
     Ok(())
 }
@@ -1005,7 +830,7 @@ fn restore_directory_contents(source_root: &Path, target_root: &Path) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn make_temp_dir(prefix: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -1022,122 +847,85 @@ mod tests {
     }
 
     #[test]
-    fn sqlite_repair_marks_threads_with_first_user_message_visible() {
-        let data_dir = make_temp_dir("codex-session-visibility-sqlite-test");
-        let db_path = data_dir.join(STATE_DB_FILE);
-        let connection = Connection::open(&db_path).expect("open sqlite");
-        connection
-            .execute(
-                "CREATE TABLE threads (
-                    id TEXT PRIMARY KEY,
-                    model_provider TEXT,
-                    has_user_event INTEGER,
-                    first_user_message TEXT,
-                    thread_source TEXT
-                )",
-                [],
-            )
-            .expect("create threads table");
-        connection
-            .execute(
-                "INSERT INTO threads (id, model_provider, has_user_event, first_user_message, thread_source)
-                 VALUES
-                 ('matched-invisible', 'relay', 0, 'hello', ''),
-                 ('old-invisible', 'old', 0, 'hi', NULL),
-                 ('already-visible', 'relay', 1, 'visible', 'user'),
-                 ('provider-only', '', 0, '', NULL)",
-                [],
-            )
-            .expect("insert rows");
-        drop(connection);
+    fn rollout_repair_updates_session_meta_provider_only() {
+        let data_dir = make_temp_dir("codex-session-visibility-rollout-test");
+        let rollout_dir = data_dir.join("sessions").join("2026").join("05").join("23");
+        fs::create_dir_all(&rollout_dir).expect("create rollout dir");
+        let rollout_path = rollout_dir.join("rollout-test.jsonl");
+        fs::write(
+            &rollout_path,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"s1\",\"model_provider\":\"old\"}}\n{\"type\":\"event\"}\n",
+        )
+        .expect("write rollout");
+        let original_modified_at = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        fs::File::open(&rollout_path)
+            .expect("open rollout")
+            .set_modified(original_modified_at)
+            .expect("set rollout mtime");
 
-        let scan = count_sqlite_rows_to_update(&data_dir, "relay").expect("scan sqlite");
-        assert_eq!(scan.rows_to_update, 3);
-        assert!(!scan.skipped_unusable_database);
+        let changes =
+            collect_rollout_provider_changes(&data_dir, "relay").expect("collect rollout changes");
+        assert_eq!(changes.len(), 1);
 
-        let updated_rows = update_sqlite_provider(&data_dir, "relay").expect("update sqlite");
-        assert_eq!(updated_rows, 3);
+        repair_single_instance(&changes).expect("repair rollout");
 
-        let connection = Connection::open(&db_path).expect("reopen sqlite");
-        let matched_invisible = connection
-            .query_row(
-                "SELECT model_provider, has_user_event, thread_source FROM threads WHERE id = 'matched-invisible'",
-                [],
-                |row| {
-                    Ok((
-                        row.get::<usize, String>(0)?,
-                        row.get::<usize, i64>(1)?,
-                        row.get::<usize, String>(2)?,
-                    ))
-                },
-            )
-            .expect("read matched row");
+        let content = fs::read_to_string(&rollout_path).expect("read repaired rollout");
+        let first_line = content.lines().next().expect("first line");
+        let parsed = serde_json::from_str::<JsonValue>(first_line).expect("parse first line");
         assert_eq!(
-            matched_invisible,
-            ("relay".to_string(), 1, "user".to_string())
+            parsed["payload"]
+                .get("model_provider")
+                .and_then(JsonValue::as_str),
+            Some("relay")
         );
-
-        let old_invisible = connection
-            .query_row(
-                "SELECT model_provider, has_user_event, thread_source FROM threads WHERE id = 'old-invisible'",
-                [],
-                |row| {
-                    Ok((
-                        row.get::<usize, String>(0)?,
-                        row.get::<usize, i64>(1)?,
-                        row.get::<usize, String>(2)?,
-                    ))
-                },
-            )
-            .expect("read old row");
-        assert_eq!(old_invisible, ("relay".to_string(), 1, "user".to_string()));
-
-        let provider_only = connection
-            .query_row(
-                "SELECT model_provider, has_user_event FROM threads WHERE id = 'provider-only'",
-                [],
-                |row| Ok((row.get::<usize, String>(0)?, row.get::<usize, i64>(1)?)),
-            )
-            .expect("read provider-only row");
-        assert_eq!(provider_only, ("relay".to_string(), 0));
-
+        assert!(content.contains("{\"type\":\"event\"}"));
+        assert_eq!(
+            fs::metadata(&rollout_path)
+                .expect("rollout metadata")
+                .modified()
+                .expect("rollout mtime"),
+            original_modified_at
+        );
         fs::remove_dir_all(&data_dir).expect("cleanup temp dir");
     }
 
     #[test]
-    fn sqlite_repair_keeps_provider_only_schema_working() {
-        let data_dir = make_temp_dir("codex-session-provider-only-sqlite-test");
-        let db_path = data_dir.join(STATE_DB_FILE);
-        let connection = Connection::open(&db_path).expect("open sqlite");
-        connection
-            .execute(
-                "CREATE TABLE threads (id TEXT PRIMARY KEY, model_provider TEXT)",
-                [],
-            )
-            .expect("create threads table");
-        connection
-            .execute(
-                "INSERT INTO threads (id, model_provider) VALUES ('old', 'old'), ('same', 'relay')",
-                [],
-            )
-            .expect("insert rows");
-        drop(connection);
+    fn rollout_repair_restores_session_time_without_provider_change() {
+        let data_dir = make_temp_dir("codex-session-visibility-time-test");
+        let rollout_dir = data_dir.join("sessions").join("2026").join("05").join("23");
+        fs::create_dir_all(&rollout_dir).expect("create rollout dir");
+        let rollout_path = rollout_dir.join("rollout-test.jsonl");
+        fs::write(
+            &rollout_path,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"s1\",\"model_provider\":\"relay\"}}\n{\"type\":\"event\",\"timestamp\":\"2024-01-01T00:00:00Z\"}\n",
+        )
+        .expect("write rollout");
+        fs::write(
+            data_dir.join("session_index.jsonl"),
+            "{\"id\":\"s1\",\"thread_name\":\"Test\",\"updated_at\":\"2024-02-03T04:05:06Z\"}\n",
+        )
+        .expect("write session index");
+        let stale_modified_at = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        fs::File::open(&rollout_path)
+            .expect("open rollout")
+            .set_modified(stale_modified_at)
+            .expect("set stale rollout mtime");
 
-        let scan = count_sqlite_rows_to_update(&data_dir, "relay").expect("scan sqlite");
-        assert_eq!(scan.rows_to_update, 1);
-        let updated_rows = update_sqlite_provider(&data_dir, "relay").expect("update sqlite");
-        assert_eq!(updated_rows, 1);
+        let changes =
+            collect_rollout_provider_changes(&data_dir, "relay").expect("collect rollout changes");
+        assert_eq!(changes.len(), 1);
 
-        let connection = Connection::open(&db_path).expect("reopen sqlite");
-        let old_provider = connection
-            .query_row(
-                "SELECT model_provider FROM threads WHERE id = 'old'",
-                [],
-                |row| row.get::<usize, String>(0),
-            )
-            .expect("read old provider");
-        assert_eq!(old_provider, "relay");
+        repair_single_instance(&changes).expect("repair rollout time");
 
+        let content = fs::read_to_string(&rollout_path).expect("read repaired rollout");
+        assert!(content.contains("\"model_provider\":\"relay\""));
+        assert_eq!(
+            fs::metadata(&rollout_path)
+                .expect("rollout metadata")
+                .modified()
+                .expect("rollout mtime"),
+            UNIX_EPOCH + Duration::from_secs(1_706_933_106)
+        );
         fs::remove_dir_all(&data_dir).expect("cleanup temp dir");
     }
 }

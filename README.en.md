@@ -393,6 +393,7 @@ Every bit of support helps sustain open-source development. Thank you!
 ## Acknowledgments
 
 - Antigravity IDE account switching logic based on: [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)
+- Codex API service implementation references: [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
 
 Thanks to the project author for their open-source contributions! If these projects have helped you, please give them a ⭐ Star to show your support!
 

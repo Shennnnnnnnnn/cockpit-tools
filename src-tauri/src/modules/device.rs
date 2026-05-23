@@ -7,16 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const DATA_DIR: &str = ".antigravity_cockpit";
 const GLOBAL_BASELINE: &str = "device_original.json";
 
 fn get_data_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("无法获取用户主目录")?;
-    let data_dir = home.join(DATA_DIR);
-    if !data_dir.exists() {
-        fs::create_dir_all(&data_dir).map_err(|e| format!("创建数据目录失败: {}", e))?;
-    }
-    Ok(data_dir)
+    crate::modules::account::get_data_dir()
 }
 
 /// 寻找 storage.json 路径
