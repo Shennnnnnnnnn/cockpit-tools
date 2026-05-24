@@ -100,6 +100,18 @@ pub struct CodexLocalAccessModelAlias {
     pub fork: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessModelPricing {
+    pub model_id: String,
+    #[serde(default)]
+    pub input_usd_per_million: f64,
+    #[serde(default)]
+    pub output_usd_per_million: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input_usd_per_million: Option<f64>,
+}
+
 fn default_session_affinity_ttl_ms() -> i64 {
     60 * 60 * 1000
 }
@@ -155,6 +167,8 @@ pub struct CodexLocalAccessCollection {
     #[serde(default)]
     pub model_aliases: Vec<CodexLocalAccessModelAlias>,
     #[serde(default)]
+    pub model_pricings: Vec<CodexLocalAccessModelPricing>,
+    #[serde(default)]
     pub excluded_models: Vec<String>,
     #[serde(default)]
     pub session_affinity: bool,
@@ -206,6 +220,8 @@ pub struct CodexLocalAccessUsageStats {
     pub cached_tokens: u64,
     #[serde(default)]
     pub reasoning_tokens: u64,
+    #[serde(default)]
+    pub estimated_cost_usd: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -264,6 +280,8 @@ pub struct CodexLocalAccessUsageEvent {
     #[serde(default)]
     pub timestamp: i64,
     #[serde(default)]
+    pub request_id: String,
+    #[serde(default)]
     pub account_id: String,
     #[serde(default)]
     pub email: String,
@@ -278,7 +296,11 @@ pub struct CodexLocalAccessUsageEvent {
     #[serde(default)]
     pub success: bool,
     #[serde(default)]
+    pub http_status: Option<u16>,
+    #[serde(default)]
     pub error_category: String,
+    #[serde(default)]
+    pub error_message: String,
     #[serde(default)]
     pub latency_ms: u64,
     #[serde(default)]
@@ -291,6 +313,14 @@ pub struct CodexLocalAccessUsageEvent {
     pub cached_tokens: u64,
     #[serde(default)]
     pub reasoning_tokens: u64,
+    #[serde(default)]
+    pub estimated_cost_usd: f64,
+    #[serde(default)]
+    pub input_usd_per_million: f64,
+    #[serde(default)]
+    pub output_usd_per_million: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input_usd_per_million: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -356,13 +386,28 @@ pub struct CodexLocalAccessAccountHealth {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessProfileAttachment {
+    pub profile_dir: String,
+    pub attached: bool,
+    pub config_attached: bool,
+    pub auth_attached: bool,
+    pub model_provider: Option<String>,
+    pub base_url: Option<String>,
+    pub expected_base_url: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessState {
     pub collection: Option<CodexLocalAccessCollection>,
     pub running: bool,
+    pub default_profile: Option<CodexLocalAccessProfileAttachment>,
     pub api_port_url: Option<String>,
     pub base_url: Option<String>,
     pub lan_base_url: Option<String>,
     pub model_ids: Vec<String>,
+    pub model_pricing_presets: Vec<CodexLocalAccessModelPricing>,
     pub last_error: Option<String>,
     pub member_count: usize,
     pub stats: CodexLocalAccessStats,

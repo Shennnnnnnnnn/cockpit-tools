@@ -1367,6 +1367,42 @@
   color: var(--text-primary);
 }
 
+.codex-accounts-page .codex-subscription-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0.72;
+  transition:
+    opacity 0.18s ease,
+    color 0.18s ease;
+}
+
+.codex-accounts-page .codex-subscription-refresh-btn:hover {
+  opacity: 1;
+}
+
+.codex-accounts-page .codex-subscription-refresh-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.codex-accounts-page .codex-subscription-footer-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
 .codex-accounts-page .codex-subscription-footer-date {
   min-width: 0;
   overflow: hidden;
@@ -1423,6 +1459,15 @@
   align-items: flex-start;
   gap: 5px;
   min-width: 0;
+}
+
+.codex-accounts-page .codex-subscription-table-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  justify-content: space-between;
 }
 
 .codex-accounts-page .codex-subscription-table-empty {
@@ -1764,6 +1809,13 @@
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+}
+
+.codex-accounts-page .codex-compact-expiry-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .codex-accounts-page .codex-compact-expiry.active {

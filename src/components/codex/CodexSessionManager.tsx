@@ -459,7 +459,7 @@ export function CodexSessionManager() {
     const confirmed = await confirmDialog(
       t(
         'codex.sessionManager.confirm.repairVisibilityMessage',
-        '会按各实例 config.toml 根级 model_provider（缺失时按 openai）修复 rollout 文件的 provider 元数据，并保留会话文件原修改时间，再触发官方 Codex 重建会话索引。写入前会备份将要修改的 rollout 文件。确认继续？',
+        '会按各实例 config.toml 根级 model_provider（缺失时按 openai）修复 rollout 文件与 state_5.sqlite 中的 provider 元数据，写入前会先备份将要修改的文件。运行中的实例可能需要重启后显示。确认继续？',
       ),
       {
         title: t('codex.sessionManager.actions.repairVisibility', '修复可见性'),

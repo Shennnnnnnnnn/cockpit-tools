@@ -45,9 +45,7 @@ fn parse_http_request(raw: &[u8]) -> Result<RpcRequest, String> {
     let header_text = std::str::from_utf8(&raw[..header_end])
         .map_err(|_| "HTTP 请求头不是有效 UTF-8".to_string())?;
     let mut lines = header_text.split("\r\n");
-    let request_line = lines
-        .next()
-        .ok_or_else(|| "HTTP 请求行缺失".to_string())?;
+    let request_line = lines.next().ok_or_else(|| "HTTP 请求行缺失".to_string())?;
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() != 3 {
         return Err("HTTP 请求行格式无效".to_string());
@@ -215,10 +213,7 @@ async fn handle_connection(app_handle: AppHandle, mut stream: TcpStream, addr: S
         let _ = stream
             .write_all(&json_response(403, json!({ "error": "loopback_only" })))
             .await;
-        logger::log_warn(&format!(
-            "[CodexOAuthRpc] 拒绝非 loopback 客户端: {}",
-            addr
-        ));
+        logger::log_warn(&format!("[CodexOAuthRpc] 拒绝非 loopback 客户端: {}", addr));
         return;
     }
 

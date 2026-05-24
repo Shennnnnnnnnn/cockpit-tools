@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
+  BadgeDollarSign,
   ChevronDown,
   Check,
   CircleAlert,
@@ -19,6 +20,7 @@ import {
   Trash2,
   Users,
   Wrench,
+  X,
 } from 'lucide-react';
 import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +47,7 @@ import type {
   CodexLocalAccessCustomRoutingRule,
   CodexLocalAccessImageGenerationMode,
   CodexLocalAccessModelAlias,
+  CodexLocalAccessModelPricing,
   CodexLocalAccessRequestKind,
   CodexLocalAccessRoutingStrategy,
   CodexLocalAccessScope,
@@ -75,6 +78,20 @@ interface ApiKeyPolicyDraft {
   modelPrefix: string;
   allowedModels: string;
   excludedModels: string;
+}
+
+interface ModelPricingRow extends CodexLocalAccessModelPricing {
+  hasPreset: boolean;
+  custom: boolean;
+}
+
+interface ModelPricingDraft {
+  modelId: string;
+  inputUsdPerMillion: string;
+  cachedInputUsdPerMillion: string;
+  outputUsdPerMillion: string;
+  hasPreset: boolean;
+  custom: boolean;
 }
 
 const ADDRESS_KIND_STORAGE_KEY = 'agtools.codex.local_access.address_kind.v1';
@@ -161,6 +178,36 @@ function formatLatencyMs(value: number): string {
   return `${Math.round(value)}ms`;
 }
 
+function formatUsdCost(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '$0.00';
+  if (value < 0.000001) return '<$0.000001';
+  if (value < 0.01) return `$${value.toFixed(6)}`;
+  if (value < 1) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+function formatPriceDraftValue(value: number | null | undefined): string {
+  if (!Number.isFinite(value ?? NaN)) return '';
+  return String(value);
+}
+
+function parsePriceDraftValue(value: string, allowEmpty: boolean): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return allowEmpty ? null : Number.NaN;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) return Number.NaN;
+  return parsed;
+}
+
+function sameOptionalPrice(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): boolean {
+  if (left == null && right == null) return true;
+  if (left == null || right == null) return false;
+  return Math.abs(left - right) < 0.0000001;
+}
+
 function formatDateTime(value: number | null | undefined): string {
   if (!value || !Number.isFinite(value) || value <= 0) return '--';
   return new Intl.DateTimeFormat(undefined, {
@@ -170,6 +217,23 @@ function formatDateTime(value: number | null | undefined): string {
     minute: '2-digit',
     second: '2-digit',
   }).format(new Date(value));
+}
+
+function cleanRequestLogErrorDetail(value?: string | null): string {
+  return (value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function truncateRequestLogErrorDetail(value: string): string {
+  const maxLength = 160;
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trimEnd()}...`;
 }
 
 function maskAccountText(value?: string | null): string {
@@ -260,7 +324,7 @@ export function CodexApiServicePage() {
   const [state, setState] = useState<CodexLocalAccessState | null>(null);
   const [groups, setGroups] = useState<CodexAccountGroup[]>([]);
   const [activeTab, setActiveTab] = useState<ServiceTab>('overview');
-  const [statsLogTab, setStatsLogTab] = useState<StatsLogTab>('accounts');
+  const [statsLogTab, setStatsLogTab] = useState<StatsLogTab>('logs');
   const [statsRange, setStatsRange] = useState<StatsRangeKey>(() => readStoredStatsRange());
   const [addressKind, setAddressKind] = useState<CodexLocalAccessAddressKind>(() => readStoredAddressKind());
   const [busy, setBusy] = useState(false);
@@ -280,6 +344,9 @@ export function CodexApiServicePage() {
   const [expandedApiKeyPolicyIds, setExpandedApiKeyPolicyIds] = useState<Set<string>>(() => new Set());
   const [modelAliasesText, setModelAliasesText] = useState('');
   const [excludedModelsText, setExcludedModelsText] = useState('');
+  const [pricingModalOpen, setPricingModalOpen] = useState(false);
+  const [pricingDrafts, setPricingDrafts] = useState<ModelPricingDraft[]>([]);
+  const [pricingError, setPricingError] = useState('');
   const [sessionAffinityDraft, setSessionAffinityDraft] = useState(false);
   const [sessionAffinityTtlDraft, setSessionAffinityTtlDraft] = useState('3600');
   const [maxRetryCredentialsDraft, setMaxRetryCredentialsDraft] = useState('0');
@@ -330,6 +397,42 @@ export function CodexApiServicePage() {
   const imageGenerationMode = collection?.imageGenerationMode ?? 'enabled';
   const routingStrategy = collection?.routingStrategy ?? 'auto';
   const modelIds = state?.modelIds ?? [];
+  const modelPricingRows = useMemo<ModelPricingRow[]>(() => {
+    const presetMap = new Map<string, CodexLocalAccessModelPricing>();
+    const customMap = new Map<string, CodexLocalAccessModelPricing>();
+    (state?.modelPricingPresets ?? []).forEach((item) => {
+      presetMap.set(item.modelId.toLowerCase(), item);
+    });
+    (collection?.modelPricings ?? []).forEach((item) => {
+      customMap.set(item.modelId.toLowerCase(), item);
+    });
+    const modelOrder = new Map<string, number>();
+    const ids: string[] = [];
+    const pushId = (modelId: string) => {
+      const trimmed = modelId.trim();
+      const key = trimmed.toLowerCase();
+      if (!trimmed || modelOrder.has(key)) return;
+      modelOrder.set(key, ids.length);
+      ids.push(trimmed);
+    };
+    modelIds.forEach(pushId);
+    (state?.modelPricingPresets ?? []).forEach((item) => pushId(item.modelId));
+    (collection?.modelPricings ?? []).forEach((item) => pushId(item.modelId));
+    return ids.map((modelId) => {
+      const key = modelId.toLowerCase();
+      const preset = presetMap.get(key);
+      const custom = customMap.get(key);
+      const source = custom ?? preset;
+      return {
+        modelId: source?.modelId ?? modelId,
+        inputUsdPerMillion: source?.inputUsdPerMillion ?? 0,
+        outputUsdPerMillion: source?.outputUsdPerMillion ?? 0,
+        cachedInputUsdPerMillion: source?.cachedInputUsdPerMillion ?? null,
+        hasPreset: Boolean(preset),
+        custom: Boolean(custom),
+      };
+    });
+  }, [collection?.modelPricings, modelIds, state?.modelPricingPresets]);
   const avgLatency =
     totals && totals.requestCount > 0 ? totals.totalLatencyMs / totals.requestCount : 0;
   const successRate =
@@ -510,6 +613,21 @@ export function CodexApiServicePage() {
     }
     setSelectedModelId((current) => (modelIds.includes(current) ? current : modelIds[0]));
   }, [modelIds]);
+
+  useEffect(() => {
+    if (!pricingModalOpen) return;
+    setPricingDrafts(
+      modelPricingRows.map((item) => ({
+        modelId: item.modelId,
+        inputUsdPerMillion: formatPriceDraftValue(item.inputUsdPerMillion),
+        cachedInputUsdPerMillion: formatPriceDraftValue(item.cachedInputUsdPerMillion),
+        outputUsdPerMillion: formatPriceDraftValue(item.outputUsdPerMillion),
+        hasPreset: item.hasPreset,
+        custom: item.custom,
+      })),
+    );
+    setPricingError('');
+  }, [modelPricingRows, pricingModalOpen]);
 
   const runAction = async (task: () => Promise<unknown>, successText: string) => {
     setBusy(true);
@@ -830,6 +948,95 @@ export function CodexApiServicePage() {
     }, t('codex.apiService.models.rulesSaved', '模型规则已保存'));
   };
 
+  const handleOpenPricingModal = () => {
+    setPricingDrafts(
+      modelPricingRows.map((item) => ({
+        modelId: item.modelId,
+        inputUsdPerMillion: formatPriceDraftValue(item.inputUsdPerMillion),
+        cachedInputUsdPerMillion: formatPriceDraftValue(item.cachedInputUsdPerMillion),
+        outputUsdPerMillion: formatPriceDraftValue(item.outputUsdPerMillion),
+        hasPreset: item.hasPreset,
+        custom: item.custom,
+      })),
+    );
+    setPricingError('');
+    setPricingModalOpen(true);
+  };
+
+  const updatePricingDraft = (
+    modelId: string,
+    field: keyof Pick<
+      ModelPricingDraft,
+      'inputUsdPerMillion' | 'cachedInputUsdPerMillion' | 'outputUsdPerMillion'
+    >,
+    value: string,
+  ) => {
+    setPricingDrafts((current) =>
+      current.map((item) => (item.modelId === modelId ? { ...item, [field]: value } : item)),
+    );
+  };
+
+  const resetPricingDraft = (modelId: string) => {
+    const preset = state?.modelPricingPresets.find(
+      (item) => item.modelId.toLowerCase() === modelId.toLowerCase(),
+    );
+    setPricingDrafts((current) =>
+      current.map((item) =>
+        item.modelId === modelId
+          ? {
+              ...item,
+              inputUsdPerMillion: formatPriceDraftValue(preset?.inputUsdPerMillion ?? 0),
+              cachedInputUsdPerMillion: formatPriceDraftValue(
+                preset?.cachedInputUsdPerMillion ?? null,
+              ),
+              outputUsdPerMillion: formatPriceDraftValue(preset?.outputUsdPerMillion ?? 0),
+              custom: false,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const handleSaveModelPricings = async () => {
+    const presetMap = new Map(
+      (state?.modelPricingPresets ?? []).map((item) => [item.modelId.toLowerCase(), item]),
+    );
+    const nextPricings: CodexLocalAccessModelPricing[] = [];
+    for (const draft of pricingDrafts) {
+      const input = parsePriceDraftValue(draft.inputUsdPerMillion, false);
+      const cached = parsePriceDraftValue(draft.cachedInputUsdPerMillion, true);
+      const output = parsePriceDraftValue(draft.outputUsdPerMillion, false);
+      const inputInvalid = input === null || !Number.isFinite(input);
+      const cachedInvalid = cached !== null && !Number.isFinite(cached);
+      const outputInvalid = output === null || !Number.isFinite(output);
+      if (inputInvalid || cachedInvalid || outputInvalid) {
+        setPricingError(t('codex.apiService.models.pricingInvalid', '价格必须是大于或等于 0 的数字'));
+        return;
+      }
+      const preset = presetMap.get(draft.modelId.toLowerCase());
+      const sameAsPreset = preset
+        && sameOptionalPrice(input, preset.inputUsdPerMillion)
+        && sameOptionalPrice(output, preset.outputUsdPerMillion)
+        && sameOptionalPrice(cached, preset.cachedInputUsdPerMillion ?? null);
+      const allZero = !preset && input === 0 && output === 0 && (cached == null || cached === 0);
+      if (sameAsPreset || allZero) {
+        continue;
+      }
+      nextPricings.push({
+        modelId: draft.modelId,
+        inputUsdPerMillion: input,
+        outputUsdPerMillion: output,
+        cachedInputUsdPerMillion: cached,
+      });
+    }
+    setPricingError('');
+    await runAction(async () => {
+      const next = await codexLocalAccessService.updateCodexLocalAccessModelPricings(nextPricings);
+      setState(next);
+      setPricingModalOpen(false);
+    }, t('codex.apiService.models.pricingSaved', '价格设置已保存'));
+  };
+
   const handleSaveRoutingOptions = async () => {
     const ttlSeconds = parseIntegerDraft(sessionAffinityTtlDraft, 60, 86400);
     if (ttlSeconds === null) {
@@ -913,8 +1120,8 @@ export function CodexApiServicePage() {
     { key: 'logs', label: t('codex.apiService.tabs.logs', '统计与日志'), icon: <Activity className="tab-icon" /> },
   ];
   const statsLogTabs: Array<{ key: StatsLogTab; label: string }> = [
-    { key: 'accounts', label: t('codex.localAccess.accountStatsTitle', '按账号统计') },
     { key: 'logs', label: t('codex.localAccess.requestLogTitle', '请求日志') },
+    { key: 'accounts', label: t('codex.localAccess.accountStatsTitle', '按账号统计') },
     { key: 'models', label: t('codex.localAccess.modelStatsTitle', '按模型统计') },
     { key: 'keys', label: t('codex.localAccess.apiKeyStatsTitle', '按 Key 统计') },
   ];
@@ -950,6 +1157,12 @@ export function CodexApiServicePage() {
         output: formatCompactNumber(totals?.outputTokens ?? 0),
         defaultValue: '输入 {{input}} / 输出 {{output}}',
       }),
+    },
+    {
+      key: 'cost',
+      label: t('codex.localAccess.stats.estimatedCost', '估算价值'),
+      value: formatUsdCost(totals?.estimatedCostUsd ?? 0),
+      detail: t('codex.localAccess.stats.estimatedCostDetail', '按当前请求价格快照累计'),
     },
     {
       key: 'latency',
@@ -1422,6 +1635,7 @@ export function CodexApiServicePage() {
                         <div className="codex-api-service-account-meta">
                           <span>{t('codex.localAccess.stats.accountRequests', { count: stat?.usage.requestCount ?? 0, defaultValue: '{{count}} 次' })}</span>
                           <span>{t('codex.localAccess.stats.accountResult', { success: stat?.usage.successCount ?? 0, failed: stat?.usage.failureCount ?? 0, defaultValue: '成功 {{success}} / 失败 {{failed}}' })}</span>
+                          <span>{formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}</span>
                           <span>{t('codex.apiService.accountHealth.failures', { count: health?.consecutiveFailures ?? 0, defaultValue: '连续失败 {{count}}' })}</span>
                           <span>{health?.cooldowns.length ? t('codex.localAccess.healthCooldown', { count: health.cooldowns.length, defaultValue: '冷却 {{count}}' }) : t('codex.localAccess.healthAvailable', '可用')}</span>
                           <span>{t('codex.apiService.accountHealth.image', { status: health?.imageGenerationStatus ?? 'unknown', defaultValue: '图片 {{status}}' })}</span>
@@ -1519,9 +1733,15 @@ export function CodexApiServicePage() {
             <section className="codex-api-service-panel">
               <div className="codex-api-service-panel-head">
                 <h2>{t('codex.apiService.models.availableTitle', '可用模型')}</h2>
-                <button type="button" className="folder-icon-btn" onClick={() => void handleCopy('modelId', selectedModelId)} disabled={!selectedModelId}>
-                  {copiedField === 'modelId' ? <Check size={14} /> : <Copy size={14} />}
-                </button>
+                <div className="codex-api-service-head-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleOpenPricingModal} disabled={!collection}>
+                    <BadgeDollarSign size={14} />
+                    {t('codex.apiService.models.pricingAction', '价格设置')}
+                  </button>
+                  <button type="button" className="folder-icon-btn" onClick={() => void handleCopy('modelId', selectedModelId)} disabled={!selectedModelId}>
+                    {copiedField === 'modelId' ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
               </div>
               <div className="codex-api-service-model-list">
                 {modelIds.map((modelId) => (
@@ -1665,6 +1885,7 @@ export function CodexApiServicePage() {
                         <div className="codex-api-service-account-meta">
                           <span>{t('codex.localAccess.stats.accountRequests', { count: stat?.usage.requestCount ?? 0, defaultValue: '{{count}} 次' })}</span>
                           <span>{t('codex.localAccess.stats.accountResult', { success: stat?.usage.successCount ?? 0, failed: stat?.usage.failureCount ?? 0, defaultValue: '成功 {{success}} / 失败 {{failed}}' })}</span>
+                          <span>{formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}</span>
                           <span>{t('codex.apiService.accountHealth.failures', { count: health?.consecutiveFailures ?? 0, defaultValue: '连续失败 {{count}}' })}</span>
                           <span>{health?.cooldowns.length ? t('codex.localAccess.healthCooldown', { count: health.cooldowns.length, defaultValue: '冷却 {{count}}' }) : t('codex.localAccess.healthAvailable', '可用')}</span>
                           <span>{t('codex.apiService.accountHealth.image', { status: health?.imageGenerationStatus ?? 'unknown', defaultValue: '图片 {{status}}' })}</span>
@@ -1703,6 +1924,7 @@ export function CodexApiServicePage() {
                           })}
                         </span>
                         <span>{formatCompactNumber(item.usage.totalTokens)} Tokens</span>
+                        <span>{formatUsdCost(item.usage.estimatedCostUsd)}</span>
                       </div>
                     </div>
                   ))
@@ -1739,6 +1961,7 @@ export function CodexApiServicePage() {
                           })}
                         </span>
                         <span>{formatCompactNumber(item.usage.totalTokens)} Tokens</span>
+                        <span>{formatUsdCost(item.usage.estimatedCostUsd)}</span>
                       </div>
                     </div>
                   ))
@@ -1820,27 +2043,42 @@ export function CodexApiServicePage() {
                       {t('codex.apiService.logs.loading', '正在加载请求日志')}
                     </div>
                   )}
-                  {requestLogEvents.map((event, index) => (
-                    <div key={`${event.timestamp}-${event.apiKeyId}-${index}`} className="codex-api-service-log-row">
-                      <div>
-                        <strong>{event.modelId || '--'}</strong>
-                        <span className={`codex-api-service-pill ${event.success ? 'success' : 'error'}`}>
-                          {event.success
-                            ? t('codex.localAccess.requestLogSuccess', '成功')
-                            : t('codex.localAccess.requestLogFailed', '失败')}
-                        </span>
+                  {requestLogEvents.map((event, index) => {
+                    const errorDetail = truncateRequestLogErrorDetail(
+                      cleanRequestLogErrorDetail(event.errorMessage),
+                    );
+                    return (
+                      <div key={`${event.timestamp}-${event.requestId || event.apiKeyId}-${index}`} className="codex-api-service-log-row">
+                        <div>
+                          <strong>{event.modelId || '--'}</strong>
+                          <span className={`codex-api-service-pill ${event.success ? 'success' : 'error'}`}>
+                            {event.success
+                              ? t('codex.localAccess.requestLogSuccess', '成功')
+                              : t('codex.localAccess.requestLogFailed', '失败')}
+                          </span>
+                        </div>
+                        <div>
+                          <span>{formatDateTime(event.timestamp)}</span>
+                          <span>{requestKindLabel(event.requestKind, t)}</span>
+                          <span>{event.apiKeyLabel || event.apiKeyId || '-'}</span>
+                          <span>{maskAccountText(event.email || event.accountId)}</span>
+                          <span>{formatLatencyMs(event.latencyMs)}</span>
+                          <span>{formatCompactNumber(event.totalTokens)} Tokens</span>
+                          <span>{formatUsdCost(event.estimatedCostUsd)}</span>
+                          {event.requestId ? (
+                            <span>{t('codex.apiService.logs.requestIdShort', { id: event.requestId, defaultValue: 'ID {{id}}' })}</span>
+                          ) : null}
+                          {event.httpStatus ? (
+                            <span>{t('codex.apiService.logs.httpStatus', { status: event.httpStatus, defaultValue: 'HTTP {{status}}' })}</span>
+                          ) : null}
+                          {event.errorCategory ? <span>{event.errorCategory}</span> : null}
+                          {errorDetail ? (
+                            <span className="codex-api-service-log-error-detail" title={errorDetail}>{errorDetail}</span>
+                          ) : null}
+                        </div>
                       </div>
-                      <div>
-                        <span>{formatDateTime(event.timestamp)}</span>
-                        <span>{requestKindLabel(event.requestKind, t)}</span>
-                        <span>{event.apiKeyLabel || event.apiKeyId || '-'}</span>
-                        <span>{maskAccountText(event.email || event.accountId)}</span>
-                        <span>{formatLatencyMs(event.latencyMs)}</span>
-                        <span>{formatCompactNumber(event.totalTokens)} Tokens</span>
-                        {event.errorCategory ? <span>{event.errorCategory}</span> : null}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {!requestLogLoading && !requestLogError && requestLogEvents.length === 0 && (
                     <div className="codex-api-service-empty">
                       {t('codex.localAccess.requestLogEmpty', '暂无请求日志')}
@@ -1871,6 +2109,110 @@ export function CodexApiServicePage() {
           </section>
         )}
       </main>
+
+      {pricingModalOpen && (
+        <div className="codex-api-service-dialog-backdrop" role="presentation">
+          <section
+            className="codex-api-service-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="codex-api-service-pricing-title"
+          >
+            <div className="codex-api-service-dialog-head">
+              <div>
+                <h2 id="codex-api-service-pricing-title">
+                  {t('codex.apiService.models.pricingTitle', '模型价格设置')}
+                </h2>
+                <p>{t('codex.apiService.models.pricingDesc', '单位为 USD / 1M tokens，仅用于本地价值统计。')}</p>
+              </div>
+              <button
+                type="button"
+                className="folder-icon-btn"
+                onClick={() => setPricingModalOpen(false)}
+                aria-label={t('common.cancel', '取消')}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {pricingError && (
+              <div className="codex-api-service-message error">
+                <CircleAlert size={15} />
+                <span>{pricingError}</span>
+              </div>
+            )}
+            <div className="codex-api-service-pricing-table">
+              <div className="codex-api-service-pricing-head">
+                <span>{t('codex.apiService.models.pricingModel', '模型')}</span>
+                <span>{t('codex.apiService.models.pricingInput', '输入')}</span>
+                <span>{t('codex.apiService.models.pricingCache', '缓存输入')}</span>
+                <span>{t('codex.apiService.models.pricingOutput', '输出')}</span>
+                <span>{t('codex.apiService.models.pricingSource', '来源')}</span>
+                <span>{t('codex.apiService.models.pricingActions', '操作')}</span>
+              </div>
+              {pricingDrafts.map((draft) => (
+                <div key={draft.modelId} className="codex-api-service-pricing-row">
+                  <strong>{draft.modelId}</strong>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    value={draft.inputUsdPerMillion}
+                    onChange={(event) =>
+                      updatePricingDraft(draft.modelId, 'inputUsdPerMillion', event.target.value)
+                    }
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    value={draft.cachedInputUsdPerMillion}
+                    placeholder={t('codex.apiService.models.pricingCachePlaceholder', '同输入')}
+                    onChange={(event) =>
+                      updatePricingDraft(
+                        draft.modelId,
+                        'cachedInputUsdPerMillion',
+                        event.target.value,
+                      )
+                    }
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    value={draft.outputUsdPerMillion}
+                    onChange={(event) =>
+                      updatePricingDraft(draft.modelId, 'outputUsdPerMillion', event.target.value)
+                    }
+                  />
+                  <span className={`codex-api-service-pill ${draft.custom ? 'success' : 'muted'}`}>
+                    {draft.custom
+                      ? t('codex.apiService.models.pricingCustom', '自定义')
+                      : draft.hasPreset
+                        ? t('codex.apiService.models.pricingPreset', '预设')
+                        : t('codex.apiService.models.pricingUnset', '未设置')}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => resetPricingDraft(draft.modelId)}
+                  >
+                    {t('codex.apiService.models.pricingReset', '重置')}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="codex-api-service-dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setPricingModalOpen(false)}>
+                {t('common.cancel', '取消')}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => void handleSaveModelPricings()} disabled={busy}>
+                <Check size={15} />
+                {t('common.save', '保存')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <CodexLocalAccessModal
         isOpen={memberModalOpen}

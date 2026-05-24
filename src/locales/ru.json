@@ -1837,7 +1837,9 @@
         "accountResult": "Успех {{success}} / Ошибка {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Запросы изображений",
-        "imagesDetail": "Создание {{generate}} / Правка {{edit}} / Доступ {{blocked}}"
+        "imagesDetail": "Создание {{generate}} / Правка {{edit}} / Доступ {{blocked}}",
+        "estimatedCost": "Оценка стоимости",
+        "estimatedCostDetail": "Сумма по снимкам цены каждого запроса"
       },
       "routingLabel": "Маршрутизация",
       "routingSaveSuccess": "Маршрутизация API-сервиса обновлена",
@@ -2517,6 +2519,7 @@
       "column": "Истекает",
       "unknown": "Повторить вход",
       "missingDetail": "Повторите вход для получения",
+      "refresh": "Обновить подписку",
       "expired": "Истекла",
       "hoursLeft": "{{count}} ч",
       "daysLeft": "{{count}} дн.",
@@ -2537,6 +2540,7 @@
       "repairing": "Исправление видимости сеансов Codex...",
       "repairFailed": "Автоматическое исправление не удалось. Повторите позже в Управление сеансами > Исправить видимость.",
       "type": {
+        "api": "Режим API",
         "apiKey": "Ключ API",
         "apiService": "Сервис API",
         "account": "Аккаунт"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Скрытые модели",
         "excludedPlaceholder": "Модель или шаблон на строку, напр. gpt-5-*",
         "saveRules": "Сохранить правила",
-        "rulesSaved": "Правила моделей сохранены"
+        "rulesSaved": "Правила моделей сохранены",
+        "pricingAction": "Цены",
+        "pricingTitle": "Цены моделей",
+        "pricingDesc": "USD / 1M токенов, только для локальной статистики стоимости.",
+        "pricingModel": "Модель",
+        "pricingInput": "Вход",
+        "pricingCache": "Кэш-вход",
+        "pricingOutput": "Выход",
+        "pricingSource": "Источник",
+        "pricingActions": "Действие",
+        "pricingCachePlaceholder": "Как вход",
+        "pricingCustom": "Своя",
+        "pricingPreset": "Шаблон",
+        "pricingUnset": "Не задано",
+        "pricingReset": "Сброс",
+        "pricingSaved": "Цены сохранены",
+        "pricingInvalid": "Цены должны быть числами больше или равны 0"
       },
       "keys": {
         "policyTitle": "Политика моделей",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Ошибка",
         "errorPlaceholder": "Категория ошибки",
         "clearFilters": "Сбросить фильтры",
-        "loading": "Загрузка журналов"
+        "loading": "Загрузка журналов",
+        "requestIdShort": "ID запроса {{id}}",
+        "httpStatus": "Статус HTTP {{status}}"
       }
     }
   },

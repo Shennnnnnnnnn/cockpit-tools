@@ -621,7 +621,9 @@ async fn is_http_codex_api_probe(stream: &TcpStream) -> bool {
         return false;
     };
     let preview = String::from_utf8_lossy(&buffer[..size]).to_string();
-    ["GET", "POST", "OPTIONS"].iter().any(|method| preview.starts_with(&format!("{} ", method)))
+    ["GET", "POST", "OPTIONS"]
+        .iter()
+        .any(|method| preview.starts_with(&format!("{} ", method)))
         && CODEX_IMPORT_PATHS
             .iter()
             .chain(CODEX_ACCOUNT_LIST_PATHS.iter())

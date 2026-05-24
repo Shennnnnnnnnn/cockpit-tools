@@ -1837,7 +1837,9 @@
         "accountResult": "Úspěch {{success}} / Chyba {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Obrazové požadavky",
-        "imagesDetail": "Generování {{generate}} / Úpravy {{edit}} / Oprávnění {{blocked}}"
+        "imagesDetail": "Generování {{generate}} / Úpravy {{edit}} / Oprávnění {{blocked}}",
+        "estimatedCost": "Odhad hodnoty",
+        "estimatedCostDetail": "Součet ze snímků cen požadavků"
       },
       "routingLabel": "Směrování",
       "routingSaveSuccess": "Směrování služby API bylo aktualizováno",
@@ -2517,6 +2519,7 @@
       "column": "Konec",
       "unknown": "Ověřit znovu",
       "missingDetail": "Ověřit znovu pro načtení",
+      "refresh": "Obnovit předplatné",
       "expired": "Vypršelo",
       "hoursLeft": "{{count}} h",
       "daysLeft": "{{count}} d",
@@ -2537,6 +2540,7 @@
       "repairing": "Opravuji viditelnost relací Codexu...",
       "repairFailed": "Automatická oprava selhala. Zkuste to později ve Správa relací > Opravit viditelnost.",
       "type": {
+        "api": "Režim API",
         "apiKey": "Klíč API",
         "apiService": "Služba API",
         "account": "Účet"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Skryté modely",
         "excludedPlaceholder": "Jeden model nebo vzor na řádek, např. gpt-5-*",
         "saveRules": "Uložit pravidla",
-        "rulesSaved": "Pravidla modelů uložena"
+        "rulesSaved": "Pravidla modelů uložena",
+        "pricingAction": "Ceny",
+        "pricingTitle": "Ceny modelů",
+        "pricingDesc": "USD / 1M tokenů, pouze pro místní statistiku hodnoty.",
+        "pricingModel": "Název",
+        "pricingInput": "Vstup",
+        "pricingCache": "Cache vstup",
+        "pricingOutput": "Výstup",
+        "pricingSource": "Zdroj",
+        "pricingActions": "Akce",
+        "pricingCachePlaceholder": "Jako vstup",
+        "pricingCustom": "Vlastní",
+        "pricingPreset": "Předvolba",
+        "pricingUnset": "Nenast.",
+        "pricingReset": "Obnovit",
+        "pricingSaved": "Ceny uloženy",
+        "pricingInvalid": "Ceny musí být čísla větší nebo rovna 0"
       },
       "keys": {
         "policyTitle": "Zásady modelů",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Chyba",
         "errorPlaceholder": "Kategorie chyby",
         "clearFilters": "Vymazat filtry",
-        "loading": "Načítání protokolů"
+        "loading": "Načítání protokolů",
+        "requestIdShort": "ID požadavku {{id}}",
+        "httpStatus": "Stav HTTP {{status}}"
       }
     }
   },

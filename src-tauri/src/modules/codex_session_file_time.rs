@@ -1,6 +1,15 @@
+use crate::modules::logger;
 use std::fs;
+use std::io;
 use std::path::Path;
+use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const RESTORE_MODIFIED_TIME_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(150),
+    Duration::from_millis(300),
+];
 
 pub fn read_modified_time(path: &Path) -> Option<SystemTime> {
     fs::metadata(path)
@@ -12,10 +21,51 @@ pub fn restore_modified_time(path: &Path, modified_at: Option<SystemTime>) -> Re
     let Some(modified_at) = modified_at else {
         return Ok(());
     };
-    let file = fs::File::open(path)
-        .map_err(|error| format!("打开文件以恢复修改时间失败 ({}): {}", path.display(), error))?;
-    file.set_modified(modified_at)
-        .map_err(|error| format!("恢复文件修改时间失败 ({}): {}", path.display(), error))
+    if let Err(error) = restore_modified_time_with_retry(path, modified_at) {
+        logger::log_warn(&format!(
+            "恢复文件修改时间失败，已忽略 ({}): {}",
+            path.display(),
+            error
+        ));
+    }
+    Ok(())
+}
+
+fn restore_modified_time_with_retry(path: &Path, modified_at: SystemTime) -> io::Result<()> {
+    for delay in [None]
+        .into_iter()
+        .chain(RESTORE_MODIFIED_TIME_RETRY_DELAYS.into_iter().map(Some))
+    {
+        if let Some(delay) = delay {
+            thread::sleep(delay);
+        }
+        match open_modified_time_handle(path).and_then(|file| file.set_modified(modified_at)) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if delay == Some(RESTORE_MODIFIED_TIME_RETRY_DELAYS[2]) {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn open_modified_time_handle(path: &Path) -> io::Result<fs::File> {
+    #[cfg(windows)]
+    {
+        use std::fs::OpenOptions;
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+        OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .open(path)
+    }
+
+    #[cfg(not(windows))]
+    {
+        fs::File::open(path)
+    }
 }
 
 pub fn system_time_from_unix_millis(timestamp_ms: i128) -> Option<SystemTime> {

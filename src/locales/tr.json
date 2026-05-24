@@ -1837,7 +1837,9 @@
         "accountResult": "Başarılı {{success}} / Hatalı {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Görsel istekleri",
-        "imagesDetail": "Üret {{generate}} / Düzenle {{edit}} / Yetki {{blocked}}"
+        "imagesDetail": "Üret {{generate}} / Düzenle {{edit}} / Yetki {{blocked}}",
+        "estimatedCost": "Tahmini değer",
+        "estimatedCostDetail": "Her isteğin fiyat anlık görüntüsünden toplanır"
       },
       "routingLabel": "Yönlendirme",
       "routingSaveSuccess": "API hizmeti yönlendirmesi güncellendi",
@@ -2517,6 +2519,7 @@
       "column": "Bitiş",
       "unknown": "Yeniden yetkilendir",
       "missingDetail": "Almak icin yeniden yetkilendir",
+      "refresh": "Aboneliği yenile",
       "expired": "Süresi doldu",
       "hoursLeft": "{{count}} sa",
       "daysLeft": "{{count}} gün",
@@ -2537,6 +2540,7 @@
       "repairing": "Codex oturum görünürlüğü onarılıyor...",
       "repairFailed": "Otomatik onarım başarısız oldu. Daha sonra Oturum Yönetimi > Görünürlüğü Onar bölümünden tekrar deneyebilirsiniz.",
       "type": {
+        "api": "API modu",
         "apiKey": "API Anahtarı",
         "apiService": "API Hizmeti",
         "account": "Hesap"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Gizli modeller",
         "excludedPlaceholder": "Her satıra bir model veya desen, ör. gpt-5-*",
         "saveRules": "Kuralları kaydet",
-        "rulesSaved": "Model kuralları kaydedildi"
+        "rulesSaved": "Model kuralları kaydedildi",
+        "pricingAction": "Fiyatlar",
+        "pricingTitle": "Model fiyatları",
+        "pricingDesc": "USD / 1M token, yalnızca yerel değer istatistikleri için.",
+        "pricingModel": "Model adı",
+        "pricingInput": "Girdi",
+        "pricingCache": "Önbellek girdi",
+        "pricingOutput": "Çıktı",
+        "pricingSource": "Kaynak",
+        "pricingActions": "İşlem",
+        "pricingCachePlaceholder": "Girdi ile aynı",
+        "pricingCustom": "Özel",
+        "pricingPreset": "Ön ayar",
+        "pricingUnset": "Ayarsız",
+        "pricingReset": "Sıfırla",
+        "pricingSaved": "Fiyatlar kaydedildi",
+        "pricingInvalid": "Fiyatlar 0 veya daha büyük sayılar olmalıdır"
       },
       "keys": {
         "policyTitle": "Model ilkesi",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Hata",
         "errorPlaceholder": "Hata kategorisi",
         "clearFilters": "Filtreleri temizle",
-        "loading": "İstek günlükleri yükleniyor"
+        "loading": "İstek günlükleri yükleniyor",
+        "requestIdShort": "İstek ID {{id}}",
+        "httpStatus": "HTTP durumu {{status}}"
       }
     }
   },

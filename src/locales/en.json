@@ -1736,6 +1736,7 @@
       "repairing": "Repairing Codex session visibility...",
       "repairFailed": "Automatic repair failed. You can retry later from Session Management > Repair Visibility.",
       "type": {
+        "api": "API Mode",
         "apiKey": "API Key",
         "apiService": "API Service",
         "account": "Account"
@@ -1985,9 +1986,11 @@
       "stats": {
         "requests": "Requests",
         "requestsDetail": "Success {{success}} / Failed {{failed}}",
-        "tokens": "Tokens",
-        "tokensDetail": "Input {{input}} / Output {{output}}",
-        "specialTokens": "Cache / Reasoning",
+      "tokens": "Tokens",
+      "tokensDetail": "Input {{input}} / Output {{output}}",
+      "estimatedCost": "Estimated Value",
+      "estimatedCostDetail": "Accumulated from each request's price snapshot",
+      "specialTokens": "Cache / Reasoning",
         "specialTokensDetail": "Cache {{cached}} / Reasoning {{reasoning}}",
         "images": "Image Requests",
         "imagesDetail": "Generate {{generate}} / Edit {{edit}} / Capability {{blocked}}",
@@ -2000,7 +2003,7 @@
       },
       "modal": {
         "title": "Add to API Service",
-        "desc": "Choose Codex OAuth or API Key accounts to include in the API service collection. Added accounts are hidden from the regular overview and managed only from the API service card.",
+        "desc": "Choose Codex OAuth accounts to include in the API service collection. API Key accounts are not supported here. Added accounts are hidden from the regular overview and managed only from the API service card.",
         "restrictFreeToggle": "Limit Free Accounts",
         "freeNoticeRestricted": "Free accounts are limited. Turn this off to select them.",
         "freeNoticeUnstable": "Free-account proxying can be unstable. Use with caution.",
@@ -2332,6 +2335,7 @@
       "column": "Subscription info",
       "unknown": "No subscription info",
       "missingDetail": "No subscription info",
+      "refresh": "Refresh term",
       "expired": "Expired",
       "hoursLeft": "{{count}}h",
       "daysLeft": "{{count}}d",
@@ -2573,7 +2577,7 @@
         "title": "Move to Trash",
         "message": "Selected sessions will be moved to Trash from their instances so they can be restored later. Running instances may need a restart before the change appears. Continue?",
         "syncMessage": "Missing rollout files, session_index entries, and session file times will be synced to all instances, then official Codex will rebuild the session index. Existing content will not be written again, and target files are backed up before writing. Continue?",
-        "repairVisibilityMessage": "This will repair provider metadata in rollout files using each instance's root config.toml model_provider (defaulting to openai when missing), preserve each session file's original modified time, then ask official Codex to rebuild the session index. Changed rollout files are backed up before writing. Continue?"
+        "repairVisibilityMessage": "This will repair provider metadata in rollout files and state_5.sqlite using each instance's root config.toml model_provider (defaulting to openai when missing). Files that will be changed are backed up before writing. Running instances may need a restart before the change appears. Continue?"
       },
       "empty": {
         "title": "No sessions to manage",
@@ -2583,8 +2587,8 @@
         "pickOne": "Please select at least one session",
         "pickRestoreOne": "Please select at least one session to restore",
         "syncNeedTwo": "At least two instances are required to sync sessions",
-        "repairVisibilitySkippedOnly": "Official Codex now owns session index rebuilds; Cockpit does not write the state database.",
-        "repairVisibilitySkippedWithBase": "{{message}}; official Codex now owns session index rebuilds."
+        "repairVisibilitySkippedOnly": "No writable provider differences were found; skipped {{count}} invalid or corrupted state_5.sqlite file(s). Codex must regenerate them before their SQLite records can be repaired.",
+        "repairVisibilitySkippedWithBase": "{{message}}; skipped {{count}} invalid or corrupted state_5.sqlite file(s). Codex must regenerate them before their SQLite records can be repaired."
       },
       "groupCount": "{{count}} sessions",
       "updatedAt": "Updated",
@@ -2651,14 +2655,30 @@
         "availableTitle": "Available Models",
         "capabilityTitle": "Capability Switches",
         "capabilityDesc": "gpt-image-2 is shown or hidden automatically based on the service switch, account plan, and recorded image capability state.",
-        "rulesTitle": "Model Rules",
-        "aliasTitle": "Model Aliases",
-        "aliasPlaceholder": "gpt-5 => g5; add + to keep the original model",
-        "excludedTitle": "Hidden Models",
-        "excludedPlaceholder": "One model or wildcard per line, e.g. gpt-5-*",
-        "saveRules": "Save Rules",
-        "rulesSaved": "Model rules saved"
-      },
+      "rulesTitle": "Model Rules",
+      "aliasTitle": "Model Aliases",
+      "aliasPlaceholder": "gpt-5 => g5; add + to keep the original model",
+      "excludedTitle": "Hidden Models",
+      "excludedPlaceholder": "One model or wildcard per line, e.g. gpt-5-*",
+      "saveRules": "Save Rules",
+      "rulesSaved": "Model rules saved",
+      "pricingAction": "Pricing",
+      "pricingTitle": "Model Pricing",
+      "pricingDesc": "USD / 1M tokens, used only for local value statistics.",
+      "pricingModel": "Model",
+      "pricingInput": "Input",
+      "pricingCache": "Cached Input",
+      "pricingOutput": "Output",
+      "pricingSource": "Source",
+      "pricingActions": "Actions",
+      "pricingCachePlaceholder": "Same as input",
+      "pricingCustom": "Custom",
+      "pricingPreset": "Preset",
+      "pricingUnset": "Unset",
+      "pricingReset": "Reset",
+      "pricingSaved": "Pricing saved",
+      "pricingInvalid": "Prices must be numbers greater than or equal to 0"
+    },
       "keys": {
         "policyTitle": "Model Policy",
         "advancedPolicyTitle": "Advanced: Model Policy",
@@ -2697,6 +2717,8 @@
         "statusFilter": "Status",
         "errorFilter": "Error",
         "errorPlaceholder": "Error category",
+        "requestIdShort": "ID {{id}}",
+        "httpStatus": "HTTP {{status}}",
         "clearFilters": "Clear Filters",
         "loading": "Loading request logs"
       }

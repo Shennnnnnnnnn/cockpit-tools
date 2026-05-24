@@ -84,8 +84,31 @@ fn read_global_state_json(path: &Path) -> Result<Map<String, Value>, String> {
     if content.trim().is_empty() {
         return Ok(Map::new());
     }
-    let value = serde_json::from_str::<Value>(&content)
-        .map_err(|err| format!("解析 Codex 全局状态失败: {}", err))?;
+    let value = match serde_json::from_str::<Value>(&content) {
+        Ok(value) => value,
+        Err(error) => {
+            match crate::modules::atomic_write::quarantine_file(path, "invalid-json") {
+                Ok(Some(backup_path)) => crate::modules::logger::log_warn(&format!(
+                    "Codex 全局状态解析失败，已隔离并使用空状态: path={}, backup={}, error={}",
+                    path.display(),
+                    backup_path.display(),
+                    error
+                )),
+                Ok(None) => crate::modules::logger::log_warn(&format!(
+                    "Codex 全局状态解析失败，文件已不存在，使用空状态: path={}, error={}",
+                    path.display(),
+                    error
+                )),
+                Err(backup_error) => crate::modules::logger::log_warn(&format!(
+                    "Codex 全局状态解析失败，隔离失败，使用空状态: path={}, parse_error={}, backup_error={}",
+                    path.display(),
+                    error,
+                    backup_error
+                )),
+            }
+            return Ok(Map::new());
+        }
+    };
     Ok(value.as_object().cloned().unwrap_or_default())
 }
 
@@ -97,11 +120,17 @@ fn write_global_state_json(path: &Path, state: &Map<String, Value>) -> Result<()
     }
     crate::modules::atomic_write::write_string_atomic(path, &content)
         .map_err(|err| format!("写入 Codex 全局状态失败: {}", err))?;
-    crate::modules::atomic_write::write_string_atomic(
+    if let Err(error) = crate::modules::atomic_write::write_string_atomic(
         &PathBuf::from(format!("{}.bak", path.to_string_lossy())),
         &content,
-    )
-    .map_err(|err| format!("写入 Codex 全局状态备份失败: {}", err))
+    ) {
+        crate::modules::logger::log_warn(&format!(
+            "写入 Codex 全局状态备份失败，主状态已保存: path={}, error={}",
+            path.display(),
+            error
+        ));
+    }
+    Ok(())
 }
 
 fn legacy_service_tier_value(speed: &CodexAppSpeed) -> Value {
@@ -158,8 +187,31 @@ fn read_preferred_speed() -> Result<Option<CodexAppSpeed>, String> {
     if content.trim().is_empty() {
         return Ok(None);
     }
-    let preference = serde_json::from_str::<AppSpeedPreference>(&content)
-        .map_err(|err| format!("解析 Codex 速度启动配置失败: {}", err))?;
+    let preference = match serde_json::from_str::<AppSpeedPreference>(&content) {
+        Ok(preference) => preference,
+        Err(error) => {
+            match crate::modules::atomic_write::quarantine_file(&path, "invalid-json") {
+                Ok(Some(backup_path)) => crate::modules::logger::log_warn(&format!(
+                    "Codex 速度启动配置解析失败，已隔离并回落默认速度: path={}, backup={}, error={}",
+                    path.display(),
+                    backup_path.display(),
+                    error
+                )),
+                Ok(None) => crate::modules::logger::log_warn(&format!(
+                    "Codex 速度启动配置解析失败，文件已不存在，回落默认速度: path={}, error={}",
+                    path.display(),
+                    error
+                )),
+                Err(backup_error) => crate::modules::logger::log_warn(&format!(
+                    "Codex 速度启动配置解析失败，隔离失败，回落默认速度: path={}, parse_error={}, backup_error={}",
+                    path.display(),
+                    error,
+                    backup_error
+                )),
+            }
+            return Ok(None);
+        }
+    };
     Ok(Some(preference.speed))
 }
 

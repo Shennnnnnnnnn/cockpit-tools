@@ -1736,6 +1736,7 @@
       "repairing": "正在修复 Codex 会话可见性...",
       "repairFailed": "自动修复失败。你仍可稍后在「会话管理」中使用「修复可见性」重试。",
       "type": {
+        "api": "API 模式",
         "apiKey": "API 密钥",
         "apiService": "API 服务",
         "account": "账号"
@@ -1987,6 +1988,8 @@
         "requestsDetail": "成功 {{success}} / 失败 {{failed}}",
         "tokens": "总 Token 数",
         "tokensDetail": "输入 {{input}} / 输出 {{output}}",
+        "estimatedCost": "估算价值",
+        "estimatedCostDetail": "按当前请求价格快照累计",
         "specialTokens": "缓存 / 思考",
         "specialTokensDetail": "缓存 {{cached}} / 思考 {{reasoning}}",
         "images": "图片请求",
@@ -2000,7 +2003,7 @@
       },
       "modal": {
         "title": "添加至 API 服务",
-        "desc": "选择要加入 API 服务集合的 Codex OAuth 或 API Key 账号。加入后，这些账号将从普通面板中隐藏，只在 API 服务卡片中管理。",
+        "desc": "选择要加入 API 服务集合的 Codex OAuth 账号。这里不支持 API Key 账号。加入后，这些账号将从普通面板中隐藏，只在 API 服务卡片中管理。",
         "restrictFreeToggle": "限制 Free 账号使用",
         "freeNoticeRestricted": "已限制 Free 账号，关闭后才可勾选。",
         "freeNoticeUnstable": "Free账号反代不稳定，请谨慎使用。",
@@ -2332,6 +2335,7 @@
       "column": "订阅信息",
       "unknown": "未获得订阅信息",
       "missingDetail": "未获得订阅信息",
+      "refresh": "刷新订阅",
       "expired": "已过期",
       "hoursLeft": "{{count}}小时",
       "daysLeft": "{{count}}天",
@@ -2573,7 +2577,7 @@
         "title": "移到废纸篓",
         "message": "会将所选会话从对应实例中移到废纸篓，便于后续恢复；运行中的实例可能需要重启后才会反映。确认继续？",
         "syncMessage": "会将缺失的 rollout、session_index 条目和会话文件时间同步到所有实例，并触发官方 Codex 重建会话索引；已有内容不会重复写入，写入前会先备份目标文件。确认继续？",
-        "repairVisibilityMessage": "会按各实例 config.toml 根级 model_provider（缺失时按 openai）修复 rollout 文件的 provider 元数据，并保留会话文件原修改时间，再触发官方 Codex 重建会话索引。写入前会备份将要修改的 rollout 文件。确认继续？"
+        "repairVisibilityMessage": "会按各实例 config.toml 根级 model_provider（缺失时按 openai）修复 rollout 文件与 state_5.sqlite 中的 provider 元数据，写入前会先备份将要修改的文件。运行中的实例可能需要重启后显示。确认继续？"
       },
       "empty": {
         "title": "还没有可管理的会话",
@@ -2583,8 +2587,8 @@
         "pickOne": "请至少选择一条会话",
         "pickRestoreOne": "请至少选择一条待恢复会话",
         "syncNeedTwo": "至少需要两个实例才能同步会话",
-        "repairVisibilitySkippedOnly": "官方 Codex 已接管会话索引重建，无需由 Cockpit 写入状态库。",
-        "repairVisibilitySkippedWithBase": "{{message}}；官方 Codex 已接管会话索引重建。"
+        "repairVisibilitySkippedOnly": "未发现需要写入的 provider 差异；已跳过 {{count}} 个无效或损坏的 state_5.sqlite，需由 Codex 重新生成后才能修复其中的 SQLite 记录",
+        "repairVisibilitySkippedWithBase": "{{message}}；已跳过 {{count}} 个无效或损坏的 state_5.sqlite，需由 Codex 重新生成后才能修复其中的 SQLite 记录"
       },
       "groupCount": "{{count}} 条会话",
       "updatedAt": "最近更新",
@@ -2657,7 +2661,23 @@
         "excludedTitle": "隐藏模型",
         "excludedPlaceholder": "每行一个模型或通配符，例如 gpt-5-*",
         "saveRules": "保存规则",
-        "rulesSaved": "模型规则已保存"
+        "rulesSaved": "模型规则已保存",
+        "pricingAction": "价格设置",
+        "pricingTitle": "模型价格设置",
+        "pricingDesc": "单位为 USD / 1M tokens，仅用于本地价值统计。",
+        "pricingModel": "模型",
+        "pricingInput": "输入",
+        "pricingCache": "缓存输入",
+        "pricingOutput": "输出",
+        "pricingSource": "来源",
+        "pricingActions": "操作",
+        "pricingCachePlaceholder": "同输入",
+        "pricingCustom": "自定义",
+        "pricingPreset": "预设",
+        "pricingUnset": "未设置",
+        "pricingReset": "重置",
+        "pricingSaved": "价格设置已保存",
+        "pricingInvalid": "价格必须是大于或等于 0 的数字"
       },
       "keys": {
         "policyTitle": "模型策略",
@@ -2697,6 +2717,8 @@
         "statusFilter": "状态",
         "errorFilter": "错误",
         "errorPlaceholder": "错误分类",
+        "requestIdShort": "请求 ID {{id}}",
+        "httpStatus": "HTTP {{status}}",
         "clearFilters": "清除筛选",
         "loading": "正在加载请求日志"
       }

@@ -986,7 +986,7 @@ fn upsert_session_index_entries(
 
     let mut output = lines.join("\n");
     output.push('\n');
-    fs::write(&path, output).map_err(|error| {
+    modules::atomic_write::write_string_atomic(&path, &output).map_err(|error| {
         format!(
             "写入 session_index.jsonl 失败 ({}): {}",
             path.display(),
@@ -1056,7 +1056,7 @@ fn copy_rollout_file_to_path(
             )?;
             return Ok(target_path.to_path_buf());
         }
-        fs::write(target_path, content).map_err(|error| {
+        modules::atomic_write::write_string_atomic(target_path, content).map_err(|error| {
             format!(
                 "写入合并 rollout 文件失败 ({}): {}",
                 target_path.display(),
@@ -1196,13 +1196,16 @@ fn rewrite_rollout_provider_for_target(
     );
     let updated_first_line = serde_json::to_string(&parsed)
         .map_err(|error| format!("序列化 rollout provider 元数据失败: {}", error))?;
-    fs::write(rollout_path, format!("{}{}", updated_first_line, rest)).map_err(|error| {
-        format!(
-            "写入目标 rollout provider 元数据失败 ({}): {}",
-            rollout_path.display(),
-            error
-        )
-    })?;
+    let updated_content = format!("{}{}", updated_first_line, rest);
+    modules::atomic_write::write_string_atomic(rollout_path, &updated_content).map_err(
+        |error| {
+            format!(
+                "写入目标 rollout provider 元数据失败 ({}): {}",
+                rollout_path.display(),
+                error
+            )
+        },
+    )?;
     modules::codex_session_file_time::restore_modified_time(rollout_path, original_modified_at)
 }
 

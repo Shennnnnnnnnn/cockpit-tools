@@ -221,11 +221,65 @@
   color: #15803d;
 }
 
+.codex-api-service-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.codex-api-service-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(980px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  padding: 14px;
+  border: 1px solid var(--codex-api-border);
+  border-radius: 12px;
+  background: var(--codex-api-surface-strong);
+  box-shadow: 0 24px 60px -36px rgba(15, 23, 42, 0.72);
+  overflow: hidden;
+}
+
+.codex-api-service-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.codex-api-service-dialog-head h2 {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.codex-api-service-dialog-head p {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.codex-api-service-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .codex-api-service-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 9px;
+  grid-template-columns: repeat(5, minmax(112px, 1fr));
+  gap: 8px;
   min-width: 0;
+  overflow-x: auto;
 }
 
 .codex-api-service-summary-card {
@@ -234,8 +288,8 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  min-height: 80px;
-  padding: 10px 12px;
+  min-height: 72px;
+  padding: 9px 10px;
   border: 1px solid var(--codex-api-border);
   border-radius: 16px;
   background: var(--codex-api-surface-strong);
@@ -264,14 +318,20 @@
   color: var(--text-secondary);
   font-size: 10.5px;
   font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .codex-api-service-summary-card strong {
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.1;
   font-weight: 760;
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .codex-api-service-summary-card small {
@@ -279,7 +339,9 @@
   color: var(--text-muted);
   font-size: 10.5px;
   line-height: 1.35;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .codex-api-service-grid {
@@ -901,6 +963,66 @@
   min-width: 0;
 }
 
+.codex-api-service-pricing-table {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.codex-api-service-pricing-head,
+.codex-api-service-pricing-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.25fr) repeat(3, minmax(110px, 0.8fr)) minmax(82px, 0.55fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 760px;
+}
+
+.codex-api-service-pricing-head {
+  padding: 0 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.codex-api-service-pricing-row {
+  padding: 8px 9px;
+  border: 1px solid var(--codex-api-border-soft);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+}
+
+.codex-api-service-pricing-row strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-api-service-pricing-row input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--codex-api-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  color: var(--text-primary);
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+
+.codex-api-service-pricing-row input:focus {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
 .codex-api-service-stats-breakdown {
   align-items: start;
 }
@@ -1006,6 +1128,10 @@
   overflow-wrap: anywhere;
 }
 
+.codex-api-service-log-row .codex-api-service-log-error-detail {
+  color: var(--danger);
+}
+
 .codex-api-service-empty {
   display: flex;
   align-items: center;
@@ -1052,10 +1178,6 @@
 }
 
 @media (max-width: 1180px) {
-  .codex-api-service-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .codex-api-service-grid.two {
     grid-template-columns: 1fr;
   }
@@ -1148,6 +1270,14 @@
     grid-template-columns: 1fr;
   }
 
+  .codex-api-service-dialog-backdrop {
+    padding: 12px;
+  }
+
+  .codex-api-service-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
   .codex-api-service-log-panel-head {
     align-items: stretch;
   }
@@ -1158,7 +1288,6 @@
 }
 
 @media (max-width: 620px) {
-  .codex-api-service-summary-grid,
   .codex-api-service-health-grid {
     grid-template-columns: 1fr;
   }

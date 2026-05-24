@@ -4,8 +4,8 @@
   "topRightAd": {
     "id": "top-right-ad-2026-04-shop",
     "priority": 100,
-    "text_backup": "9.9Codex plus号和12元代过试用Plus。下单最高可获得88元现金红包！！",
-    "text": "9.9Codex plus号和12元代过试用Plus。欢迎选购",
+    "text": "9.9Codex plus号和12元代过试用Plus。下单最高可获得88元现金红包！！",
+    "text_backup": "9.9Codex plus号和12元代过试用Plus。欢迎选购",
     "badge": "推广",
     "ctaLabel": "选购",
     "ctaUrl": "https://xiangzili.xyz",
@@ -17,8 +17,8 @@
     "expiresAt": null,
     "locales": {
       "zh-CN": {
-        "text_backup": "9.9Codex plus号和12元代过试用Plus。下单最高可获得88元现金红包！！",
-        "text": "9.9Codex plus号和12元代过试用Plus。欢迎选购",
+        "text": "9.9Codex plus号和12元代过试用Plus。下单最高可获得88元现金红包！！",
+        "text_backup": "9.9Codex plus号和12元代过试用Plus。欢迎选购",
         "badge": "推广",
         "ctaLabel": "选购"
       }

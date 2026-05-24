@@ -11,6 +11,12 @@ enum AntigravityRuntimeTarget {
     Ide,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AntigravityDesktopAuthMode {
+    LegacyStateDb,
+    SystemCredential,
+}
+
 fn normalize_antigravity_runtime_target(raw: Option<&str>) -> AntigravityRuntimeTarget {
     match raw.unwrap_or("").trim().to_ascii_lowercase().as_str() {
         "antigravity" => AntigravityRuntimeTarget::Legacy,
@@ -46,29 +52,24 @@ fn compare_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
     Some(std::cmp::Ordering::Equal)
 }
 
-fn ensure_legacy_antigravity_switch_supported() -> Result<(), String> {
-    let Some(info) =
-        crate::commands::system::get_cached_antigravity_installed_version_info_for_target(Some(
-            "antigravity",
-        ))
-    else {
-        modules::logger::log_info("[Antigravity] 未命中旧版安装版本缓存，放行旧版切号逻辑");
-        return Ok(());
+fn resolve_antigravity_desktop_auth_mode() -> Result<AntigravityDesktopAuthMode, String> {
+    let Some(info) = crate::commands::system::resolve_antigravity_installed_version_info_for_target(
+        Some("antigravity"),
+    ) else {
+        return Err(
+            "无法确认 Antigravity 安装版本，请确认已安装 Antigravity.app，或在设置中选择正确的 Antigravity 启动路径"
+                .to_string(),
+        );
     };
 
+    modules::logger::log_info(&format!(
+        "[Antigravity] 检测到桌面版版本: version={}, path={}, source={}",
+        info.version, info.app_path, info.source
+    ));
     match compare_versions(&info.version, "2.0.0") {
-        Some(std::cmp::Ordering::Less) => Ok(()),
-        Some(_) => Err(
-            "ANTIGRAVITY_LEGACY_UNSUPPORTED:暂不支持 Antigravity 2.0.0 及以上版本，请选择小于Antigravity 2.0.0版本或者使用Antigravity IDE"
-                .to_string(),
-        ),
-        None => {
-            modules::logger::log_info(&format!(
-                "[Antigravity] 旧版安装版本无法解析，放行旧版切号逻辑: {}",
-                info.version
-            ));
-            Ok(())
-        }
+        Some(std::cmp::Ordering::Less) => Ok(AntigravityDesktopAuthMode::LegacyStateDb),
+        Some(_) => Ok(AntigravityDesktopAuthMode::SystemCredential),
+        None => Err(format!("无法解析 Antigravity 安装版本: {}", info.version)),
     }
 }
 
@@ -278,7 +279,7 @@ async fn switch_account_legacy_antigravity(
     app: AppHandle,
     account_id: String,
 ) -> Result<models::Account, String> {
-    modules::logger::log_info(&format!("开始切换 Antigravity 旧版账号: {}", account_id));
+    modules::logger::log_info(&format!("开始切换 Antigravity 账号: {}", account_id));
 
     if let Err(e) = modules::process::ensure_antigravity_legacy_launch_path_configured() {
         if e.starts_with("APP_PATH_NOT_FOUND:") {
@@ -297,6 +298,7 @@ async fn switch_account_legacy_antigravity(
         return Err(e);
     }
 
+    let auth_mode = resolve_antigravity_desktop_auth_mode()?;
     let mut account = modules::account::prepare_account_for_injection(&account_id).await?;
     modules::set_current_account_id(&account_id)?;
     account.update_last_used();
@@ -330,14 +332,22 @@ async fn switch_account_legacy_antigravity(
         }
     }
 
-    let db_path = legacy_antigravity_state_db_path()?;
-    modules::db::inject_token_to_path(
-        &db_path,
-        &account.token.access_token,
-        &account.token.refresh_token,
-        account.token.expiry_timestamp,
-    )
-    .map_err(|e| format!("注入 Antigravity 旧版账号失败: {}", e))?;
+    match auth_mode {
+        AntigravityDesktopAuthMode::LegacyStateDb => {
+            let db_path = legacy_antigravity_state_db_path()?;
+            modules::db::inject_token_to_path(
+                &db_path,
+                &account.token.access_token,
+                &account.token.refresh_token,
+                account.token.expiry_timestamp,
+            )
+            .map_err(|e| format!("注入 Antigravity 旧版账号失败: {}", e))?;
+        }
+        AntigravityDesktopAuthMode::SystemCredential => {
+            modules::antigravity_credential::write_antigravity_system_credential(&account)
+                .map_err(|e| format!("写入 Antigravity 2.0 系统凭据失败: {}", e))?;
+        }
+    }
 
     modules::logger::log_info("正在启动 Antigravity 默认实例...");
     let default_settings = modules::instance::load_default_settings()?;
@@ -377,7 +387,7 @@ async fn switch_account_legacy_antigravity(
         return Err(format!("账号已切换，但启动 Antigravity 失败: {}", err));
     }
 
-    modules::logger::log_info(&format!("Antigravity 旧版账号切换完成: {}", account.email));
+    modules::logger::log_info(&format!("Antigravity 账号切换完成: {}", account.email));
     modules::websocket::broadcast_account_switched(&account.id, &account.email);
     Ok(account)
 }
@@ -391,7 +401,6 @@ pub async fn switch_account(
 ) -> Result<models::Account, String> {
     let runtime_target = normalize_antigravity_runtime_target(runtime_target.as_deref());
     if runtime_target == AntigravityRuntimeTarget::Legacy {
-        ensure_legacy_antigravity_switch_supported()?;
         return switch_account_legacy_antigravity(app, account_id).await;
     }
 

@@ -1837,7 +1837,9 @@
         "accountResult": "Sukces {{success}} / Błąd {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Żądania obrazów",
-        "imagesDetail": "Generuj {{generate}} / Edytuj {{edit}} / Uprawnienia {{blocked}}"
+        "imagesDetail": "Generuj {{generate}} / Edytuj {{edit}} / Uprawnienia {{blocked}}",
+        "estimatedCost": "Szacowana wartość",
+        "estimatedCostDetail": "Suma z migawek cen każdego żądania"
       },
       "routingLabel": "Trasowanie",
       "routingSaveSuccess": "Zaktualizowano trasowanie usługi API",
@@ -2517,6 +2519,7 @@
       "column": "Wygasa",
       "unknown": "Autoryzuj ponownie",
       "missingDetail": "Autoryzuj ponownie, aby pobrać",
+      "refresh": "Odśwież subskrypcję",
       "expired": "Wygasła",
       "hoursLeft": "{{count}} godz.",
       "daysLeft": "{{count}} dni",
@@ -2537,6 +2540,7 @@
       "repairing": "Naprawianie widoczności sesji Codex...",
       "repairFailed": "Automatyczna naprawa się nie powiodła. Możesz spróbować później w Zarządzanie sesjami > Napraw widoczność.",
       "type": {
+        "api": "Tryb API",
         "apiKey": "Klucz API",
         "apiService": "Usługa API",
         "account": "Konto"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Ukryte modele",
         "excludedPlaceholder": "Model lub wzorzec w każdym wierszu, np. gpt-5-*",
         "saveRules": "Zapisz reguły",
-        "rulesSaved": "Reguły modeli zapisane"
+        "rulesSaved": "Reguły modeli zapisane",
+        "pricingAction": "Ceny",
+        "pricingTitle": "Ceny modeli",
+        "pricingDesc": "USD / 1M tokenów, tylko do lokalnych statystyk wartości.",
+        "pricingModel": "Nazwa",
+        "pricingInput": "Wejście",
+        "pricingCache": "Wejście cache",
+        "pricingOutput": "Wyjście",
+        "pricingSource": "Źródło",
+        "pricingActions": "Akcja",
+        "pricingCachePlaceholder": "Jak wejście",
+        "pricingCustom": "Własne",
+        "pricingPreset": "Ustaw.",
+        "pricingUnset": "Brak",
+        "pricingReset": "Resetuj",
+        "pricingSaved": "Ceny zapisane",
+        "pricingInvalid": "Ceny muszą być liczbami większymi lub równymi 0"
       },
       "keys": {
         "policyTitle": "Polityka modeli",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Błąd",
         "errorPlaceholder": "Kategoria błędu",
         "clearFilters": "Wyczyść filtry",
-        "loading": "Ładowanie logów"
+        "loading": "Ładowanie logów",
+        "requestIdShort": "ID żądania {{id}}",
+        "httpStatus": "Status HTTP {{status}}"
       }
     }
   },

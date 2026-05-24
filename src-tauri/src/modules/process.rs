@@ -16,7 +16,8 @@ const CODEX_APP_PATH: &str = "/Applications/Codex.app/Contents/MacOS/Codex";
 #[cfg(target_os = "macos")]
 const ANTIGRAVITY_APP_PATH: &str = "/Applications/Antigravity IDE.app/Contents/MacOS/Electron";
 #[cfg(target_os = "macos")]
-const ANTIGRAVITY_LEGACY_APP_PATH: &str = "/Applications/Antigravity.app/Contents/MacOS/Electron";
+const ANTIGRAVITY_LEGACY_APP_PATH: &str =
+    "/Applications/Antigravity.app/Contents/MacOS/Antigravity";
 #[cfg(target_os = "macos")]
 const ANTIGRAVITY_APP_CONTENTS_MARKER: &str = "antigravity ide.app/contents/";
 #[cfg(target_os = "macos")]
@@ -1601,7 +1602,7 @@ pub fn detect_antigravity_legacy_exec_path() -> Option<std::path::PathBuf> {
     {
         for candidate in [
             ANTIGRAVITY_LEGACY_APP_PATH,
-            "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+            "/Applications/Antigravity.app/Contents/MacOS/Electron",
         ] {
             let path = std::path::PathBuf::from(candidate);
             if path.exists() {
@@ -2778,8 +2779,8 @@ fn resolve_antigravity_legacy_launch_path() -> Result<std::path::PathBuf, String
     {
         #[cfg(target_os = "macos")]
         if is_legacy_antigravity_macos_path(&custom) {
-            if let Some(exec) = resolve_macos_exec_path(&custom, "Electron")
-                .or_else(|| resolve_macos_exec_path(&custom, "Antigravity"))
+            if let Some(exec) = resolve_macos_exec_path(&custom, "Antigravity")
+                .or_else(|| resolve_macos_exec_path(&custom, "Electron"))
             {
                 return Ok(exec);
             }

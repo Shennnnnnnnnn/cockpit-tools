@@ -2023,30 +2023,25 @@ export function CodexLocalAccessModal({
                   <div className="group-account-empty">
                     {t('codex.localAccess.modal.empty', '暂无可加入的 Codex 账号')}
                   </div>
-                ) : visibleAccounts.length === 0 ? (
+                ) : visibleSelectableAccounts.length === 0 ? (
                   <div className="group-account-empty">
                     {t('common.shared.noMatch.title', '没有匹配的账号')}
                   </div>
                 ) : (
-                  visibleAccounts.map((account) => {
+                  visibleSelectableAccounts.map((account) => {
                     const presentation = buildCodexAccountPresentation(account, t);
                     const isChecked = selected.has(account.id);
-                    const isSelectionBlocked =
-                      !isCodexLocalAccessEligibleAccount(account, restrictFreeAccounts) &&
-                      !isChecked;
                     const accountStats = allStatsByAccountId.get(account.id)?.usage;
 
                     return (
                       <label
                         key={account.id}
-                        className={`group-account-item${isChecked ? ' is-current' : ''}${
-                          isSelectionBlocked ? ' is-disabled' : ''
-                        }`}
+                        className={`group-account-item${isChecked ? ' is-current' : ''}`}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          disabled={actionBusy || isSelectionBlocked}
+                          disabled={actionBusy}
                           onChange={() => toggleSelect(account.id)}
                         />
                         <div className="group-account-main">

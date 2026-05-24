@@ -9,7 +9,7 @@ export function isCodexLocalAccessEligibleAccount(
   restrictFreeAccounts: boolean,
 ): boolean {
   if (isCodexApiKeyAccount(account)) {
-    return Boolean(account.openai_api_key?.trim());
+    return false;
   }
   if (restrictFreeAccounts && isCodexExplicitFreePlanType(account.plan_type)) {
     return false;

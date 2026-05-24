@@ -1837,7 +1837,9 @@
         "accountResult": "Succès {{success}} / Échec {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Requêtes image",
-        "imagesDetail": "Génération {{generate}} / Retouche {{edit}} / Droit {{blocked}}"
+        "imagesDetail": "Génération {{generate}} / Retouche {{edit}} / Droit {{blocked}}",
+        "estimatedCost": "Valeur estimée",
+        "estimatedCostDetail": "Cumulée depuis l’instantané de prix de chaque requête"
       },
       "routingLabel": "Routage",
       "routingSaveSuccess": "Le routage du service API a été mis à jour",
@@ -2517,6 +2519,7 @@
       "column": "Expire",
       "unknown": "Réautoriser",
       "missingDetail": "Réautoriser pour récupérer",
+      "refresh": "Actualiser l’abonnement",
       "expired": "Expiré",
       "hoursLeft": "{{count}} h",
       "daysLeft": "{{count}} j",
@@ -2537,6 +2540,7 @@
       "repairing": "Réparation de la visibilité des sessions Codex...",
       "repairFailed": "La réparation automatique a échoué. Vous pouvez réessayer plus tard via Gestion des sessions > Réparer la visibilité.",
       "type": {
+        "api": "Mode API",
         "apiKey": "Clé API",
         "apiService": "Service API",
         "account": "Compte"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Modèles masqués",
         "excludedPlaceholder": "Un modèle ou motif par ligne, ex. gpt-5-*",
         "saveRules": "Enregistrer",
-        "rulesSaved": "Règles modèles enregistrées"
+        "rulesSaved": "Règles modèles enregistrées",
+        "pricingAction": "Tarifs",
+        "pricingTitle": "Tarifs modèles",
+        "pricingDesc": "USD / 1M jetons, uniquement pour les statistiques locales de valeur.",
+        "pricingModel": "Modèle",
+        "pricingInput": "Entrée",
+        "pricingCache": "Entrée cache",
+        "pricingOutput": "Sortie",
+        "pricingSource": "Source",
+        "pricingActions": "Action",
+        "pricingCachePlaceholder": "Comme entrée",
+        "pricingCustom": "Perso",
+        "pricingPreset": "Préréglé",
+        "pricingUnset": "Non défini",
+        "pricingReset": "Réinit.",
+        "pricingSaved": "Tarifs enregistrés",
+        "pricingInvalid": "Les tarifs doivent être des nombres supérieurs ou égaux à 0"
       },
       "keys": {
         "policyTitle": "Politique de modèles",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Erreur",
         "errorPlaceholder": "Catégorie erreur",
         "clearFilters": "Effacer filtres",
-        "loading": "Chargement des logs"
+        "loading": "Chargement des logs",
+        "requestIdShort": "ID requête {{id}}",
+        "httpStatus": "Statut HTTP {{status}}"
       }
     }
   },

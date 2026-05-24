@@ -1061,8 +1061,31 @@ pub fn load_user_config() -> Result<UserConfig, String> {
     let content =
         fs::read_to_string(&config_path).map_err(|e| format!("读取配置文件失败: {}", e))?;
 
-    let mut value: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {}", e))?;
+    let mut value: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(value) => value,
+        Err(error) => {
+            match crate::modules::atomic_write::quarantine_file(&config_path, "invalid-json") {
+                Ok(Some(backup_path)) => crate::modules::logger::log_warn(&format!(
+                    "配置文件解析失败，已隔离并使用默认配置: path={}, backup={}, error={}",
+                    config_path.display(),
+                    backup_path.display(),
+                    error
+                )),
+                Ok(None) => crate::modules::logger::log_warn(&format!(
+                    "配置文件解析失败，文件已不存在，使用默认配置: path={}, error={}",
+                    config_path.display(),
+                    error
+                )),
+                Err(backup_error) => crate::modules::logger::log_warn(&format!(
+                    "配置文件解析失败，隔离失败，使用默认配置: path={}, parse_error={}, backup_error={}",
+                    config_path.display(),
+                    error,
+                    backup_error
+                )),
+            }
+            return Ok(UserConfig::default());
+        }
+    };
 
     // 兼容旧配置：平台独立预警字段不存在时，继承历史全局预警配置
     if let Some(obj) = value.as_object_mut() {
@@ -1567,8 +1590,31 @@ pub fn load_user_config() -> Result<UserConfig, String> {
         }
     }
 
-    let mut config: UserConfig =
-        serde_json::from_value(value).map_err(|e| format!("解析配置文件失败: {}", e))?;
+    let mut config: UserConfig = match serde_json::from_value(value) {
+        Ok(config) => config,
+        Err(error) => {
+            match crate::modules::atomic_write::quarantine_file(&config_path, "invalid-shape") {
+                Ok(Some(backup_path)) => crate::modules::logger::log_warn(&format!(
+                    "配置文件结构无效，已隔离并使用默认配置: path={}, backup={}, error={}",
+                    config_path.display(),
+                    backup_path.display(),
+                    error
+                )),
+                Ok(None) => crate::modules::logger::log_warn(&format!(
+                    "配置文件结构无效，文件已不存在，使用默认配置: path={}, error={}",
+                    config_path.display(),
+                    error
+                )),
+                Err(backup_error) => crate::modules::logger::log_warn(&format!(
+                    "配置文件结构无效，隔离失败，使用默认配置: path={}, parse_error={}, backup_error={}",
+                    config_path.display(),
+                    error,
+                    backup_error
+                )),
+            }
+            return Ok(UserConfig::default());
+        }
+    };
     let (include_accounts, include_config) = normalize_auto_backup_selection(
         config.auto_backup_include_accounts,
         config.auto_backup_include_config,
@@ -1609,7 +1655,8 @@ pub fn save_user_config(config: &UserConfig) -> Result<(), String> {
     let json =
         serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {}", e))?;
 
-    fs::write(&config_path, json).map_err(|e| format!("写入配置文件失败: {}", e))?;
+    crate::modules::atomic_write::write_string_atomic(&config_path, &json)
+        .map_err(|e| format!("写入配置文件失败: {}", e))?;
 
     // 更新运行时状态
     if let Ok(mut state) = get_runtime_state().write() {
@@ -1661,7 +1708,8 @@ pub fn save_server_status(status: &ServerStatus) -> Result<(), String> {
     let json =
         serde_json::to_string_pretty(status).map_err(|e| format!("序列化状态失败: {}", e))?;
 
-    fs::write(&status_path, json).map_err(|e| format!("写入状态文件失败: {}", e))?;
+    crate::modules::atomic_write::write_string_atomic(&status_path, &json)
+        .map_err(|e| format!("写入状态文件失败: {}", e))?;
 
     crate::modules::logger::log_info(&format!(
         "[Config] 服务状态已保存: ws_port={}, pid={}",

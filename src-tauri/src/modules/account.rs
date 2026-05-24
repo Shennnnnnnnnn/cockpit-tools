@@ -116,8 +116,26 @@ fn load_deleted_account_fp_bindings() -> Result<DeletedAccountFingerprintBinding
 
     match serde_json::from_str::<DeletedAccountFingerprintBindings>(&content) {
         Ok(bindings) => Ok(bindings),
-        Err(e) => {
-            modules::logger::log_warn(&format!("指纹映射文件损坏，已重置为空: {}", e));
+        Err(error) => {
+            match modules::atomic_write::quarantine_file(&path, "invalid-json") {
+                Ok(Some(backup_path)) => modules::logger::log_warn(&format!(
+                    "指纹映射文件损坏，已隔离并重置为空: path={}, backup={}, error={}",
+                    path.display(),
+                    backup_path.display(),
+                    error
+                )),
+                Ok(None) => modules::logger::log_warn(&format!(
+                    "指纹映射文件损坏，文件已不存在，重置为空: path={}, error={}",
+                    path.display(),
+                    error
+                )),
+                Err(backup_error) => modules::logger::log_warn(&format!(
+                    "指纹映射文件损坏，隔离失败，重置为空: path={}, parse_error={}, backup_error={}",
+                    path.display(),
+                    error,
+                    backup_error
+                )),
+            }
             Ok(DeletedAccountFingerprintBindings::default())
         }
     }

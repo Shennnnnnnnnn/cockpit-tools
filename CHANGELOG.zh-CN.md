@@ -7,6 +7,33 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [0.24.7] - 2026-05-24
+
+### 新增
+- **Codex API 服务现改由内置 CLIProxyAPI sidecar 与 Cockpit relay 运行**：Cockpit Tools 会构建并打包 `cockpit-cliproxy`，根据受管账号和客户端 Key 生成 sidecar 配置、manifest 与认证文件，保持现有 Base URL/API Key 使用方式，并通过 CLIProxyAPI 的 Codex executor 转发 OpenAI 兼容的 Chat Completions、Responses、图片、流式与 CORS 预检请求。
+- **Codex API 服务现支持模型价格与估算价值统计**：内置价格预设覆盖包含 `gpt-5.5` 在内的当前 Codex 模型，模型页可编辑自定义 USD / 1M tokens 价格，总览、账号/模型/Key 统计与请求日志会按每次请求保存的价格快照展示估算价值。
+- **Codex API 服务请求日志现包含请求级诊断信息**：sidecar 事件会携带稳定请求 ID、已选认证/账号元数据、HTTP 状态、重试详情、清理后的上游错误信息、客户端取消分类与账号调度上下文，便于在界面中追踪失败原因。
+- **Codex 账号订阅期限现可手动刷新**：订阅信息缺失或已过期的 OAuth 账号会在卡片与表格视图中显示刷新操作，并在账号记录中保存查询尝试、成功时间、重试窗口和最近错误。
+- **Antigravity 2.0 桌面版切号现写入官方系统凭据**：桌面 Antigravity `2.0.0` 及以上版本会把官方 `gemini` / `antigravity` 凭据写入 macOS Keychain、Windows Credential Manager 或 Linux Secret Service，旧版本桌面端继续使用 legacy state 数据库路径。
+
+### 变更
+- **Codex API 服务运行时接管现会保留官方 Codex profile 文件**：启用服务前会备份 profile 下的 `auth.json` 与 `config.toml`，再写入受管 `codex_local_access` provider 状态；停用服务时会恢复已备份文件，或只移除 Cockpit 写入的条目。
+- **Codex API 服务启用期间现持续保持默认 Codex profile 接管状态**：状态快照会检查默认 profile 的配置/认证接管情况，并在 Base URL 或 API Key 过期时重新接管。
+- **Codex API 服务 sidecar 现基于 CLIProxyAPI v7.0.2 使用 Cockpit relay runtime**：Cockpit 负责 HTTP 监听、请求策略、模型策略、用量捕获与本地统计管线，CLIProxyAPI 负责 Codex 认证合成、账号选择、刷新、重试与 executor 行为。
+- **Codex API 服务 sidecar 流式响应现统一规范为 OpenAI 兼容 SSE 输出**：流式 Chat Completions 与 Responses 请求会稳定分帧，必要时把 JSON 分片和 `[DONE]` 转成 SSE，过滤 hop-by-hop 与代理专用响应头，本地 CORS 预检行为也与本地网关保持一致。
+- **Codex 历史会话可见性修复现同时更新 rollout 元数据与 `state_5.sqlite` thread 记录**：需要时会把 SQLite 数据库纳入备份，无效数据库会跳过并给出明确结果，修复摘要会展示已更新的 SQLite 记录数。
+- **Codex 多开实例启动现会识别账号/API 凭据来源变化**：实例在受管账号凭据与 API 凭据之间切换后启动时，会弹出既有的会话可见性修复弹框，并执行同一套跨实例修复流程。
+- **Codex API 服务请求日志存储现保留诊断与价格字段**：日志行会保存请求 ID、HTTP 状态、清理后的错误详情、估算 USD 价值，以及本次请求使用的输入/输出/缓存输入价格快照。
+- **本地运行时与配置持久化现统一使用原子写入和损坏文件隔离**：配置、公告、实例列表、OAuth pending 文件、唤醒状态/历史/验证、托盘布局、更新状态、指纹、Zed 运行时、Codex API 状态与 Codex API 日志存储会先隔离无效文件，再重建安全默认状态。
+- **Antigravity 桌面版切号现会动态识别已安装鉴权模式**：切号前会先检测已安装桌面版版本，仅对低于 `2.0.0` 的版本写入 legacy state 数据库，并让当前桌面版的原生失败原因直接显示在账号页中。
+
+### 修复
+- **Codex 历史会话可见性修复更新 rollout 文件时不再改写会话时间顺序**：重写 rollout provider、备份与恢复时会尽量保留原始文件修改时间；若时间恢复失败，该非关键步骤不会阻断修复流程。
+- **Codex API 服务流式响应不再泄露不兼容上游响应头或异常分片**：流式 relay 响应会保持单一且预期的 event-stream 内容类型，保留安全上游响应头，移除代理专用响应头，规范化不完整 SSE frame，并以 OpenAI 兼容 SSE 格式输出 `[DONE]`。
+- **Codex API 服务默认 profile 接管现可修复过期的本地 Base URL 或 API Key 状态**：服务启用时会检测并重写过期的 `codex_local_access` provider 配置，避免官方 Codex profile 仍指向旧端口或旧 Key。
+- **Antigravity 桌面版启动检测现优先使用当前 macOS 可执行文件名**：legacy Antigravity.app 解析会先检查 `Contents/MacOS/Antigravity`，再检查 `Electron`，与当前桌面包结构保持一致。
+
+---
 ## [0.24.4] - 2026-05-23
 
 ### 新增

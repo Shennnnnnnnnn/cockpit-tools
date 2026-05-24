@@ -7,6 +7,33 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.24.7] - 2026-05-24
+
+### Added
+- **Codex API Service now runs through a bundled CLIProxyAPI sidecar and Cockpit relay**: Cockpit Tools builds and packages `cockpit-cliproxy`, generates sidecar config, manifest, and auth files from managed accounts and client keys, keeps the existing Base URL/API key workflow, and relays OpenAI-compatible Chat Completions, Responses, image, streaming, and CORS preflight requests through CLIProxyAPI's Codex executor.
+- **Codex API Service now supports model pricing and estimated value statistics**: built-in pricing presets cover current Codex models including `gpt-5.5`, custom USD-per-million token prices can be edited from the model page, and totals, account/model/key breakdowns, and request logs show estimated value from each request's stored price snapshot.
+- **Codex API Service request logs now include request-level diagnostics**: sidecar events carry stable request IDs, selected auth/account metadata, HTTP status, retry details, sanitized upstream error messages, client-cancel classifications, and account routing context so failures can be traced from the UI.
+- **Codex account subscription terms can now be refreshed manually**: OAuth accounts with missing or expired subscription information expose a refresh action in card and table views, with query attempts, successes, retry windows, and last errors persisted on the account record.
+- **Antigravity 2.0 desktop account switching now writes the official system credential**: desktop Antigravity versions `2.0.0` and later write the official `gemini` / `antigravity` credential into macOS Keychain, Windows Credential Manager, or Linux Secret Service, while older desktop builds continue to use the legacy state database path.
+
+### Changed
+- **Codex API Service runtime takeover now preserves official Codex profile files**: enabling the service backs up profile `auth.json` and `config.toml` before writing the managed `codex_local_access` provider state, and disabling the service restores backed-up files or removes only Cockpit-owned entries.
+- **Codex API Service now keeps the default Codex profile attached while the service is enabled**: state snapshots inspect the default profile, report config/auth attachment status, and retry takeover if the expected Base URL or API key is stale.
+- **Codex API Service sidecar now uses Cockpit's relay runtime around CLIProxyAPI v7.0.2**: Cockpit owns the HTTP listener, request policy, model policy, usage capture, and local statistics pipeline while CLIProxyAPI provides Codex auth synthesis, account selection, refresh, retries, and executor behavior.
+- **Codex API Service sidecar streaming now normalizes OpenAI-compatible SSE output**: streamed Chat Completions and Responses traffic is framed consistently, JSON chunks and `[DONE]` are converted to SSE when needed, hop-by-hop and proxy-only headers are filtered, and local CORS preflight behavior matches the local gateway.
+- **Codex history visibility repair now updates both rollout metadata and `state_5.sqlite` thread rows**: repair backups include the SQLite database when needed, invalid databases are skipped with a clear result message, and the summary reports the number of updated SQLite records.
+- **Codex multi-instance launches now detect account/API credential source changes**: launching an instance after switching between managed account credentials and API credentials surfaces the existing session visibility repair dialog and runs the same cross-instance repair flow.
+- **Codex API Service request log storage now persists diagnostic and pricing fields**: log rows keep request ID, HTTP status, sanitized error details, estimated USD value, and the input/output/cached-input price snapshot used for that request.
+- **Local runtime and configuration persistence now uses shared atomic writes and corrupt-file quarantine**: config, announcements, instance stores, OAuth pending files, wakeup state/history/verification, tray layout, update state, fingerprints, Zed runtime, Codex API state, and Codex API log storage isolate invalid files before rebuilding safe defaults.
+- **Antigravity desktop account switching now resolves the installed auth mode dynamically**: Cockpit detects the installed desktop version before switching, writes legacy state DB data only for builds below `2.0.0`, and lets current desktop builds surface their native failure reason directly in the account page.
+
+### Fixed
+- **Codex history visibility repair no longer rewrites session chronology when updating rollout files**: rollout provider rewrites, backups, and restores now preserve the original file modification time when possible, and non-critical timestamp restore failures do not block the repair flow.
+- **Codex API Service streaming responses no longer leak incompatible upstream headers or malformed chunks**: streaming relay responses now keep one expected event-stream content type, preserve safe upstream headers, drop proxy-only headers, normalize partial SSE frames, and emit `[DONE]` in OpenAI-compatible SSE format.
+- **Codex API Service default profile attachment now repairs stale local Base URL or API key state**: when the service is enabled, stale `codex_local_access` provider config is detected and rewritten instead of leaving the official Codex profile pointed at an old port or key.
+- **Antigravity desktop launch detection now prefers the current macOS executable name**: legacy Antigravity.app resolution checks `Contents/MacOS/Antigravity` before `Electron`, matching the current desktop package layout.
+
+---
 ## [0.24.4] - 2026-05-23
 
 ### Added

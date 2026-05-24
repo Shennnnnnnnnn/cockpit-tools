@@ -1886,7 +1886,9 @@
         "accountResult": "Berhasil {{success}} / Gagal {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Permintaan gambar",
-        "imagesDetail": "Buat {{generate}} / Edit {{edit}} / Izin {{blocked}}"
+        "imagesDetail": "Buat {{generate}} / Edit {{edit}} / Izin {{blocked}}",
+        "estimatedCost": "Nilai estimasi",
+        "estimatedCostDetail": "Akumulasi dari snapshot harga tiap permintaan"
       },
       "routingLabel": "Rute",
       "routingSaveSuccess": "Rute layanan API diperbarui",
@@ -2563,6 +2565,7 @@
       "column": "Berakhir",
       "unknown": "Otorisasi ulang",
       "missingDetail": "Otorisasi ulang untuk ambil",
+      "refresh": "Segarkan langganan",
       "expired": "Kedaluwarsa",
       "hoursLeft": "{{count}} jam",
       "daysLeft": "{{count}} hr",
@@ -2583,6 +2586,7 @@
       "repairing": "Memperbaiki visibilitas sesi Codex...",
       "repairFailed": "Perbaikan otomatis gagal. Anda dapat mencoba lagi nanti dari Manajemen Sesi > Perbaiki Visibilitas.",
       "type": {
+        "api": "Mode API",
         "apiKey": "Kunci API",
         "apiService": "Layanan API",
         "account": "Akun"
@@ -2657,7 +2661,23 @@
         "excludedTitle": "Model Tersembunyi",
         "excludedPlaceholder": "Satu model atau pola per baris, mis. gpt-5-*",
         "saveRules": "Simpan Aturan",
-        "rulesSaved": "Aturan model tersimpan"
+        "rulesSaved": "Aturan model tersimpan",
+        "pricingAction": "Harga",
+        "pricingTitle": "Harga Model",
+        "pricingDesc": "USD / 1M token, hanya untuk statistik nilai lokal.",
+        "pricingModel": "Nama model",
+        "pricingInput": "Masuk",
+        "pricingCache": "Input cache",
+        "pricingOutput": "Keluar",
+        "pricingSource": "Sumber",
+        "pricingActions": "Aksi",
+        "pricingCachePlaceholder": "Sama input",
+        "pricingCustom": "Kustom",
+        "pricingPreset": "Prasetel",
+        "pricingUnset": "Belum diatur",
+        "pricingReset": "Atur ulang",
+        "pricingSaved": "Harga tersimpan",
+        "pricingInvalid": "Harga harus berupa angka lebih besar atau sama dengan 0"
       },
       "keys": {
         "policyTitle": "Kebijakan Model",
@@ -2698,7 +2718,9 @@
         "errorFilter": "Kesalahan",
         "errorPlaceholder": "Kategori error",
         "clearFilters": "Hapus Filter",
-        "loading": "Memuat log permintaan"
+        "loading": "Memuat log permintaan",
+        "requestIdShort": "ID permintaan {{id}}",
+        "httpStatus": "Status HTTP {{status}}"
       }
     }
   },

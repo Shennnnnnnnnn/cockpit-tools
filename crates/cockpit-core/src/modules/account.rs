@@ -113,8 +113,26 @@ fn load_deleted_account_fp_bindings() -> Result<DeletedAccountFingerprintBinding
 
     match serde_json::from_str::<DeletedAccountFingerprintBindings>(&content) {
         Ok(bindings) => Ok(bindings),
-        Err(e) => {
-            modules::logger::log_warn(&format!("指纹映射文件损坏，已重置为空: {}", e));
+        Err(error) => {
+            match modules::atomic_write::quarantine_file(&path, "invalid-json") {
+                Ok(Some(backup_path)) => modules::logger::log_warn(&format!(
+                    "指纹映射文件损坏，已隔离并重置为空: path={}, backup={}, error={}",
+                    path.display(),
+                    backup_path.display(),
+                    error
+                )),
+                Ok(None) => modules::logger::log_warn(&format!(
+                    "指纹映射文件损坏，文件已不存在，重置为空: path={}, error={}",
+                    path.display(),
+                    error
+                )),
+                Err(backup_error) => modules::logger::log_warn(&format!(
+                    "指纹映射文件损坏，隔离失败，重置为空: path={}, parse_error={}, backup_error={}",
+                    path.display(),
+                    error,
+                    backup_error
+                )),
+            }
             Ok(DeletedAccountFingerprintBindings::default())
         }
     }
@@ -126,7 +144,8 @@ fn save_deleted_account_fp_bindings(
     let path = get_deleted_account_fp_bindings_path()?;
     let content =
         serde_json::to_string_pretty(bindings).map_err(|e| format!("序列化指纹映射失败: {}", e))?;
-    fs::write(path, content).map_err(|e| format!("保存指纹映射失败: {}", e))
+    crate::modules::atomic_write::write_string_atomic(&path, &content)
+        .map_err(|e| format!("保存指纹映射失败: {}", e))
 }
 
 fn remember_deleted_account_fingerprint(account: &Account) -> Result<(), String> {

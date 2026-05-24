@@ -423,7 +423,8 @@ fn save_global_original_force(profile: &DeviceProfile) -> Result<(), String> {
     let path = dir.join(GLOBAL_BASELINE);
     let content =
         serde_json::to_string_pretty(profile).map_err(|e| format!("序列化失败: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("写入失败: {}", e))
+    crate::modules::atomic_write::write_string_atomic(&path, &content)
+        .map_err(|e| format!("写入失败: {}", e))
 }
 
 /// 恢复原始设备指纹到 storage.json

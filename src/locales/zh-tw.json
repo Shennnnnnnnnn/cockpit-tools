@@ -1837,7 +1837,9 @@
         "accountResult": "成功 {{success}} / 失敗 {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "圖片請求",
-        "imagesDetail": "生成 {{generate}} / 編輯 {{edit}} / 權限 {{blocked}}"
+        "imagesDetail": "生成 {{generate}} / 編輯 {{edit}} / 權限 {{blocked}}",
+        "estimatedCost": "估算價值",
+        "estimatedCostDetail": "依每次請求的價格快照累計"
       },
       "routingLabel": "調度策略",
       "routingSaveSuccess": "API 服務調度策略已更新",
@@ -2517,6 +2519,7 @@
       "column": "訂閱到期",
       "unknown": "重新授權",
       "missingDetail": "重新授權後取得",
+      "refresh": "刷新訂閱",
       "expired": "已到期",
       "hoursLeft": "{{count}} 小時",
       "daysLeft": "{{count}} 天",
@@ -2537,6 +2540,7 @@
       "repairing": "正在修復 Codex 工作階段可見性...",
       "repairFailed": "自動修復失敗。你仍可稍後在「工作階段管理」中使用「修復可見性」重試。",
       "type": {
+        "api": "API 模式",
         "apiKey": "API 金鑰",
         "apiService": "API 服務",
         "account": "帳號"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "隱藏模型",
         "excludedPlaceholder": "每行一個模型或萬用字元，例如 gpt-5-*",
         "saveRules": "儲存規則",
-        "rulesSaved": "模型規則已儲存"
+        "rulesSaved": "模型規則已儲存",
+        "pricingAction": "價格設定",
+        "pricingTitle": "模型價格設定",
+        "pricingDesc": "單位為 USD / 1M tokens，僅用於本機價值統計。",
+        "pricingModel": "模型",
+        "pricingInput": "輸入",
+        "pricingCache": "快取輸入",
+        "pricingOutput": "輸出",
+        "pricingSource": "來源",
+        "pricingActions": "操作",
+        "pricingCachePlaceholder": "同輸入",
+        "pricingCustom": "自訂",
+        "pricingPreset": "預設",
+        "pricingUnset": "未設定",
+        "pricingReset": "重設",
+        "pricingSaved": "價格設定已儲存",
+        "pricingInvalid": "價格必須是大於或等於 0 的數字"
       },
       "keys": {
         "policyTitle": "模型策略",
@@ -2652,7 +2672,9 @@
         "errorFilter": "錯誤",
         "errorPlaceholder": "錯誤分類",
         "clearFilters": "清除篩選",
-        "loading": "正在載入請求日誌"
+        "loading": "正在載入請求日誌",
+        "requestIdShort": "請求 ID {{id}}",
+        "httpStatus": "HTTP 狀態 {{status}}"
       }
     }
   },

@@ -786,26 +786,26 @@ fn move_snapshot_rollout_to_trash(
 
     fs::create_dir_all(&entry_dir)
         .map_err(|error| format!("创建废纸篓条目失败 ({}): {}", entry_dir.display(), error))?;
+    let manifest_path = entry_dir.join("manifest.json");
+    let manifest_content = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|error| format!("序列化会话废纸篓清单失败: {}", error))?
+    );
+    modules::atomic_write::write_string_atomic(&manifest_path, &manifest_content).map_err(
+        |error| {
+            format!(
+                "写入会话废纸篓清单失败 ({}): {}",
+                entry_dir.display(),
+                error
+            )
+        },
+    )?;
     fs::rename(&snapshot.rollout_path, &file_target).map_err(|error| {
         format!(
             "移动会话文件到废纸篓失败 ({} -> {}): {}",
             snapshot.rollout_path.display(),
             file_target.display(),
-            error
-        )
-    })?;
-    fs::write(
-        entry_dir.join("manifest.json"),
-        format!(
-            "{}\n",
-            serde_json::to_string_pretty(&manifest)
-                .map_err(|error| format!("序列化会话废纸篓清单失败: {}", error))?
-        ),
-    )
-    .map_err(|error| {
-        format!(
-            "写入会话废纸篓清单失败 ({}): {}",
-            entry_dir.display(),
             error
         )
     })?;
@@ -856,7 +856,7 @@ fn rewrite_session_index_without_ids(
     } else {
         format!("{}\n", retained)
     };
-    fs::write(&path, final_content).map_err(|error| {
+    modules::atomic_write::write_string_atomic(&path, &final_content).map_err(|error| {
         format!(
             "重写 session_index.jsonl 失败 ({}): {}",
             path.display(),
@@ -1233,7 +1233,7 @@ fn write_session_index_with_entry(
     } else {
         format!("{}\n", lines.join("\n"))
     };
-    fs::write(&path, next_content).map_err(|error| {
+    modules::atomic_write::write_string_atomic(&path, &next_content).map_err(|error| {
         format!(
             "写入 session_index.jsonl 失败 ({}): {}",
             path.display(),
@@ -1246,13 +1246,15 @@ fn write_session_index_with_entry(
 fn restore_session_index_content(root_dir: &Path, content: Option<&str>) -> Result<(), String> {
     let path = root_dir.join(SESSION_INDEX_FILE);
     match content {
-        Some(value) => fs::write(&path, value).map_err(|error| {
-            format!(
-                "恢复 session_index.jsonl 失败 ({}): {}",
-                path.display(),
-                error
-            )
-        })?,
+        Some(value) => {
+            modules::atomic_write::write_string_atomic(&path, value).map_err(|error| {
+                format!(
+                    "恢复 session_index.jsonl 失败 ({}): {}",
+                    path.display(),
+                    error
+                )
+            })?
+        }
         None => {
             if path.exists() {
                 fs::remove_file(&path).map_err(|error| {

@@ -1837,7 +1837,9 @@
         "accountResult": "성공 {{success}} / 실패 {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "이미지 요청",
-        "imagesDetail": "생성 {{generate}} / 편집 {{edit}} / 권한 {{blocked}}"
+        "imagesDetail": "생성 {{generate}} / 편집 {{edit}} / 권한 {{blocked}}",
+        "estimatedCost": "예상 가치",
+        "estimatedCostDetail": "각 요청의 가격 스냅샷 기준 누적"
       },
       "routingLabel": "라우팅",
       "routingSaveSuccess": "API 서비스 라우팅을 업데이트했습니다",
@@ -2517,6 +2519,7 @@
       "column": "만료",
       "unknown": "재인증",
       "missingDetail": "재인증 후 가져오기",
+      "refresh": "구독 새로고침",
       "expired": "만료됨",
       "hoursLeft": "{{count}}시간",
       "daysLeft": "{{count}}일",
@@ -2537,6 +2540,7 @@
       "repairing": "Codex 세션 표시를 복구하는 중...",
       "repairFailed": "자동 복구에 실패했습니다. 나중에 세션 관리 > 표시 복구에서 다시 시도할 수 있습니다.",
       "type": {
+        "api": "API 모드",
         "apiKey": "API 키",
         "apiService": "API 서비스",
         "account": "계정"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "숨김 모델",
         "excludedPlaceholder": "줄마다 모델 또는 와일드카드, 예: gpt-5-*",
         "saveRules": "규칙 저장",
-        "rulesSaved": "모델 규칙 저장됨"
+        "rulesSaved": "모델 규칙 저장됨",
+        "pricingAction": "가격",
+        "pricingTitle": "모델 가격",
+        "pricingDesc": "USD / 1M tokens, 로컬 가치 통계에만 사용됩니다.",
+        "pricingModel": "모델",
+        "pricingInput": "입력",
+        "pricingCache": "캐시 입력",
+        "pricingOutput": "출력",
+        "pricingSource": "출처",
+        "pricingActions": "작업",
+        "pricingCachePlaceholder": "입력과 동일",
+        "pricingCustom": "사용자 지정",
+        "pricingPreset": "프리셋",
+        "pricingUnset": "미설정",
+        "pricingReset": "재설정",
+        "pricingSaved": "가격 저장됨",
+        "pricingInvalid": "가격은 0 이상의 숫자여야 합니다"
       },
       "keys": {
         "policyTitle": "모델 정책",
@@ -2652,7 +2672,9 @@
         "errorFilter": "오류",
         "errorPlaceholder": "오류 분류",
         "clearFilters": "필터 지우기",
-        "loading": "요청 로그 로드 중"
+        "loading": "요청 로그 로드 중",
+        "requestIdShort": "요청 ID {{id}}",
+        "httpStatus": "HTTP 상태 {{status}}"
       }
     }
   },

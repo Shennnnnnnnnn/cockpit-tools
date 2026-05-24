@@ -1837,7 +1837,9 @@
         "accountResult": "Successi {{success}} / Errori {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Richieste immagine",
-        "imagesDetail": "Genera {{generate}} / Modifica {{edit}} / Permesso {{blocked}}"
+        "imagesDetail": "Genera {{generate}} / Modifica {{edit}} / Permesso {{blocked}}",
+        "estimatedCost": "Valore stimato",
+        "estimatedCostDetail": "Somma dagli snapshot prezzo di ogni richiesta"
       },
       "routingLabel": "Instradamento",
       "routingSaveSuccess": "Instradamento del servizio API aggiornato",
@@ -2517,6 +2519,7 @@
       "column": "Scade",
       "unknown": "Riautorizza",
       "missingDetail": "Riautorizza per leggere",
+      "refresh": "Aggiorna abbonamento",
       "expired": "Scaduto",
       "hoursLeft": "{{count}} h",
       "daysLeft": "{{count}} g",
@@ -2537,6 +2540,7 @@
       "repairing": "Riparazione della visibilità delle sessioni Codex...",
       "repairFailed": "Riparazione automatica non riuscita. Puoi riprovare più tardi da Gestione sessioni > Ripara visibilità.",
       "type": {
+        "api": "Modalità API",
         "apiKey": "Chiave API",
         "apiService": "Servizio API",
         "account": "Account"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Modelli nascosti",
         "excludedPlaceholder": "Un modello o pattern per riga, es. gpt-5-*",
         "saveRules": "Salva regole",
-        "rulesSaved": "Regole modelli salvate"
+        "rulesSaved": "Regole modelli salvate",
+        "pricingAction": "Prezzi",
+        "pricingTitle": "Prezzi modelli",
+        "pricingDesc": "USD / 1M token, solo per statistiche locali del valore.",
+        "pricingModel": "Modello",
+        "pricingInput": "Ingresso",
+        "pricingCache": "Input cache",
+        "pricingOutput": "Uscita",
+        "pricingSource": "Origine",
+        "pricingActions": "Azione",
+        "pricingCachePlaceholder": "Come input",
+        "pricingCustom": "Personal.",
+        "pricingPreset": "Predef.",
+        "pricingUnset": "Non impostato",
+        "pricingReset": "Ripristina",
+        "pricingSaved": "Prezzi salvati",
+        "pricingInvalid": "I prezzi devono essere numeri maggiori o uguali a 0"
       },
       "keys": {
         "policyTitle": "Criterio modelli",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Errore",
         "errorPlaceholder": "Categoria errore",
         "clearFilters": "Cancella filtri",
-        "loading": "Caricamento log richieste"
+        "loading": "Caricamento log richieste",
+        "requestIdShort": "ID richiesta {{id}}",
+        "httpStatus": "Stato HTTP {{status}}"
       }
     }
   },

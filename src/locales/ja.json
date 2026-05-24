@@ -1837,7 +1837,9 @@
         "accountResult": "成功 {{success}} / 失敗 {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "画像リクエスト",
-        "imagesDetail": "生成 {{generate}} / 編集 {{edit}} / 権限 {{blocked}}"
+        "imagesDetail": "生成 {{generate}} / 編集 {{edit}} / 権限 {{blocked}}",
+        "estimatedCost": "推定価値",
+        "estimatedCostDetail": "各リクエストの価格スナップショットで累計"
       },
       "routingLabel": "ルーティング",
       "routingSaveSuccess": "API サービスのルーティングを更新しました",
@@ -2517,6 +2519,7 @@
       "column": "期限",
       "unknown": "再認証",
       "missingDetail": "再認証して取得",
+      "refresh": "契約を更新",
       "expired": "期限切れ",
       "hoursLeft": "{{count}}時間",
       "daysLeft": "{{count}}日",
@@ -2537,6 +2540,7 @@
       "repairing": "Codex セッションの表示を修復しています...",
       "repairFailed": "自動修復に失敗しました。後でセッション管理 > 表示を修復から再試行できます。",
       "type": {
+        "api": "API モード",
         "apiKey": "API キー",
         "apiService": "API サービス",
         "account": "アカウント"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "非表示モデル",
         "excludedPlaceholder": "1行にモデルまたはワイルドカード、例 gpt-5-*",
         "saveRules": "ルール保存",
-        "rulesSaved": "モデルルールを保存しました"
+        "rulesSaved": "モデルルールを保存しました",
+        "pricingAction": "価格設定",
+        "pricingTitle": "モデル価格設定",
+        "pricingDesc": "USD / 100万 tokens。ローカルの価値統計にのみ使用します。",
+        "pricingModel": "モデル",
+        "pricingInput": "入力",
+        "pricingCache": "キャッシュ入力",
+        "pricingOutput": "出力",
+        "pricingSource": "ソース",
+        "pricingActions": "操作",
+        "pricingCachePlaceholder": "入力と同じ",
+        "pricingCustom": "カスタム",
+        "pricingPreset": "プリセット",
+        "pricingUnset": "未設定",
+        "pricingReset": "リセット",
+        "pricingSaved": "価格設定を保存しました",
+        "pricingInvalid": "価格は 0 以上の数値で入力してください"
       },
       "keys": {
         "policyTitle": "モデルポリシー",
@@ -2652,7 +2672,9 @@
         "errorFilter": "エラー",
         "errorPlaceholder": "エラー分類",
         "clearFilters": "フィルター解除",
-        "loading": "リクエストログを読み込み中"
+        "loading": "リクエストログを読み込み中",
+        "requestIdShort": "リクエストID {{id}}",
+        "httpStatus": "HTTP状態 {{status}}"
       }
     }
   },

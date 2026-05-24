@@ -3,6 +3,7 @@ import type {
   CodexLocalAccessCustomRoutingRule,
   CodexLocalAccessImageGenerationMode,
   CodexLocalAccessModelAlias,
+  CodexLocalAccessModelPricing,
   CodexLocalAccessPortCleanupResult,
   CodexLocalAccessRequestLogQuery,
   CodexLocalAccessRoutingStrategy,
@@ -97,6 +98,14 @@ export async function updateCodexLocalAccessModelRules(
   return await invoke('codex_local_access_update_model_rules', {
     modelAliases,
     excludedModels,
+  });
+}
+
+export async function updateCodexLocalAccessModelPricings(
+  modelPricings: CodexLocalAccessModelPricing[],
+): Promise<CodexLocalAccessState> {
+  return await invoke('codex_local_access_update_model_pricings', {
+    modelPricings,
   });
 }
 

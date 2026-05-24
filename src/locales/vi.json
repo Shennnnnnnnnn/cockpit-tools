@@ -1837,7 +1837,9 @@
         "accountResult": "Thành công {{success}} / Thất bại {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "Yêu cầu ảnh",
-        "imagesDetail": "Tạo {{generate}} / Sửa {{edit}} / Quyền {{blocked}}"
+        "imagesDetail": "Tạo {{generate}} / Sửa {{edit}} / Quyền {{blocked}}",
+        "estimatedCost": "Giá trị ước tính",
+        "estimatedCostDetail": "Cộng dồn từ ảnh chụp giá của từng yêu cầu"
       },
       "routingLabel": "Định tuyến",
       "routingSaveSuccess": "Đã cập nhật định tuyến dịch vụ API",
@@ -2517,6 +2519,7 @@
       "column": "Hết hạn",
       "unknown": "Ủy quyền lại",
       "missingDetail": "Ủy quyền lại để lấy",
+      "refresh": "Làm mới gói",
       "expired": "Đã hết hạn",
       "hoursLeft": "{{count}} giờ",
       "daysLeft": "{{count}} ngày",
@@ -2537,6 +2540,7 @@
       "repairing": "Đang sửa khả năng hiển thị phiên Codex...",
       "repairFailed": "Tự động sửa thất bại. Bạn có thể thử lại sau trong Quản lý phiên > Sửa hiển thị.",
       "type": {
+        "api": "Chế độ API",
         "apiKey": "Khóa API",
         "apiService": "Dịch vụ API",
         "account": "Tài khoản"
@@ -2611,7 +2615,23 @@
         "excludedTitle": "Mô hình ẩn",
         "excludedPlaceholder": "Mỗi dòng một mô hình hoặc mẫu, ví dụ gpt-5-*",
         "saveRules": "Lưu quy tắc",
-        "rulesSaved": "Đã lưu quy tắc mô hình"
+        "rulesSaved": "Đã lưu quy tắc mô hình",
+        "pricingAction": "Giá",
+        "pricingTitle": "Giá mô hình",
+        "pricingDesc": "USD / 1M token, chỉ dùng cho thống kê giá trị cục bộ.",
+        "pricingModel": "Mô hình",
+        "pricingInput": "Đầu vào",
+        "pricingCache": "Đầu vào cache",
+        "pricingOutput": "Đầu ra",
+        "pricingSource": "Nguồn",
+        "pricingActions": "Thao tác",
+        "pricingCachePlaceholder": "Như đầu vào",
+        "pricingCustom": "Tùy chỉnh",
+        "pricingPreset": "Cài sẵn",
+        "pricingUnset": "Chưa đặt",
+        "pricingReset": "Đặt lại",
+        "pricingSaved": "Đã lưu giá",
+        "pricingInvalid": "Giá phải là số lớn hơn hoặc bằng 0"
       },
       "keys": {
         "policyTitle": "Chính sách mô hình",
@@ -2652,7 +2672,9 @@
         "errorFilter": "Lỗi",
         "errorPlaceholder": "Nhóm lỗi",
         "clearFilters": "Xóa bộ lọc",
-        "loading": "Đang tải nhật ký"
+        "loading": "Đang tải nhật ký",
+        "requestIdShort": "ID yêu cầu {{id}}",
+        "httpStatus": "Trạng thái HTTP {{status}}"
       }
     }
   },

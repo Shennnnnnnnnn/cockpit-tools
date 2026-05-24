@@ -880,9 +880,8 @@ fn write_api_provider_to_config_toml(
 }
 
 fn collect_managed_api_key_provider_ids() -> HashSet<String> {
-    // Keep codex_local_access defined for historical API Key sessions whose rollout
-    // metadata still references that provider after the current account switches to OAuth.
     let mut ids = HashSet::from([
+        CODEX_RUNTIME_MODEL_PROVIDER_ID.to_string(),
         CODEX_COCKPIT_API_PROVIDER_ID.to_string(),
         CODEX_LEGACY_API_KEY_OPENAI_PROVIDER_ID.to_string(),
     ]);
@@ -5655,7 +5654,7 @@ mod tests {
     }
 
     #[test]
-    fn config_toml_preserves_runtime_provider_for_history_when_switching_to_builtin_openai() {
+    fn config_toml_removes_runtime_provider_when_switching_to_builtin_openai() {
         let base_dir = make_temp_dir("codex-config-clean-managed-provider-test");
         let config_path = base_dir.join("config.toml");
         fs::write(
@@ -5703,8 +5702,8 @@ requires_openai_auth = false
 
         let content = fs::read_to_string(&config_path).expect("read config");
         assert!(!content.contains("model_provider = "));
-        assert!(content.contains("[model_providers.codex_local_access]"));
-        assert!(content.contains("experimental_bearer_token = \"sk-history\""));
+        assert!(!content.contains("[model_providers.codex_local_access]"));
+        assert!(!content.contains("experimental_bearer_token = \"sk-history\""));
         assert!(!content.contains("[model_providers.cockpit_api]"));
         assert!(!content.contains("[model_providers.openai_api_key]"));
         assert!(content.contains("[model_providers.user_manual_provider_not_managed]"));

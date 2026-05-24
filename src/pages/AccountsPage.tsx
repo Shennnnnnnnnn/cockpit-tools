@@ -238,16 +238,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     updateAccountTags
   } = useAccountStore()
 
-  const formatSwitchError = useCallback((error: unknown) => {
-    const raw = String(error)
-    if (raw.startsWith('ANTIGRAVITY_LEGACY_UNSUPPORTED:')) {
-      return t(
-        'messages.antigravityLegacyUnsupported',
-        '暂不支持 Antigravity 2.0.0 及以上版本，请选择小于Antigravity 2.0.0版本或者使用Antigravity IDE'
-      )
-    }
-    return raw
-  }, [t])
+  const formatSwitchError = useCallback((error: unknown) => String(error), [])
 
   // ─── 验证状态标记 ────────────────────────────────────────────────────
   // 优先读 disabled_reason（新版后端写入），没有则回退到验证历史（向后兼容）

@@ -1883,7 +1883,9 @@
         "accountResult": "نجاح {{success}} / فشل {{failed}}",
         "accountTokensCompact": "{{value}}",
         "images": "طلبات الصور",
-        "imagesDetail": "إنشاء {{generate}} / تعديل {{edit}} / صلاحية {{blocked}}"
+        "imagesDetail": "إنشاء {{generate}} / تعديل {{edit}} / صلاحية {{blocked}}",
+        "estimatedCost": "القيمة المقدرة",
+        "estimatedCostDetail": "مجموع لقطات سعر كل طلب"
       },
       "routingLabel": "توجيه",
       "routingSaveSuccess": "تم تحديث توجيه خدمة API",
@@ -2563,6 +2565,7 @@
       "column": "ينتهي",
       "unknown": "أعد التفويض",
       "missingDetail": "أعد التفويض للجلب",
+      "refresh": "تحديث الاشتراك",
       "expired": "منتهي",
       "hoursLeft": "{{count}}س",
       "daysLeft": "{{count}}ي",
@@ -2583,6 +2586,7 @@
       "repairing": "جارٍ إصلاح ظهور جلسات Codex...",
       "repairFailed": "فشل الإصلاح التلقائي. يمكنك إعادة المحاولة لاحقًا من إدارة الجلسات > إصلاح الظهور.",
       "type": {
+        "api": "وضع API",
         "apiKey": "مفتاح API",
         "apiService": "خدمة API",
         "account": "حساب"
@@ -2657,7 +2661,23 @@
         "excludedTitle": "نماذج مخفية",
         "excludedPlaceholder": "نموذج أو نمط في كل سطر، مثل gpt-5-*",
         "saveRules": "حفظ القواعد",
-        "rulesSaved": "تم حفظ قواعد النماذج"
+        "rulesSaved": "تم حفظ قواعد النماذج",
+        "pricingAction": "التسعير",
+        "pricingTitle": "تسعير النماذج",
+        "pricingDesc": "USD / 1M tokens، لاستخدام إحصاءات القيمة محليًا فقط.",
+        "pricingModel": "النموذج",
+        "pricingInput": "الإدخال",
+        "pricingCache": "إدخال مخزن",
+        "pricingOutput": "الإخراج",
+        "pricingSource": "المصدر",
+        "pricingActions": "إجراء",
+        "pricingCachePlaceholder": "مثل الإدخال",
+        "pricingCustom": "مخصص",
+        "pricingPreset": "مسبق",
+        "pricingUnset": "غير معين",
+        "pricingReset": "إعادة ضبط",
+        "pricingSaved": "تم حفظ التسعير",
+        "pricingInvalid": "يجب أن تكون الأسعار أرقامًا أكبر من أو تساوي 0"
       },
       "keys": {
         "policyTitle": "سياسة النماذج",
@@ -2698,7 +2718,9 @@
         "errorFilter": "الخطأ",
         "errorPlaceholder": "تصنيف الخطأ",
         "clearFilters": "مسح الفلاتر",
-        "loading": "جار تحميل سجلات الطلبات"
+        "loading": "جار تحميل سجلات الطلبات",
+        "requestIdShort": "المعرّف {{id}}",
+        "httpStatus": "حالة HTTP {{status}}"
       }
     }
   },
