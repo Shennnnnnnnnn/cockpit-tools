@@ -1814,7 +1814,7 @@
       "hideKey": "إخفاء المفتاح",
       "modal": {
         "title": "إضافة إلى خدمة API",
-        "desc": "اختر حسابات OAuth التي تريد إضافتها إلى مجموعة خدمة API. ستُخفى الحسابات المضافة من اللوحة العادية وتُدار فقط من بطاقة خدمة API.",
+        "desc": "اختر حسابات OAuth أو API Key التي تريد إضافتها إلى مجموعة خدمة API. ستُخفى الحسابات المضافة من اللوحة العادية وتُدار فقط من بطاقة خدمة API.",
         "empty": "لا توجد حسابات OAuth متاحة",
         "selected": "ضمن خدمة API",
         "available": "اللوحة العادية",
@@ -2017,7 +2017,28 @@
         "imageEdit": "تعديل صورة",
         "other": "أخرى"
       },
-      "testSuccessInline": "نجح اختبار خدمة API"
+      "testSuccessInline": "نجح اختبار خدمة API",
+      "gatewayModeLabel": "وضع البوابة",
+      "gatewayModeLegacyShort": "القديم",
+      "gatewayModeSidecarShort": "الجديد",
+      "gatewayModeNewLabel": "خدمة API-الجديد",
+      "gatewayModeOldLabel": "خدمة API-القديم",
+      "gatewayModeSaveSuccess": "تم تحديث وضع بوابة خدمة API",
+      "gatewayGuideTitle": "يمكنك تبديل البوابة هنا",
+      "gatewayGuideDesc": "البوابة الجديدة هي الافتراضية. إذا واجهت مشكلات توافق أو أخطاء في طلبات العميل، يمكنك الرجوع هنا إلى البوابة القديمة.",
+      "gatewayGuideAction": "فهمت",
+      "upstreamProxyUrlPlaceholderLegacy": "اتركه فارغًا لاستخدام الوكيل العام ثم وكيل البيئة ثم وكيل النظام",
+      "upstreamProxyUrlPlaceholderSidecar": "اتركه فارغًا لاستخدام الوكيل العام",
+      "debugLogsLabel": "سجلات التصحيح",
+      "debugLogsDescription": "إخراج سجلات تصحيح خدمة API لتشخيص البوابة والبث",
+      "debugLogsEnabledSuccess": "تم تفعيل سجلات التصحيح",
+      "debugLogsDisabledSuccess": "تم إيقاف سجلات التصحيح",
+      "debugLogsEnableConfirmTitle": "تشغيل وضع سجلات التصحيح",
+      "debugLogsEnableConfirmMessage": "عند التشغيل، تُخرج خدمة API سجلات تصحيح لتشخيص مشاكل البوابة والوكيل وطلبات المنبع والاستجابات المتدفقة. قد يضيف ذلك كلفة أداء بسيطة عند التزامن العالي أو الطلبات المتدفقة الطويلة. يُنصح بإيقافه بعد انتهاء التشخيص. هل تريد تشغيله؟",
+      "debugLogsEnableConfirmAction": "تشغيل",
+      "debugLogsDisableConfirmTitle": "إيقاف وضع سجلات التصحيح",
+      "debugLogsDisableConfirmMessage": "عند الإيقاف، تتوقف سجلات تصحيح خدمة API، ما يقلل ضجيج السجلات والكلفة الإضافية. يمكنك تشغيله مجددًا عند تشخيص مشاكل البوابة أو الوكيل أو الاستجابات المتدفقة. هل تريد إيقافه؟",
+      "debugLogsDisableConfirmAction": "إيقاف"
     },
     "local": {
       "desc": "استيراد الحساب الحالي من ~/.codex/auth.json",
@@ -2630,7 +2651,6 @@
     "apiService": {
       "navTitle": "خدمة Codex API",
       "title": "خدمة Codex API",
-      "subtitle": "اعرض مجموعة حسابات Codex OAuth كواجهة API متوافقة مع OpenAI للعملاء المحليين أو عملاء الشبكة المحلية.",
       "openPage": "فتح خدمة API",
       "openFullPage": "عرض كل الميزات",
       "tabs": {
@@ -2707,6 +2727,7 @@
       "logs": {
         "allKinds": "كل الأنواع",
         "allStatuses": "كل الحالات",
+        "allGatewayModes": "كل الأوضاع",
         "modelFilter": "النموذج",
         "modelPlaceholder": "معرّف النموذج",
         "accountFilter": "الحساب",
@@ -2715,10 +2736,12 @@
         "apiKeyPlaceholder": "الاسم أو المعرّف",
         "kindFilter": "النوع",
         "statusFilter": "الحالة",
+        "gatewayModeFilter": "الوضع",
         "errorFilter": "الخطأ",
         "errorPlaceholder": "تصنيف الخطأ",
         "clearFilters": "مسح الفلاتر",
         "loading": "جار تحميل سجلات الطلبات",
+        "gatewayModeUnknown": "وضع غير معروف",
         "requestIdShort": "المعرّف {{id}}",
         "httpStatus": "حالة HTTP {{status}}"
       }

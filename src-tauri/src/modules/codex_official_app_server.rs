@@ -93,6 +93,7 @@ fn official_app_server_executable() -> Result<PathBuf, String> {
 
 fn build_app_server_command(executable: &Path, codex_home: &Path) -> Command {
     let mut command = Command::new(executable);
+    crate::modules::process::apply_managed_proxy_env_to_command(&mut command);
     command
         .args(["app-server", "--listen", "stdio://"])
         .env("CODEX_HOME", codex_home)

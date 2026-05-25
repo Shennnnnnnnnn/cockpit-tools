@@ -986,27 +986,32 @@ fn sanitize_macos_gui_launch_env(cmd: &mut Command) {
 
 fn managed_proxy_env_pairs() -> Vec<(&'static str, String)> {
     let config = config::get_user_config();
-    if !config.global_proxy_enabled {
-        return Vec::new();
-    }
+    let mut pairs = Vec::new();
 
     let proxy_url = config.global_proxy_url.trim();
-    if proxy_url.is_empty() {
+    if config.global_proxy_enabled && !proxy_url.is_empty() {
+        pairs.extend([
+            ("http_proxy", proxy_url.to_string()),
+            ("https_proxy", proxy_url.to_string()),
+            ("HTTP_PROXY", proxy_url.to_string()),
+            ("HTTPS_PROXY", proxy_url.to_string()),
+            ("all_proxy", proxy_url.to_string()),
+            ("ALL_PROXY", proxy_url.to_string()),
+        ]);
+    } else if config.global_proxy_enabled {
         crate::modules::logger::log_warn("[Proxy] 全局代理已启用，但代理地址为空，跳过注入");
-        return Vec::new();
     }
 
-    let mut pairs = vec![
-        ("http_proxy", proxy_url.to_string()),
-        ("https_proxy", proxy_url.to_string()),
-        ("HTTP_PROXY", proxy_url.to_string()),
-        ("HTTPS_PROXY", proxy_url.to_string()),
-        ("all_proxy", proxy_url.to_string()),
-        ("ALL_PROXY", proxy_url.to_string()),
-    ];
-
-    let no_proxy =
-        crate::modules::codex_protocol::merge_local_no_proxy(config.global_proxy_no_proxy.trim());
+    let no_proxy_seed = [
+        std::env::var("no_proxy").unwrap_or_default(),
+        std::env::var("NO_PROXY").unwrap_or_default(),
+        config.global_proxy_no_proxy,
+    ]
+    .into_iter()
+    .filter(|value| !value.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join(",");
+    let no_proxy = crate::modules::codex_protocol::merge_local_no_proxy(&no_proxy_seed);
     if !no_proxy.is_empty() {
         pairs.push(("no_proxy", no_proxy.clone()));
         pairs.push(("NO_PROXY", no_proxy));
@@ -1034,11 +1039,22 @@ fn log_managed_proxy_injection(mode: &str, cmd: &Command, pairs: &[(&'static str
         .collect::<Vec<&str>>()
         .join(",");
 
+    let label = if proxy_url.is_empty() {
+        "已注入本机直连白名单"
+    } else {
+        "已注入全局代理"
+    };
+
     crate::modules::logger::log_info(&format!(
-        "[Proxy] 已注入全局代理 mode={} program={} proxy_url={} no_proxy={} keys={}",
+        "[Proxy] {} mode={} program={} proxy_url={} no_proxy={} keys={}",
+        label,
         mode,
         cmd.get_program().to_string_lossy(),
-        proxy_url,
+        if proxy_url.is_empty() {
+            "<none>"
+        } else {
+            proxy_url
+        },
         if no_proxy.is_empty() {
             "<empty>"
         } else {
@@ -2633,8 +2649,14 @@ fn launch_codex_via_store_app_user_model_id(app_user_model_id: &str) -> Result<(
     }
 
     let escaped = escape_powershell_single_quoted(app_user_model_id);
+    let env_lines = managed_proxy_env_pairs()
+        .into_iter()
+        .map(|(key, value)| format!("$env:{}='{}'", key, escape_powershell_single_quoted(&value)))
+        .collect::<Vec<_>>()
+        .join("\n");
     let script = format!(
-        r#"$appId='{escaped}';
+        r#"{env_lines}
+$appId='{escaped}';
 $target='shell:AppsFolder\' + $appId
 Start-Process -FilePath $target -ErrorAction Stop | Out-Null"#
     );

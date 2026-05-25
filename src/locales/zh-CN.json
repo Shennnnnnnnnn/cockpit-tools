@@ -2003,7 +2003,7 @@
       },
       "modal": {
         "title": "添加至 API 服务",
-        "desc": "选择要加入 API 服务集合的 Codex OAuth 账号。这里不支持 API Key 账号。加入后，这些账号将从普通面板中隐藏，只在 API 服务卡片中管理。",
+        "desc": "选择要加入 API 服务集合的 Codex OAuth 账号或 API Key 账号。加入后，这些账号将从普通面板中隐藏，只在 API 服务卡片中管理。",
         "restrictFreeToggle": "限制 Free 账号使用",
         "freeNoticeRestricted": "已限制 Free 账号，关闭后才可勾选。",
         "freeNoticeUnstable": "Free账号反代不稳定，请谨慎使用。",
@@ -2043,7 +2043,28 @@
       "upstreamProxySaveSuccess": "API 代理地址已更新",
       "upstreamProxyUrlPlaceholder": "留空用全局代理",
       "upstreamProxySaveAction": "保存代理",
-      "testSuccessInline": "API 服务测试通过"
+      "testSuccessInline": "API 服务测试通过",
+      "gatewayModeLabel": "网关模式",
+      "gatewayModeLegacyShort": "旧版",
+      "gatewayModeSidecarShort": "新版",
+      "gatewayModeNewLabel": "API 服务-新",
+      "gatewayModeOldLabel": "API 服务-旧",
+      "gatewayModeSaveSuccess": "API 服务网关模式已更新",
+      "gatewayGuideTitle": "这里可以切换网关",
+      "gatewayGuideDesc": "默认使用新网关。如果遇到兼容性问题或客户端请求异常，可以在这里切换到旧网关。",
+      "gatewayGuideAction": "我知道了",
+      "upstreamProxyUrlPlaceholderLegacy": "留空依次使用全局代理、环境代理或系统代理",
+      "upstreamProxyUrlPlaceholderSidecar": "留空用全局代理",
+      "debugLogsLabel": "调试日志",
+      "debugLogsDescription": "开启后输出 API 服务调试日志，便于定位网关和流式请求问题",
+      "debugLogsEnableConfirmTitle": "是否打开日志调试模式？",
+      "debugLogsEnableConfirmMessage": "打开后会输出 API 服务调试日志，用于定位网关、代理、上游请求和流式响应问题。高并发或长时间流式请求时可能带来少量性能开销，建议排查完成后关闭。确认打开吗？",
+      "debugLogsEnableConfirmAction": "打开",
+      "debugLogsDisableConfirmTitle": "是否关闭日志调试模式？",
+      "debugLogsDisableConfirmMessage": "关闭后会停止输出 API 服务调试日志，减少日志噪声和额外开销；后续排查网关、代理或流式响应问题时可再次打开。确认关闭吗？",
+      "debugLogsDisableConfirmAction": "关闭",
+      "debugLogsEnabledSuccess": "调试日志已开启",
+      "debugLogsDisabledSuccess": "调试日志已关闭"
     },
     "api": {
       "baseUrl": "基础地址",
@@ -2630,7 +2651,6 @@
     "apiService": {
       "navTitle": "Codex API 服务",
       "title": "Codex API 服务",
-      "subtitle": "把 Codex OAuth / API Key 账号池作为 OpenAI-compatible API 暴露给本机或局域网客户端。",
       "openPage": "进入 API 服务",
       "openFullPage": "查看全部功能",
       "tabs": {
@@ -2707,6 +2727,7 @@
       "logs": {
         "allKinds": "全部类型",
         "allStatuses": "全部状态",
+        "allGatewayModes": "全部模式",
         "modelFilter": "模型",
         "modelPlaceholder": "模型 ID",
         "accountFilter": "账号",
@@ -2715,12 +2736,14 @@
         "apiKeyPlaceholder": "名称或 ID",
         "kindFilter": "类型",
         "statusFilter": "状态",
+        "gatewayModeFilter": "模式",
         "errorFilter": "错误",
         "errorPlaceholder": "错误分类",
         "requestIdShort": "请求 ID {{id}}",
         "httpStatus": "HTTP {{status}}",
         "clearFilters": "清除筛选",
-        "loading": "正在加载请求日志"
+        "loading": "正在加载请求日志",
+        "gatewayModeUnknown": "模式未知"
       }
     }
   },

@@ -1768,7 +1768,7 @@
       "hideKey": "Skrýt klíč",
       "modal": {
         "title": "Přidat do API služby",
-        "desc": "Vyberte účty OAuth, které chcete zahrnout do kolekce API služby. Přidané účty se skryjí z běžného přehledu a budou spravovány pouze z karty API služby.",
+        "desc": "Vyberte účty OAuth nebo API Key, které chcete zahrnout do kolekce API služby. Přidané účty se skryjí z běžného přehledu a budou spravovány pouze z karty API služby.",
         "empty": "Nejsou k dispozici žádné účty OAuth",
         "selected": "V API službě",
         "available": "Běžný přehled",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Úprava",
         "other": "Jiné"
       },
-      "testSuccessInline": "Test služby API prošel"
+      "testSuccessInline": "Test služby API prošel",
+      "gatewayModeLabel": "Rezim brany",
+      "gatewayModeLegacyShort": "Stary",
+      "gatewayModeSidecarShort": "Novy",
+      "gatewayModeNewLabel": "API sluzba-Nova",
+      "gatewayModeOldLabel": "API sluzba-Stara",
+      "gatewayModeSaveSuccess": "Rezim brany API sluzby byl aktualizovan",
+      "gatewayGuideTitle": "Zde lze prepnout branu",
+      "gatewayGuideDesc": "Výchozí je nová brána. Při problémech s kompatibilitou nebo chybách klientských požadavků se zde můžete vrátit ke staré bráně.",
+      "gatewayGuideAction": "Rozumim",
+      "upstreamProxyUrlPlaceholderLegacy": "Ponechte prazdne pro globalni proxy, proxy z prostredi nebo systemovou proxy",
+      "upstreamProxyUrlPlaceholderSidecar": "Ponechte prazdne pro globalni proxy",
+      "debugLogsLabel": "Ladicí logy",
+      "debugLogsDescription": "Vypisuje ladicí logy API služby pro diagnostiku brány a streamování",
+      "debugLogsEnabledSuccess": "Ladicí logy zapnuty",
+      "debugLogsDisabledSuccess": "Ladicí logy vypnuty",
+      "debugLogsEnableConfirmTitle": "Zapnout ladicí logy",
+      "debugLogsEnableConfirmMessage": "Po zapnutí bude API služba vypisovat ladicí logy pro diagnostiku brány, proxy, upstream požadavků a streamovaných odpovědí. Při vysoké souběžnosti nebo dlouhých streamech to může mít malý dopad na výkon. Po dokončení diagnostiky je vypněte. Zapnout?",
+      "debugLogsEnableConfirmAction": "Zapnout",
+      "debugLogsDisableConfirmTitle": "Vypnout ladicí logy",
+      "debugLogsDisableConfirmMessage": "Po vypnutí se ladicí logy API služby přestanou vypisovat, což sníží šum v logu a dodatečnou režii. Při diagnostice brány, proxy nebo streamů je můžete znovu zapnout. Vypnout?",
+      "debugLogsDisableConfirmAction": "Vypnout"
     },
     "local": {
       "desc": "Importovat aktuální účet z ~/.codex/auth.json",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Služba Codex API",
       "title": "Služba Codex API",
-      "subtitle": "Zpřístupní fond účtů Codex OAuth jako API kompatibilní s OpenAI pro místní klienty nebo LAN.",
       "openPage": "Otevřít službu API",
       "openFullPage": "Zobrazit všechny funkce",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Všechny typy",
         "allStatuses": "Všechny stavy",
+        "allGatewayModes": "Vsechny rezimy",
         "modelFilter": "Modely",
         "modelPlaceholder": "ID modelu",
         "accountFilter": "Účet",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Název nebo ID",
         "kindFilter": "Typ",
         "statusFilter": "Stav",
+        "gatewayModeFilter": "Rezim",
         "errorFilter": "Chyba",
         "errorPlaceholder": "Kategorie chyby",
         "clearFilters": "Vymazat filtry",
         "loading": "Načítání protokolů",
+        "gatewayModeUnknown": "Neznamy rezim",
         "requestIdShort": "ID požadavku {{id}}",
         "httpStatus": "Stav HTTP {{status}}"
       }

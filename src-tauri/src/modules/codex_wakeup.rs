@@ -1,4 +1,4 @@
-use crate::modules::{account, codex_account, logger};
+use crate::modules::{account, codex_account, logger, process};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -1231,6 +1231,7 @@ fn build_binary_command(binary: &ResolvedBinary) -> Command {
     } else {
         Command::new(&binary.path)
     };
+    process::apply_managed_proxy_env_to_command(&mut command);
     apply_hidden_window_flags(&mut command);
     command
 }

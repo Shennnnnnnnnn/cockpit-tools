@@ -2879,12 +2879,24 @@ fn sync_api_key_account_from_local_state(account: &mut CodexAccount, base_dir: &
 
 /// 获取当前激活的账号（基于 Tools 显式 current_account_id）
 pub fn get_current_account() -> Option<CodexAccount> {
-    let current_id = load_account_index().current_account_id?;
-    let mut account = load_account(&current_id)?;
     let base_dir = get_codex_home();
+    get_current_account_from_loaded(
+        load_account_index(),
+        |account_id| load_account(account_id),
+        &base_dir,
+    )
+}
+
+fn get_current_account_from_loaded(
+    index: CodexAccountIndex,
+    mut load: impl FnMut(&str) -> Option<CodexAccount>,
+    base_dir: &Path,
+) -> Option<CodexAccount> {
+    let current_id = index.current_account_id?;
+    let mut account = load(&current_id)?;
 
     if account.is_api_key_auth() {
-        sync_api_key_account_from_local_state(&mut account, &base_dir);
+        sync_api_key_account_from_local_state(&mut account, base_dir);
     }
     Some(account)
 }
@@ -4669,7 +4681,7 @@ mod tests {
         detect_auth_file_plan_type_from_path, ensure_managed_account_fresh,
         extract_codex_import_candidate_from_value, extract_codex_tokens_from_value,
         extract_user_info, format_refresh_error_for_user, get_accounts_dir,
-        get_accounts_storage_path, get_current_account, is_managed_auth_refresh_due,
+        get_accounts_storage_path, get_current_account_from_loaded, is_managed_auth_refresh_due,
         list_accounts_checked, load_account, load_account_index, looks_like_sub2api_export,
         parse_auth_file_last_refresh, parse_codex_account_compat, parse_line_delimited_json_values,
         read_api_provider_from_config_toml, read_quick_config_from_config_toml,
@@ -4686,6 +4698,7 @@ mod tests {
     use crate::models::codex::{CodexAccount, CodexApiProviderMode, CodexTokens};
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use std::fs;
+    use std::path::Path;
     use std::sync::{LazyLock, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -4806,6 +4819,7 @@ mod tests {
         home_dir: std::path::PathBuf,
         previous_home: Option<String>,
         previous_codex_home: Option<String>,
+        previous_data_dir: Option<String>,
     }
 
     impl TestEnvGuard {
@@ -4816,13 +4830,16 @@ mod tests {
 
             let previous_home = std::env::var("HOME").ok();
             let previous_codex_home = std::env::var("CODEX_HOME").ok();
+            let previous_data_dir = std::env::var("COCKPIT_TOOLS_DATA_DIR").ok();
             std::env::set_var("HOME", &home_dir);
             std::env::set_var("CODEX_HOME", &codex_home);
+            std::env::set_var("COCKPIT_TOOLS_DATA_DIR", &home_dir);
 
             Self {
                 home_dir,
                 previous_home,
                 previous_codex_home,
+                previous_data_dir,
             }
         }
 
@@ -4840,6 +4857,10 @@ mod tests {
             match self.previous_codex_home.as_ref() {
                 Some(value) => std::env::set_var("CODEX_HOME", value),
                 None => std::env::remove_var("CODEX_HOME"),
+            }
+            match self.previous_data_dir.as_ref() {
+                Some(value) => std::env::set_var("COCKPIT_TOOLS_DATA_DIR", value),
+                None => std::env::remove_var("COCKPIT_TOOLS_DATA_DIR"),
             }
             let _ = fs::remove_dir_all(&self.home_dir);
         }
@@ -4888,7 +4909,7 @@ mod tests {
         }
     }
 
-    fn seed_oauth_account(tokens: CodexTokens) -> CodexAccount {
+    fn build_test_oauth_account(tokens: CodexTokens) -> CodexAccount {
         let email = "demo@example.com";
         let account_id = "acc-current";
         let organization_id = "org-current";
@@ -4899,11 +4920,23 @@ mod tests {
         account.plan_type = Some("pro".to_string());
         account.account_id = Some(account_id.to_string());
         account.organization_id = Some(organization_id.to_string());
+        account
+    }
+
+    fn seed_oauth_account(tokens: CodexTokens) -> CodexAccount {
+        let account = build_test_oauth_account(tokens);
         save_account(&account).expect("save account");
 
+        let index = build_test_account_index(&account);
+        save_account_index(&index).expect("save index");
+
+        account
+    }
+
+    fn build_test_account_index(account: &CodexAccount) -> CodexAccountIndex {
         let mut index = CodexAccountIndex::new();
         index.accounts.push(CodexAccountSummary {
-            id: storage_id,
+            id: account.id.clone(),
             email: account.email.clone(),
             plan_type: account.plan_type.clone(),
             subscription_active_until: account.subscription_active_until.clone(),
@@ -4911,9 +4944,25 @@ mod tests {
             last_used: account.last_used,
         });
         index.current_account_id = Some(account.id.clone());
-        save_account_index(&index).expect("save index");
+        index
+    }
 
-        account
+    fn write_test_account(data_dir: &Path, account: &CodexAccount) {
+        let accounts_dir = data_dir.join("codex_accounts");
+        fs::create_dir_all(&accounts_dir).expect("create test accounts dir");
+        fs::write(
+            accounts_dir.join(format!("{}.json", account.id)),
+            serde_json::to_string_pretty(account).expect("serialize test account"),
+        )
+        .expect("write test account");
+    }
+
+    fn load_test_account(data_dir: &Path, account_id: &str) -> CodexAccount {
+        let path = data_dir
+            .join("codex_accounts")
+            .join(format!("{}.json", account_id));
+        let content = fs::read_to_string(&path).expect("read test account");
+        serde_json::from_str(&content).expect("parse test account")
     }
 
     fn write_oauth_auth_file(base_dir: &std::path::Path, tokens: &CodexTokens, account_id: &str) {
@@ -5496,10 +5545,10 @@ mod tests {
 
     #[test]
     fn current_account_does_not_sync_tokens_from_official_store() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
-        let env = TestEnvGuard::new("codex-current-account-sync-test");
+        let data_dir = make_temp_dir("codex-current-account-sync-test");
+        let codex_home = data_dir.join(".codex");
 
-        let stored = seed_oauth_account(make_codex_tokens(
+        let stored = build_test_oauth_account(make_codex_tokens(
             "demo@example.com",
             "acc-current",
             "org-current",
@@ -5513,9 +5562,21 @@ mod tests {
             "latest",
             "rt-latest",
         );
-        write_oauth_auth_file(&env.codex_home(), &latest_tokens, "acc-current");
+        write_oauth_auth_file(&codex_home, &latest_tokens, "acc-current");
 
-        let current = get_current_account().expect("current account");
+        let index = build_test_account_index(&stored);
+        write_test_account(&data_dir, &stored);
+        assert_eq!(
+            index.current_account_id.as_deref(),
+            Some(stored.id.as_str())
+        );
+
+        let current = get_current_account_from_loaded(
+            index,
+            |account_id| Some(load_test_account(&data_dir, account_id)),
+            &codex_home,
+        )
+        .expect("current account");
         assert_eq!(current.id, stored.id);
         assert_eq!(current.tokens.access_token, stored.tokens.access_token);
         assert_eq!(
@@ -5523,12 +5584,13 @@ mod tests {
             stored.tokens.refresh_token.as_deref()
         );
 
-        let persisted = load_account(&stored.id).expect("persisted account");
+        let persisted = load_test_account(&data_dir, &stored.id);
         assert_eq!(persisted.tokens.access_token, stored.tokens.access_token);
         assert_eq!(
             persisted.tokens.refresh_token.as_deref(),
             stored.tokens.refresh_token.as_deref()
         );
+        fs::remove_dir_all(&data_dir).expect("cleanup temp dir");
     }
 
     #[test]

@@ -41,6 +41,19 @@ impl Default for CodexLocalAccessImageGenerationMode {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum CodexLocalAccessGatewayMode {
+    Legacy,
+    Sidecar,
+}
+
+impl Default for CodexLocalAccessGatewayMode {
+    fn default() -> Self {
+        Self::Sidecar
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum CodexLocalAccessRequestKind {
     Text,
     ImageGeneration,
@@ -158,6 +171,8 @@ pub struct CodexLocalAccessCollection {
     pub access_scope: CodexLocalAccessScope,
     #[serde(default)]
     pub image_generation_mode: CodexLocalAccessImageGenerationMode,
+    #[serde(default)]
+    pub gateway_mode: CodexLocalAccessGatewayMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_proxy_url: Option<String>,
     #[serde(default)]
@@ -182,6 +197,8 @@ pub struct CodexLocalAccessCollection {
     pub disable_cooling: bool,
     #[serde(default = "default_restrict_free_accounts")]
     pub restrict_free_accounts: bool,
+    #[serde(default = "default_true")]
+    pub debug_logs: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bound_oauth_account_id: Option<String>,
     pub account_ids: Vec<String>,
@@ -291,6 +308,8 @@ pub struct CodexLocalAccessUsageEvent {
     pub api_key_label: String,
     #[serde(default)]
     pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_mode: Option<CodexLocalAccessGatewayMode>,
     #[serde(default)]
     pub request_kind: CodexLocalAccessRequestKind,
     #[serde(default)]

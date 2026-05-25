@@ -1768,7 +1768,7 @@
       "hideKey": "Masquer la clé",
       "modal": {
         "title": "Ajouter au service API",
-        "desc": "Choisissez les comptes OAuth à inclure dans la collection du service API. Les comptes ajoutés seront masqués de la vue normale et gérés uniquement depuis la carte du service API.",
+        "desc": "Choisissez les comptes OAuth ou API Key à inclure dans la collection du service API. Les comptes ajoutés seront masqués de la vue normale et gérés uniquement depuis la carte du service API.",
         "empty": "Aucun compte OAuth disponible",
         "selected": "Dans le service API",
         "available": "Vue normale",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Retouche",
         "other": "Autre"
       },
-      "testSuccessInline": "Test du service API réussi"
+      "testSuccessInline": "Test du service API réussi",
+      "gatewayModeLabel": "Mode de passerelle",
+      "gatewayModeLegacyShort": "Ancien",
+      "gatewayModeSidecarShort": "Nouveau",
+      "gatewayModeNewLabel": "Service API-Nouveau",
+      "gatewayModeOldLabel": "Service API-Ancien",
+      "gatewayModeSaveSuccess": "Le mode de passerelle du service API a ete mis a jour",
+      "gatewayGuideTitle": "Changez de passerelle ici",
+      "gatewayGuideDesc": "La nouvelle passerelle est le choix par défaut. En cas de problème de compatibilité ou d'erreur côté client, revenez ici à l'ancienne passerelle.",
+      "gatewayGuideAction": "Compris",
+      "upstreamProxyUrlPlaceholderLegacy": "Laissez vide pour utiliser le proxy global, le proxy d environnement ou le proxy systeme",
+      "upstreamProxyUrlPlaceholderSidecar": "Laissez vide pour utiliser le proxy global",
+      "debugLogsLabel": "Journaux debug",
+      "debugLogsDescription": "Active les journaux de debug du service API pour diagnostiquer la passerelle et le streaming",
+      "debugLogsEnabledSuccess": "Journaux debug activés",
+      "debugLogsDisabledSuccess": "Journaux debug désactivés",
+      "debugLogsEnableConfirmTitle": "Activer les journaux debug",
+      "debugLogsEnableConfirmMessage": "Une fois activé, le service API produit des journaux debug pour diagnostiquer la passerelle, le proxy, les requêtes amont et les réponses en streaming. Cela peut ajouter un léger coût en forte concurrence ou sur de longs flux. Désactivez-les après le diagnostic. Activer ?",
+      "debugLogsEnableConfirmAction": "Activer",
+      "debugLogsDisableConfirmTitle": "Désactiver les journaux debug",
+      "debugLogsDisableConfirmMessage": "Une fois désactivé, le service API cesse de produire les journaux debug, ce qui réduit le bruit et la charge. Vous pourrez les réactiver pour diagnostiquer la passerelle, le proxy ou le streaming. Désactiver ?",
+      "debugLogsDisableConfirmAction": "Désactiver"
     },
     "local": {
       "desc": "Importer le compte connecté depuis ~/.codex/auth.json",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Service API Codex",
       "title": "Service API Codex",
-      "subtitle": "Expose le pool de comptes OAuth Codex sous forme d’API compatible OpenAI pour les clients locaux ou LAN.",
       "openPage": "Ouvrir le service API",
       "openFullPage": "Voir toutes les fonctions",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Tous types",
         "allStatuses": "Tous états",
+        "allGatewayModes": "Tous les modes",
         "modelFilter": "Modèle",
         "modelPlaceholder": "ID modèle",
         "accountFilter": "Compte",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Nom ou ID",
         "kindFilter": "Type",
         "statusFilter": "État",
+        "gatewayModeFilter": "Passerelle",
         "errorFilter": "Erreur",
         "errorPlaceholder": "Catégorie erreur",
         "clearFilters": "Effacer filtres",
         "loading": "Chargement des logs",
+        "gatewayModeUnknown": "Mode inconnu",
         "requestIdShort": "ID requête {{id}}",
         "httpStatus": "Statut HTTP {{status}}"
       }

@@ -2,9 +2,11 @@ use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 
 const REASONING_ENCRYPTED_CONTENT_INCLUDE: &str = "reasoning.encrypted_content";
+const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 const DEFAULT_CONTEXT_WINDOW: i64 = 272_000;
 const DEFAULT_MAX_CONTEXT_WINDOW: i64 = 1_000_000;
-const LOCAL_PROXY_BYPASS_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "::1"];
+const LOCAL_PROXY_BYPASS_HOSTS: [&str; 5] =
+    ["127.0.0.1", "127.0.0.0/8", "localhost", "::1", "::1/128"];
 
 pub fn merge_local_no_proxy(raw: &str) -> String {
     let mut seen = HashSet::new();
@@ -73,7 +75,11 @@ fn build_codex_client_model(model_id: &str) -> Value {
     let display_name = display_name_for_model(model_id);
     let visibility = if matches!(
         model_id,
-        "gpt-image-2" | "grok-imagine-image" | "grok-imagine-video" | "grok-imagine-image-quality"
+        CODEX_AUTO_REVIEW_MODEL_ID
+            | "gpt-image-2"
+            | "grok-imagine-image"
+            | "grok-imagine-video"
+            | "grok-imagine-image-quality"
     ) {
         "hide"
     } else {
@@ -106,6 +112,7 @@ fn display_name_for_model(model_id: &str) -> String {
         "gpt-5.1-codex-max" => "GPT-5.1 Codex Max".to_string(),
         "gpt-5.1-codex-mini" => "GPT-5.1 Codex Mini".to_string(),
         "gpt-image-2" => "GPT Image 2".to_string(),
+        CODEX_AUTO_REVIEW_MODEL_ID => "Codex Auto Review".to_string(),
         other => other.to_string(),
     }
 }
@@ -395,9 +402,12 @@ mod tests {
     fn merges_local_no_proxy_hosts() {
         assert_eq!(
             merge_local_no_proxy("example.com, localhost"),
-            "example.com,localhost,127.0.0.1,::1"
+            "example.com,localhost,127.0.0.1,127.0.0.0/8,::1,::1/128"
         );
-        assert_eq!(merge_local_no_proxy(""), "127.0.0.1,localhost,::1");
+        assert_eq!(
+            merge_local_no_proxy(""),
+            "127.0.0.1,127.0.0.0/8,localhost,::1,::1/128"
+        );
     }
 
     #[test]

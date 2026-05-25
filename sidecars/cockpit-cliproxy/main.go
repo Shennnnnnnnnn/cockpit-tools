@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/synthesizer"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -45,6 +47,13 @@ const (
 const ginUserAPIKeyKey = "userApiKey"
 
 const defaultStreamKeepAliveSeconds = 15
+const codexAutoReviewModel = "codex-auto-review"
+
+var (
+	streamOpenTimeout     = 10 * time.Second
+	streamOpenMaxAttempts = 2
+	streamIdleTimeout     = 60 * time.Second
+)
 
 type manifest struct {
 	APIKeys            []apiKeySpec        `json:"apiKeys"`
@@ -54,6 +63,7 @@ type manifest struct {
 	ExcludedModels     []string            `json:"excludedModels"`
 	RoutingStrategy    string              `json:"routingStrategy"`
 	CustomRoutingRules []customRoutingRule `json:"customRoutingRules"`
+	DebugLogs          *bool               `json:"debugLogs,omitempty"`
 
 	apiKeyByValue     map[string]*apiKeySpec
 	accountByID       map[string]*accountSpec
@@ -147,6 +157,22 @@ type requestDiagnosticPayload struct {
 }
 
 const executorWaitLogInterval = 30 * time.Second
+
+type relayTimeoutError struct {
+	phase   string
+	timeout time.Duration
+}
+
+func (e relayTimeoutError) Error() string {
+	if e.phase == "" {
+		return fmt.Sprintf("upstream timed out after %s", e.timeout)
+	}
+	return fmt.Sprintf("upstream timed out in %s after %s", e.phase, e.timeout)
+}
+
+func (e relayTimeoutError) StatusCode() int {
+	return http.StatusGatewayTimeout
+}
 
 type usageDetails struct {
 	InputTokens     int64 `json:"inputTokens,omitempty"`
@@ -435,7 +461,7 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 		}
 
 		if spec != nil && isModelsRequest(c.Request) {
-			models := visibleModelsForAPIKey(p.manifest, spec)
+			models := clientCatalogModelsForAPIKey(p.manifest, spec)
 			if isCodexClientModelsRequest(c.Request) {
 				c.JSON(http.StatusOK, buildCodexClientModelsResponse(models))
 			} else {
@@ -657,7 +683,7 @@ func buildCodexClientModelsResponse(models []string) gin.H {
 		displayName := displayNameForModel(model)
 		visibility := "show"
 		switch model {
-		case "gpt-image-2", "grok-imagine-image", "grok-imagine-video", "grok-imagine-image-quality":
+		case codexAutoReviewModel, "gpt-image-2", "grok-imagine-image", "grok-imagine-video", "grok-imagine-image-quality":
 			visibility = "hide"
 		}
 		data = append(data, gin.H{
@@ -699,6 +725,8 @@ func displayNameForModel(model string) string {
 		return "GPT-5.1 Codex Mini"
 	case "gpt-image-2":
 		return "GPT Image 2"
+	case codexAutoReviewModel:
+		return "Codex Auto Review"
 	default:
 		return model
 	}
@@ -777,8 +805,28 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 	return models
 }
 
+func clientCatalogModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
+	return appendCodexInternalModels(visibleModelsForAPIKey(m, spec))
+}
+
+func appendCodexInternalModels(models []string) []string {
+	for _, model := range models {
+		if isCodexInternalModel(model) {
+			return models
+		}
+	}
+	return append(models, codexAutoReviewModel)
+}
+
+func isCodexInternalModel(model string) bool {
+	return strings.EqualFold(strings.TrimSpace(model), codexAutoReviewModel)
+}
+
 func canonicalModelForClientModel(m *manifest, spec *apiKeySpec, model string) string {
 	withoutPrefix := stripModelPrefix(model, spec)
+	if isCodexInternalModel(withoutPrefix) {
+		return codexAutoReviewModel
+	}
 	if m != nil {
 		if source := m.aliasToSource[strings.ToLower(withoutPrefix)]; source != "" {
 			return source
@@ -841,6 +889,9 @@ func hasDateSnapshotSuffix(suffix string) bool {
 
 func validateClientModelVisible(m *manifest, spec *apiKeySpec, model, canonical string) bool {
 	withoutPrefix := stripModelPrefix(model, spec)
+	if isCodexInternalModel(withoutPrefix) || isCodexInternalModel(canonical) {
+		return true
+	}
 	visible := visibleModelsForAPIKey(m, nil)
 	visibleMatch := false
 	for _, item := range visible {
@@ -1571,6 +1622,10 @@ func newSidecarRuntime(ctx context.Context, configPath string, cfg *config.Confi
 		return nil, fmt.Errorf("runtime startup timeout")
 	}
 
+	if err := registerConfigCodexAPIKeyAuths(runtimeCtx, service, cfg, m); err != nil {
+		cancel()
+		return nil, err
+	}
 	for _, auth := range manager.List() {
 		if auth == nil || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
 			continue
@@ -1581,6 +1636,35 @@ func newSidecarRuntime(ctx context.Context, configPath string, cfg *config.Confi
 	service.RebindRuntimeExecutors()
 
 	return &sidecarRuntime{manager: manager, service: service, cancel: cancel, done: done}, nil
+}
+
+func registerConfigCodexAPIKeyAuths(ctx context.Context, service *cliproxy.Service, cfg *config.Config, m *manifest) error {
+	if service == nil || cfg == nil {
+		return nil
+	}
+	auths, err := synthesizer.NewConfigSynthesizer().Synthesize(&synthesizer.SynthesisContext{
+		Config:      cfg,
+		AuthDir:     cfg.AuthDir,
+		Now:         time.Now(),
+		IDGenerator: synthesizer.NewStableIDGenerator(),
+	})
+	if err != nil {
+		return fmt.Errorf("synthesize config auths: %w", err)
+	}
+	for _, auth := range auths {
+		if auth == nil || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
+			continue
+		}
+		if auth.Attributes == nil || strings.TrimSpace(auth.Attributes["api_key"]) == "" {
+			continue
+		}
+		registered, err := service.UpsertRuntimeAuth(coreauth.WithSkipPersist(ctx), auth)
+		if err != nil {
+			return fmt.Errorf("register codex api key auth %s: %w", auth.ID, err)
+		}
+		linkManifestAccountForAuth(m, registered)
+	}
+	return nil
 }
 
 func (r *sidecarRuntime) Execute(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
@@ -1674,6 +1758,7 @@ func manifestRegistryModels(m *manifest) []*cliproxy.ModelInfo {
 	for _, alias := range m.ModelAliases {
 		ids = append(ids, alias.SourceModel, alias.Alias)
 	}
+	ids = appendCodexInternalModels(ids)
 	ids = normalizeStringList(ids)
 	models := make([]*cliproxy.ModelInfo, 0, len(ids))
 	now := time.Now().Unix()
@@ -1769,7 +1854,7 @@ func (s *relayServer) handleModels(c *gin.Context) {
 	if !ok {
 		return
 	}
-	models := visibleModelsForAPIKey(s.manifest, spec)
+	models := clientCatalogModelsForAPIKey(s.manifest, spec)
 	if isCodexClientModelsRequest(c.Request) {
 		c.JSON(http.StatusOK, buildCodexClientModelsResponse(models))
 		return
@@ -1859,7 +1944,9 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	startedAt := time.Now()
 	s.emitExecutorDiagnostic(c, "executor_started", model, "execute_stream", startedAt, "")
 	stopWaitLogger := s.startExecutorWaitLogger(c, model, "execute_stream", startedAt)
-	result, err := s.runtime.ExecuteStream(relayContext(c), []string{"codex"}, req, opts)
+	streamCtx, cancelStream := context.WithCancel(relayContext(c))
+	defer cancelStream()
+	result, err := s.executeStreamWithOpenTimeout(c, streamCtx, []string{"codex"}, req, opts, model, startedAt)
 	stopWaitLogger()
 	if err != nil {
 		s.emitExecutorDiagnostic(c, "executor_failed", model, "execute_stream", startedAt, err.Error())
@@ -1895,13 +1982,24 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	received := 0
 	endReason := "done"
 	firstChunkLogged := false
+	idleTimer := time.NewTimer(streamIdleTimeout)
+	defer idleTimer.Stop()
 	defer func() {
 		s.emitStreamCompleted(c, model, received, endReason)
 	}()
 
 	for {
 		select {
+		case <-idleTimer.C:
+			cancelStream()
+			endReason = "stream_idle_timeout"
+			err := relayTimeoutError{phase: "stream_idle", timeout: streamIdleTimeout}
+			s.emitExecutorDiagnostic(c, "stream_idle_timeout", model, "stream_loop", startedAt, err.Error())
+			writeStreamTerminalError(c, err)
+			flusher.Flush()
+			return
 		case <-c.Request.Context().Done():
+			cancelStream()
 			endReason = "client_gone"
 			s.emitExecutorDiagnostic(c, "stream_client_gone", model, "stream_loop", startedAt, c.Request.Context().Err().Error())
 			return
@@ -1916,6 +2014,13 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 			}
 			flusher.Flush()
 		case chunk, ok := <-result.Chunks:
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(streamIdleTimeout)
 			if !ok {
 				if err := framer.Close(c.Writer); err != nil {
 					endReason = "write_failed"
@@ -1950,8 +2055,60 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	}
 }
 
+type executeStreamResult struct {
+	result *cliproxyexecutor.StreamResult
+	err    error
+}
+
+func (s *relayServer) executeStreamWithOpenTimeout(
+	c *gin.Context,
+	ctx context.Context,
+	providers []string,
+	req cliproxyexecutor.Request,
+	opts cliproxyexecutor.Options,
+	model string,
+	startedAt time.Time,
+) (*cliproxyexecutor.StreamResult, error) {
+	attempts := streamOpenMaxAttempts
+	if attempts <= 0 {
+		attempts = 1
+	}
+	for attempt := 1; attempt <= attempts; attempt++ {
+		attemptCtx, cancelAttempt := context.WithCancel(ctx)
+		done := make(chan executeStreamResult, 1)
+		go func() {
+			result, err := s.runtime.ExecuteStream(attemptCtx, providers, req, opts)
+			done <- executeStreamResult{result: result, err: err}
+		}()
+
+		timer := time.NewTimer(streamOpenTimeout)
+		select {
+		case out := <-done:
+			timer.Stop()
+			if out.err != nil || out.result == nil {
+				cancelAttempt()
+			}
+			return out.result, out.err
+		case <-ctx.Done():
+			timer.Stop()
+			cancelAttempt()
+			return nil, ctx.Err()
+		case <-timer.C:
+			cancelAttempt()
+			err := relayTimeoutError{phase: fmt.Sprintf("stream_open attempt=%d", attempt), timeout: streamOpenTimeout}
+			if attempt < attempts {
+				s.emitExecutorDiagnostic(c, "stream_open_retry", model, "execute_stream", startedAt, err.Error())
+				continue
+			}
+			s.emitExecutorDiagnostic(c, "stream_open_retry_failed", model, "execute_stream", startedAt, err.Error())
+			return nil, err
+		}
+	}
+	return nil, relayTimeoutError{phase: "stream_open", timeout: streamOpenTimeout}
+}
+
 func (s *relayServer) startExecutorWaitLogger(c *gin.Context, model, phase string, startedAt time.Time) func() {
-	if s == nil || s.emitter == nil || c == nil || c.Request == nil {
+	if s == nil || s.emitter == nil || c == nil || c.Request == nil || !s.debugLogsEnabled() {
 		return func() {}
 	}
 	payload := s.executorDiagnosticPayload(c, "executor_waiting", model, phase, startedAt, "")
@@ -1976,10 +2133,17 @@ func (s *relayServer) startExecutorWaitLogger(c *gin.Context, model, phase strin
 }
 
 func (s *relayServer) emitExecutorDiagnostic(c *gin.Context, typ, model, phase string, startedAt time.Time, message string) {
-	if s == nil || s.emitter == nil || c == nil || c.Request == nil {
+	if s == nil || s.emitter == nil || c == nil || c.Request == nil || !s.debugLogsEnabled() {
 		return
 	}
 	s.emitter.emit(s.executorDiagnosticPayload(c, typ, model, phase, startedAt, message))
+}
+
+func (s *relayServer) debugLogsEnabled() bool {
+	if s == nil || s.manifest == nil || s.manifest.DebugLogs == nil {
+		return true
+	}
+	return *s.manifest.DebugLogs
 }
 
 func (s *relayServer) executorDiagnosticPayload(c *gin.Context, typ, model, phase string, startedAt time.Time, message string) requestDiagnosticPayload {
@@ -2579,6 +2743,16 @@ func runRelayHTTPServer(ctx context.Context, cfg *config.Config, handler http.Ha
 
 func monitorParentProcess(ctx context.Context, parentPID int, cancel context.CancelFunc, emitter *eventEmitter) {
 	if parentPID <= 0 || parentPID == os.Getpid() {
+		return
+	}
+	if goruntime.GOOS == "windows" {
+		if emitter != nil {
+			emitter.emit(map[string]any{
+				"type":      "parent_monitor_disabled",
+				"reason":    "windows_getppid_unreliable",
+				"parentPid": parentPID,
+			})
+		}
 		return
 	}
 	go func() {

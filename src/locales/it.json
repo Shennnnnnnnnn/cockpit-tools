@@ -1768,7 +1768,7 @@
       "hideKey": "Nascondi chiave",
       "modal": {
         "title": "Aggiungi al servizio API",
-        "desc": "Scegli gli account OAuth da includere nella raccolta del servizio API. Gli account aggiunti verranno nascosti dalla panoramica normale e gestiti solo dalla scheda del servizio API.",
+        "desc": "Scegli gli account OAuth o API Key da includere nella raccolta del servizio API. Gli account aggiunti verranno nascosti dalla panoramica normale e gestiti solo dalla scheda del servizio API.",
         "empty": "Nessun account OAuth disponibile",
         "selected": "Nel servizio API",
         "available": "Panoramica normale",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Modifica",
         "other": "Altro"
       },
-      "testSuccessInline": "Test del servizio API riuscito"
+      "testSuccessInline": "Test del servizio API riuscito",
+      "gatewayModeLabel": "Modalita gateway",
+      "gatewayModeLegacyShort": "Legacy",
+      "gatewayModeSidecarShort": "Nuovo",
+      "gatewayModeNewLabel": "Servizio API-Nuovo",
+      "gatewayModeOldLabel": "Servizio API-Vecchio",
+      "gatewayModeSaveSuccess": "La modalita gateway del servizio API e stata aggiornata",
+      "gatewayGuideTitle": "Cambia gateway qui",
+      "gatewayGuideDesc": "Il gateway nuovo è il predefinito. Se trovi problemi di compatibilità o errori nelle richieste del client, torna qui al gateway vecchio.",
+      "gatewayGuideAction": "Capito",
+      "upstreamProxyUrlPlaceholderLegacy": "Lascia vuoto per usare proxy globale, proxy di ambiente o proxy di sistema",
+      "upstreamProxyUrlPlaceholderSidecar": "Lascia vuoto per usare il proxy globale",
+      "debugLogsLabel": "Log debug",
+      "debugLogsDescription": "Mostra i log di debug del servizio API per diagnosticare gateway e streaming",
+      "debugLogsEnabledSuccess": "Log debug attivati",
+      "debugLogsDisabledSuccess": "Log debug disattivati",
+      "debugLogsEnableConfirmTitle": "Attiva log debug",
+      "debugLogsEnableConfirmMessage": "Quando attivo, il servizio API emette log debug per diagnosticare gateway, proxy, richieste upstream e risposte streaming. Può aggiungere un piccolo costo prestazionale con alta concorrenza o stream lunghi. Disattivalo dopo la diagnosi. Attivare?",
+      "debugLogsEnableConfirmAction": "Attiva",
+      "debugLogsDisableConfirmTitle": "Disattiva log debug",
+      "debugLogsDisableConfirmMessage": "Quando disattivo, il servizio API smette di emettere log debug, riducendo rumore e overhead. Puoi riattivarlo per diagnosticare gateway, proxy o streaming. Disattivare?",
+      "debugLogsDisableConfirmAction": "Disattiva"
     },
     "local": {
       "desc": "Importa l'account attuale da ~/.codex/auth.json",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Servizio API Codex",
       "title": "Servizio API Codex",
-      "subtitle": "Espone il pool di account OAuth Codex come API compatibile con OpenAI per client locali o LAN.",
       "openPage": "Apri servizio API",
       "openFullPage": "Vedi tutte le funzioni",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Tutti i tipi",
         "allStatuses": "Tutti gli stati",
+        "allGatewayModes": "Tutte le modalita",
         "modelFilter": "Modello",
         "modelPlaceholder": "ID modello",
         "accountFilter": "Account",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Nome o ID",
         "kindFilter": "Tipo",
         "statusFilter": "Stato",
+        "gatewayModeFilter": "Modalita",
         "errorFilter": "Errore",
         "errorPlaceholder": "Categoria errore",
         "clearFilters": "Cancella filtri",
         "loading": "Caricamento log richieste",
+        "gatewayModeUnknown": "Modalita sconosciuta",
         "requestIdShort": "ID richiesta {{id}}",
         "httpStatus": "Stato HTTP {{status}}"
       }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  Bug,
   Check,
   CircleAlert,
   Copy,
@@ -89,6 +90,7 @@ interface CodexLocalAccessModalProps {
   onUpdateUpstreamProxyConfig: (
     upstreamProxyUrl: string | null,
   ) => Promise<unknown> | unknown;
+  onUpdateDebugLogs: (debugLogs: boolean) => Promise<unknown> | unknown;
   onRotateApiKey: () => Promise<unknown> | unknown;
   onKillPort: () => Promise<unknown> | unknown;
   onToggleEnabled: () => Promise<unknown> | unknown;
@@ -204,6 +206,7 @@ export function CodexLocalAccessModal({
   onUpdateCustomRouting,
   onUpdateAccessScope,
   onUpdateUpstreamProxyConfig,
+  onUpdateDebugLogs,
   onRotateApiKey,
   onKillPort,
   onToggleEnabled,
@@ -1247,6 +1250,44 @@ export function CodexLocalAccessModal({
     );
   };
 
+  const handleToggleDebugLogs = async () => {
+    if (!collection) return;
+    const nextDebugLogs = !collection.debugLogs;
+    const confirmed = await confirmDialog(
+      nextDebugLogs
+        ? t(
+            'codex.localAccess.debugLogsEnableConfirmMessage',
+            '打开后会输出 API 服务调试日志，用于定位网关、代理、上游请求和流式响应问题。高并发或长时间流式请求时可能带来少量性能开销，建议排查完成后关闭。确认打开吗？',
+          )
+        : t(
+            'codex.localAccess.debugLogsDisableConfirmMessage',
+            '关闭后会停止输出 API 服务调试日志，减少日志噪声和额外开销；后续排查网关、代理或流式响应问题时可再次打开。确认关闭吗？',
+          ),
+      {
+        title: nextDebugLogs
+          ? t('codex.localAccess.debugLogsEnableConfirmTitle', '是否打开日志调试模式？')
+          : t('codex.localAccess.debugLogsDisableConfirmTitle', '是否关闭日志调试模式？'),
+        kind: 'info',
+        okLabel: nextDebugLogs
+          ? t('codex.localAccess.debugLogsEnableConfirmAction', '打开')
+          : t('codex.localAccess.debugLogsDisableConfirmAction', '关闭'),
+        cancelLabel: t('common.cancel'),
+      },
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError('');
+    setNotice('');
+    try {
+      await onUpdateDebugLogs(nextDebugLogs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleResetKey = async () => {
     const confirmed = await confirmDialog(
       t(
@@ -1421,7 +1462,7 @@ export function CodexLocalAccessModal({
                           disabled={saving || testing || starting}
                           placeholder={t(
                             'codex.localAccess.upstreamProxyUrlPlaceholder',
-                            '留空用全局代理',
+                            '留空使用全局代理',
                           )}
                           aria-label={t(
                             'codex.localAccess.upstreamProxyLabel',
@@ -1495,6 +1536,29 @@ export function CodexLocalAccessModal({
                         </button>
                       )}
                     </>
+                  )}
+                  {collection && (
+                    <button
+                      type="button"
+                      className={`folder-icon-btn codex-local-access-toolbar-btn codex-local-access-debug-toggle${
+                        collection.debugLogs ? ' is-active' : ''
+                      }`}
+                      onClick={() => void handleToggleDebugLogs()}
+                      disabled={saving || testing || starting}
+                      title={
+                        collection.debugLogs
+                          ? t('codex.localAccess.debugLogsEnabledSuccess', '调试日志已开启')
+                          : t('codex.localAccess.debugLogsDisabledSuccess', '调试日志已关闭')
+                      }
+                      aria-label={
+                        collection.debugLogs
+                          ? t('codex.localAccess.debugLogsEnabledSuccess', '调试日志已开启')
+                          : t('codex.localAccess.debugLogsDisabledSuccess', '调试日志已关闭')
+                      }
+                      aria-pressed={collection.debugLogs}
+                    >
+                      <Bug size={14} />
+                    </button>
                   )}
                   <button
                     type="button"

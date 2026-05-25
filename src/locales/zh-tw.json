@@ -1768,7 +1768,7 @@
       "hideKey": "隱藏金鑰",
       "modal": {
         "title": "加入 API 服務",
-        "desc": "選擇要加入 API 服務集合的 OAuth 帳號。加入後，這些帳號會從一般面板隱藏，僅在 API 服務卡片中管理。",
+        "desc": "選擇要加入 API 服務集合的 OAuth 帳號或 API Key 帳號。加入後，這些帳號會從一般面板隱藏，僅在 API 服務卡片中管理。",
         "empty": "目前沒有可加入的 OAuth 帳號",
         "selected": "已加入 API 服務",
         "available": "一般面板",
@@ -1971,7 +1971,28 @@
         "imageEdit": "改圖",
         "other": "其他"
       },
-      "testSuccessInline": "API 服務測試通過"
+      "testSuccessInline": "API 服務測試通過",
+      "gatewayModeLabel": "網關模式",
+      "gatewayModeLegacyShort": "舊版",
+      "gatewayModeSidecarShort": "新版",
+      "gatewayModeNewLabel": "API 服務-新",
+      "gatewayModeOldLabel": "API 服務-舊",
+      "gatewayModeSaveSuccess": "API 服務網關模式已更新",
+      "gatewayGuideTitle": "可在這裡切換閘道",
+      "gatewayGuideDesc": "預設使用新閘道。如果遇到相容性問題或用戶端請求異常，可在這裡切換回舊閘道。",
+      "gatewayGuideAction": "我知道了",
+      "upstreamProxyUrlPlaceholderLegacy": "留空時依序使用全域代理、環境代理或系統代理",
+      "upstreamProxyUrlPlaceholderSidecar": "留空時使用全域代理",
+      "debugLogsLabel": "除錯日誌",
+      "debugLogsDescription": "開啟後輸出 API 服務除錯日誌，便於定位閘道與串流請求問題",
+      "debugLogsEnabledSuccess": "除錯日誌已開啟",
+      "debugLogsDisabledSuccess": "除錯日誌已關閉",
+      "debugLogsEnableConfirmTitle": "開啟日誌除錯模式",
+      "debugLogsEnableConfirmMessage": "開啟後會輸出 API 服務除錯日誌，用於定位閘道、代理、上游請求與串流回應問題。高併發或長時間串流請求時可能帶來少量效能開銷，建議排查完成後關閉。確認開啟嗎？",
+      "debugLogsEnableConfirmAction": "開啟",
+      "debugLogsDisableConfirmTitle": "關閉日誌除錯模式",
+      "debugLogsDisableConfirmMessage": "關閉後會停止輸出 API 服務除錯日誌，減少日誌雜訊與額外開銷；後續排查閘道、代理或串流回應問題時可再次開啟。確認關閉嗎？",
+      "debugLogsDisableConfirmAction": "關閉"
     },
     "api": {
       "baseUrl": "基礎網址",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Codex API 服務",
       "title": "Codex API 服務",
-      "subtitle": "將 Codex OAuth 帳號池以 OpenAI-compatible API 形式提供給本機或區域網路用戶端。",
       "openPage": "進入 API 服務",
       "openFullPage": "檢視全部功能",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "全部類型",
         "allStatuses": "全部狀態",
+        "allGatewayModes": "全部模式",
         "modelFilter": "模型",
         "modelPlaceholder": "模型 ID",
         "accountFilter": "帳號",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "名稱或 ID",
         "kindFilter": "類型",
         "statusFilter": "狀態",
+        "gatewayModeFilter": "模式",
         "errorFilter": "錯誤",
         "errorPlaceholder": "錯誤分類",
         "clearFilters": "清除篩選",
         "loading": "正在載入請求日誌",
+        "gatewayModeUnknown": "模式未知",
         "requestIdShort": "請求 ID {{id}}",
         "httpStatus": "HTTP 狀態 {{status}}"
       }

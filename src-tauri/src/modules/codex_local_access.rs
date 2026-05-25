@@ -2,14 +2,14 @@ use crate::models::codex::{CodexAccount, CodexApiProviderMode, CodexAuthMode};
 use crate::models::codex_local_access::{
     CodexLocalAccessAccountCooldown, CodexLocalAccessAccountHealth, CodexLocalAccessAccountStats,
     CodexLocalAccessApiKey, CodexLocalAccessApiKeyStats, CodexLocalAccessCollection,
-    CodexLocalAccessCustomRoutingRule, CodexLocalAccessImageGenerationMode,
-    CodexLocalAccessImageGenerationStatus, CodexLocalAccessModelAlias,
-    CodexLocalAccessModelPricing, CodexLocalAccessModelStats, CodexLocalAccessPortCleanupResult,
-    CodexLocalAccessProfileAttachment, CodexLocalAccessRequestKind,
-    CodexLocalAccessRoutingStrategy, CodexLocalAccessScope, CodexLocalAccessState,
-    CodexLocalAccessStats, CodexLocalAccessStatsWindow, CodexLocalAccessTestFailure,
-    CodexLocalAccessTestResult, CodexLocalAccessUsageEvent, CodexLocalAccessUsageEventPage,
-    CodexLocalAccessUsageStats,
+    CodexLocalAccessCustomRoutingRule, CodexLocalAccessGatewayMode,
+    CodexLocalAccessImageGenerationMode, CodexLocalAccessImageGenerationStatus,
+    CodexLocalAccessModelAlias, CodexLocalAccessModelPricing, CodexLocalAccessModelStats,
+    CodexLocalAccessPortCleanupResult, CodexLocalAccessProfileAttachment,
+    CodexLocalAccessRequestKind, CodexLocalAccessRoutingStrategy, CodexLocalAccessScope,
+    CodexLocalAccessState, CodexLocalAccessStats, CodexLocalAccessStatsWindow,
+    CodexLocalAccessTestFailure, CodexLocalAccessTestResult, CodexLocalAccessUsageEvent,
+    CodexLocalAccessUsageEventPage, CodexLocalAccessUsageStats,
 };
 use crate::modules::atomic_write::write_string_atomic;
 use crate::modules::{
@@ -33,12 +33,12 @@ use std::net::{Ipv4Addr, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{Child, Command as TokioCommand};
-use tokio::sync::{watch, Mutex as TokioMutex};
+use tokio::sync::{oneshot, watch, Mutex as TokioMutex};
 use tokio::time::{timeout, Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::handshake::client::Request as WsClientRequest;
@@ -62,7 +62,7 @@ const CODEX_LOCAL_ACCESS_SIDECAR_AUTHS_DIR: &str = "auths";
 const CODEX_LOCAL_ACCESS_SIDECAR_BIN_NAME: &str = "cockpit-cliproxy";
 const CODEX_LOCAL_ACCESS_LOCALHOST_BIND_HOST: &str = "127.0.0.1";
 const CODEX_LOCAL_ACCESS_LAN_BIND_HOST: &str = "0.0.0.0";
-const CODEX_LOCAL_ACCESS_URL_HOST: &str = "127.0.0.1";
+const CODEX_LOCAL_ACCESS_URL_HOST: &str = "localhost";
 const CODEX_LOCAL_ACCESS_API_PORT_ENV: &str = "COCKPIT_TOOLS_API_PORT";
 const CODEX_LOCAL_ACCESS_DEV_DEFAULT_PORT: u16 = 1456;
 const CODEX_LOCAL_ACCESS_TAKEOVER_BACKUP_VERSION: u32 = 1;
@@ -78,6 +78,9 @@ const UPSTREAM_SEND_RETRY_MAX_DELAY: Duration = Duration::from_millis(1200);
 const SINGLE_ACCOUNT_STATUS_RETRY_ATTEMPTS: usize = 2;
 const SINGLE_ACCOUNT_STATUS_RETRY_BASE_DELAY: Duration = Duration::from_millis(300);
 const SINGLE_ACCOUNT_STATUS_RETRY_MAX_DELAY: Duration = Duration::from_millis(1500);
+const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const UPSTREAM_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const UPSTREAM_STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(180);
 const STATS_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRY_CREDENTIALS_PER_REQUEST: usize = 8;
 const SESSION_AFFINITY_TTL_MIN_MS: i64 = 60 * 1000;
@@ -110,6 +113,10 @@ const DEFAULT_CODEX_ORIGINATOR: &str = "codex_cli_rs";
 const CODEX_RESPONSES_WEBSOCKET_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
 const CODEX_WEBSOCKET_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const CODEX_WEBSOCKET_INITIAL_MESSAGE_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(not(test))]
+const CODEX_WEBSOCKET_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const CODEX_WEBSOCKET_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(25);
 const CODEX_WEBSOCKET_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const CODEX_WEBSOCKET_PROXY_CONNECT_MAX_BYTES: usize = 16 * 1024;
 const CORS_ALLOW_HEADERS: &str = "Authorization, Content-Type, OpenAI-Beta, X-API-Key, X-Codex-Beta-Features, X-Codex-Turn-State, X-Codex-Turn-Metadata, X-Client-Request-Id, X-ResponsesAPI-Include-Timing-Metrics, Version, Originator, Session_id, Conversation_id, ChatGPT-Account-Id";
@@ -134,6 +141,7 @@ const DEFAULT_CODEX_MODELS: &[&str] = &[
     "gpt-5.1-codex-mini",
 ];
 const CODEX_IMAGE_MODEL_ID: &str = "gpt-image-2";
+const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 const DEFAULT_IMAGES_MAIN_MODEL: &str = "gpt-5.4-mini";
 const MAX_MODEL_PRICE_USD_PER_MILLION: f64 = 1_000_000.0;
 const SIDECAR_STREAMING_KEEPALIVE_SECONDS: i32 = 15;
@@ -518,7 +526,7 @@ fn current_upstream_proxy_diagnostics(
 }
 
 fn build_upstream_http_client(signature: &UpstreamHttpClientSignature) -> Result<Client, String> {
-    let mut builder = Client::builder();
+    let mut builder = Client::builder().connect_timeout(UPSTREAM_CONNECT_TIMEOUT);
 
     if let Some(proxy_url) = signature.proxy_url.as_deref() {
         let proxy = Proxy::all(proxy_url).map_err(|e| format!("Codex 上游代理地址无效: {}", e))?;
@@ -530,24 +538,53 @@ fn build_upstream_http_client(signature: &UpstreamHttpClientSignature) -> Result
         .map_err(|e| format!("创建 Codex 上游 HTTP 客户端失败: {}", e))
 }
 
+fn build_localhost_http_client(request_timeout: Duration, label: &str) -> Result<Client, String> {
+    Client::builder()
+        .no_proxy()
+        .timeout(request_timeout)
+        .build()
+        .map_err(|e| format!("创建{}客户端失败: {}", label, e))
+}
+
 fn log_upstream_http_client_signature(signature: &UpstreamHttpClientSignature) {
     match (signature.proxy_source, signature.proxy_url.as_deref()) {
         (UpstreamProxySource::ApiService, Some(proxy_url)) => logger::log_info(&format!(
-            "[CodexLocalAccess] 上游 HTTP 客户端已应用 API 服务代理 proxy_url={}",
+            "[CodexLocalAccess][legacy] 上游 HTTP 客户端已应用 API 服务代理 proxy_url={}",
             redact_proxy_url_for_log(proxy_url)
         )),
         (UpstreamProxySource::Global, Some(proxy_url)) => logger::log_info(&format!(
-            "[CodexLocalAccess] 上游 HTTP 客户端已跟随全局代理 proxy_url={}，API 服务上游请求不应用 no_proxy 绕过",
+            "[CodexLocalAccess][legacy] 上游 HTTP 客户端已跟随全局代理 proxy_url={}，API 服务上游请求不应用 no_proxy 绕过",
             redact_proxy_url_for_log(proxy_url)
         )),
         (UpstreamProxySource::SystemEnv, Some(proxy_url)) => logger::log_info(&format!(
-            "[CodexLocalAccess] 上游 HTTP 客户端已使用环境代理 proxy_url={}，API 服务上游请求不应用 no_proxy 绕过",
+            "[CodexLocalAccess][legacy] 上游 HTTP 客户端已使用环境代理 proxy_url={}，API 服务上游请求不应用 no_proxy 绕过",
             redact_proxy_url_for_log(proxy_url)
         )),
         (UpstreamProxySource::SystemAuto, None) => logger::log_info(
-            "[CodexLocalAccess] 未配置 API 服务代理、全局代理或环境代理，已回退到 reqwest 系统自动代理配置",
+            "[CodexLocalAccess][legacy] 未配置 API 服务代理、全局代理或环境代理，已回退到 reqwest 系统自动代理配置",
         ),
-        _ => logger::log_warn("[CodexLocalAccess] 上游 HTTP 客户端代理状态异常"),
+        _ => logger::log_warn("[CodexLocalAccess][legacy] 上游 HTTP 客户端代理状态异常"),
+    }
+}
+
+fn log_sidecar_proxy_signature(signature: &UpstreamHttpClientSignature) {
+    match (signature.proxy_source, signature.proxy_url.as_deref()) {
+        (UpstreamProxySource::ApiService, Some(proxy_url)) => logger::log_info(&format!(
+            "[CodexLocalAccess][sidecar] 上游代理已按旧网关规则应用 API 服务代理 proxy_url={}",
+            redact_proxy_url_for_log(proxy_url)
+        )),
+        (UpstreamProxySource::Global, Some(proxy_url)) => logger::log_info(&format!(
+            "[CodexLocalAccess][sidecar] 上游代理已按旧网关规则跟随全局代理 proxy_url={}",
+            redact_proxy_url_for_log(proxy_url)
+        )),
+        (UpstreamProxySource::SystemEnv, Some(proxy_url)) => logger::log_info(&format!(
+            "[CodexLocalAccess][sidecar] 上游代理已按旧网关规则使用环境代理 proxy_url={}",
+            redact_proxy_url_for_log(proxy_url)
+        )),
+        (UpstreamProxySource::SystemAuto, None) => logger::log_info(
+            "[CodexLocalAccess][sidecar] 上游代理已按旧网关规则回退到系统自动代理配置",
+        ),
+        _ => logger::log_warn("[CodexLocalAccess][sidecar] 上游代理状态异常"),
     }
 }
 
@@ -789,6 +826,9 @@ fn supported_codex_model_ids() -> Vec<String> {
     if seen_model_ids.insert(CODEX_IMAGE_MODEL_ID.to_string()) {
         model_ids.push(CODEX_IMAGE_MODEL_ID.to_string());
     }
+    if seen_model_ids.insert(CODEX_AUTO_REVIEW_MODEL_ID.to_string()) {
+        model_ids.push(CODEX_AUTO_REVIEW_MODEL_ID.to_string());
+    }
 
     model_ids
 }
@@ -1007,7 +1047,20 @@ fn visible_codex_model_ids_for_api_key(
 ) -> Vec<String> {
     let visible = visible_codex_model_ids_for_collection(collection, health_by_account_id);
     let filtered = apply_model_filters(visible, &api_key.allowed_models, &api_key.excluded_models);
-    add_model_prefix(filtered, api_key.model_prefix.as_deref())
+    append_codex_internal_model_ids(add_model_prefix(filtered, api_key.model_prefix.as_deref()))
+}
+
+fn is_codex_internal_model(model: &str) -> bool {
+    model
+        .trim()
+        .eq_ignore_ascii_case(CODEX_AUTO_REVIEW_MODEL_ID)
+}
+
+fn append_codex_internal_model_ids(mut model_ids: Vec<String>) -> Vec<String> {
+    if !model_ids.iter().any(|model| is_codex_internal_model(model)) {
+        model_ids.push(CODEX_AUTO_REVIEW_MODEL_ID.to_string());
+    }
+    model_ids
 }
 
 fn canonical_model_for_client_model(
@@ -1016,6 +1069,9 @@ fn canonical_model_for_client_model(
     api_key: &ResolvedLocalApiKey,
 ) -> String {
     let without_prefix = strip_model_prefix(model, api_key.model_prefix.as_deref());
+    if is_codex_internal_model(without_prefix) {
+        return CODEX_AUTO_REVIEW_MODEL_ID.to_string();
+    }
     for alias in &collection.model_aliases {
         if alias.alias.eq_ignore_ascii_case(without_prefix) {
             return alias.source_model.clone();
@@ -1032,6 +1088,9 @@ fn validate_client_model_visible(
     health_by_account_id: Option<&HashMap<String, RuntimeAccountHealth>>,
 ) -> bool {
     let without_prefix = strip_model_prefix(model, api_key.model_prefix.as_deref());
+    if is_codex_internal_model(without_prefix) || is_codex_internal_model(canonical_model) {
+        return true;
+    }
     let visible = visible_codex_model_ids_for_collection(collection, health_by_account_id);
     let visible_match = visible.iter().any(|item| {
         item.eq_ignore_ascii_case(without_prefix)
@@ -3821,6 +3880,21 @@ fn request_kind_from_db_value(value: &str) -> CodexLocalAccessRequestKind {
     }
 }
 
+fn gateway_mode_to_db_value(gateway_mode: CodexLocalAccessGatewayMode) -> &'static str {
+    match gateway_mode {
+        CodexLocalAccessGatewayMode::Legacy => "legacy",
+        CodexLocalAccessGatewayMode::Sidecar => "sidecar",
+    }
+}
+
+fn gateway_mode_from_db_value(value: &str) -> Option<CodexLocalAccessGatewayMode> {
+    match value.trim() {
+        "legacy" => Some(CodexLocalAccessGatewayMode::Legacy),
+        "sidecar" => Some(CodexLocalAccessGatewayMode::Sidecar),
+        _ => None,
+    }
+}
+
 fn bool_to_db_value(value: bool) -> i64 {
     if value {
         1
@@ -3846,6 +3920,12 @@ fn local_access_log_event_key(event: &CodexLocalAccessUsageEvent) -> String {
     feed(event.api_key_id.as_str());
     feed(event.api_key_label.as_str());
     feed(event.model_id.as_str());
+    feed(
+        event
+            .gateway_mode
+            .map(gateway_mode_to_db_value)
+            .unwrap_or_default(),
+    );
     feed(request_kind_to_db_value(event.request_kind));
     feed(if event.success { "1" } else { "0" });
     feed(event.error_category.as_str());
@@ -3918,6 +3998,7 @@ fn open_local_access_logs_db_once(path: &Path) -> Result<Connection, SqliteError
             api_key_id TEXT NOT NULL DEFAULT '',
             api_key_label TEXT NOT NULL DEFAULT '',
             model_id TEXT NOT NULL DEFAULT '',
+            gateway_mode TEXT NOT NULL DEFAULT '',
             request_kind TEXT NOT NULL DEFAULT 'other',
             success INTEGER NOT NULL DEFAULT 0,
             http_status INTEGER,
@@ -3934,34 +4015,66 @@ fn open_local_access_logs_db_once(path: &Path) -> Result<Connection, SqliteError
             output_usd_per_million REAL NOT NULL DEFAULT 0,
             cached_input_usd_per_million REAL
         );
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_timestamp
-            ON request_logs(timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_model
-            ON request_logs(model_id, timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_account
-            ON request_logs(account_id, timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_email
-            ON request_logs(email, timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_api_key
-            ON request_logs(api_key_id, timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_kind
-            ON request_logs(request_kind, timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_success
-            ON request_logs(success, timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_error
-            ON request_logs(error_category, timestamp DESC);
         "#,
     )?;
+    ensure_request_logs_column(&conn, "event_key", "event_key TEXT NOT NULL DEFAULT ''")?;
     ensure_request_logs_column(&conn, "request_id", "request_id TEXT NOT NULL DEFAULT ''")?;
+    ensure_request_logs_column(&conn, "account_id", "account_id TEXT NOT NULL DEFAULT ''")?;
+    ensure_request_logs_column(&conn, "email", "email TEXT NOT NULL DEFAULT ''")?;
+    ensure_request_logs_column(&conn, "api_key_id", "api_key_id TEXT NOT NULL DEFAULT ''")?;
+    ensure_request_logs_column(
+        &conn,
+        "api_key_label",
+        "api_key_label TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_request_logs_column(&conn, "model_id", "model_id TEXT NOT NULL DEFAULT ''")?;
+    ensure_request_logs_column(
+        &conn,
+        "gateway_mode",
+        "gateway_mode TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_request_logs_column(
+        &conn,
+        "request_kind",
+        "request_kind TEXT NOT NULL DEFAULT 'other'",
+    )?;
+    ensure_request_logs_column(&conn, "success", "success INTEGER NOT NULL DEFAULT 0")?;
     ensure_request_logs_column(&conn, "http_status", "http_status INTEGER")?;
+    ensure_request_logs_column(
+        &conn,
+        "error_category",
+        "error_category TEXT NOT NULL DEFAULT ''",
+    )?;
     ensure_request_logs_column(
         &conn,
         "error_message",
         "error_message TEXT NOT NULL DEFAULT ''",
     )?;
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_request_id ON request_logs(request_id, timestamp DESC)",
-        [],
+    ensure_request_logs_column(&conn, "latency_ms", "latency_ms INTEGER NOT NULL DEFAULT 0")?;
+    ensure_request_logs_column(
+        &conn,
+        "input_tokens",
+        "input_tokens INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_request_logs_column(
+        &conn,
+        "output_tokens",
+        "output_tokens INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_request_logs_column(
+        &conn,
+        "total_tokens",
+        "total_tokens INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_request_logs_column(
+        &conn,
+        "cached_tokens",
+        "cached_tokens INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_request_logs_column(
+        &conn,
+        "reasoning_tokens",
+        "reasoning_tokens INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_request_logs_column(
         &conn,
@@ -3982,6 +4095,30 @@ fn open_local_access_logs_db_once(path: &Path) -> Result<Connection, SqliteError
         &conn,
         "cached_input_usd_per_million",
         "cached_input_usd_per_million REAL",
+    )?;
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_timestamp
+            ON request_logs(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_model
+            ON request_logs(model_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_account
+            ON request_logs(account_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_email
+            ON request_logs(email, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_api_key
+            ON request_logs(api_key_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_gateway_mode
+            ON request_logs(gateway_mode, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_kind
+            ON request_logs(request_kind, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_success
+            ON request_logs(success, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_error
+            ON request_logs(error_category, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_request_id
+            ON request_logs(request_id, timestamp DESC);
+        "#,
     )?;
     Ok(conn)
 }
@@ -4036,6 +4173,7 @@ fn insert_local_access_usage_event(
             api_key_id,
             api_key_label,
             model_id,
+            gateway_mode,
             request_kind,
             success,
             http_status,
@@ -4051,7 +4189,7 @@ fn insert_local_access_usage_event(
             input_usd_per_million,
             output_usd_per_million,
             cached_input_usd_per_million
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
         "#,
         params![
             local_access_log_event_key(event),
@@ -4062,6 +4200,10 @@ fn insert_local_access_usage_event(
             event.api_key_id.trim(),
             event.api_key_label.trim(),
             event.model_id.trim(),
+            event
+                .gateway_mode
+                .map(gateway_mode_to_db_value)
+                .unwrap_or_default(),
             request_kind_to_db_value(event.request_kind),
             bool_to_db_value(event.success),
             event.http_status.map(|value| value as i64),
@@ -4115,6 +4257,7 @@ fn usage_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodexLocalA
     let request_kind: String = row.get("request_kind")?;
     let success: i64 = row.get("success")?;
     let http_status: Option<i64> = row.get("http_status")?;
+    let gateway_mode: String = row.get("gateway_mode")?;
     let read_u64 = |name: &str| -> rusqlite::Result<u64> {
         let value: i64 = row.get(name)?;
         Ok(value.max(0) as u64)
@@ -4127,6 +4270,7 @@ fn usage_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodexLocalA
         api_key_id: row.get("api_key_id")?,
         api_key_label: row.get("api_key_label")?,
         model_id: row.get("model_id")?,
+        gateway_mode: gateway_mode_from_db_value(gateway_mode.as_str()),
         request_kind: request_kind_from_db_value(request_kind.as_str()),
         success: success != 0,
         http_status: http_status.and_then(|value| u16::try_from(value).ok()),
@@ -4160,6 +4304,7 @@ fn load_local_access_usage_events_since(
                 api_key_id,
                 api_key_label,
                 model_id,
+                gateway_mode,
                 request_kind,
                 success,
                 http_status,
@@ -4233,6 +4378,7 @@ pub async fn query_local_access_usage_events(
     model_query: Option<String>,
     account_query: Option<String>,
     api_key_query: Option<String>,
+    gateway_mode: Option<CodexLocalAccessGatewayMode>,
     request_kind: Option<CodexLocalAccessRequestKind>,
     success: Option<bool>,
     error_category: Option<String>,
@@ -4266,6 +4412,12 @@ pub async fn query_local_access_usage_events(
     );
     if let Some(api_key_query) = normalize_log_filter(api_key_query) {
         params.push(SqlValue::Text(format!("%{}%", api_key_query)));
+    }
+    if let Some(gateway_mode) = gateway_mode {
+        clauses.push("gateway_mode = ?".to_string());
+        params.push(SqlValue::Text(
+            gateway_mode_to_db_value(gateway_mode).to_string(),
+        ));
     }
     if let Some(request_kind) = request_kind {
         clauses.push("request_kind = ?".to_string());
@@ -4332,6 +4484,7 @@ pub async fn query_local_access_usage_events(
             api_key_id,
             api_key_label,
             model_id,
+            gateway_mode,
             request_kind,
             success,
             http_status,
@@ -4402,6 +4555,7 @@ fn append_usage_event(
     api_key_id: Option<&str>,
     api_key_label: Option<&str>,
     model_id: Option<&str>,
+    gateway_mode: Option<CodexLocalAccessGatewayMode>,
     request_kind: CodexLocalAccessRequestKind,
     success: bool,
     http_status: Option<u16>,
@@ -4421,6 +4575,7 @@ fn append_usage_event(
         api_key_id: api_key_id.unwrap_or_default().trim().to_string(),
         api_key_label: api_key_label.unwrap_or_default().trim().to_string(),
         model_id: model_id.unwrap_or_default().trim().to_string(),
+        gateway_mode,
         request_kind,
         success,
         http_status,
@@ -5052,6 +5207,20 @@ struct SidecarLaunchConfig {
     config_path: PathBuf,
     manifest_path: PathBuf,
     fingerprint: String,
+    proxy_signature: UpstreamHttpClientSignature,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SidecarReadySignal {
+    host: String,
+    port: Option<u16>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SidecarStartupDiagnostics {
+    ready_seen: bool,
+    last_stdout: Option<String>,
+    last_stderr: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -5165,15 +5334,19 @@ fn sidecar_binary_candidates() -> Result<Vec<PathBuf>, String> {
         .parent()
         .ok_or_else(|| format!("当前程序路径缺少父目录: {}", exe.display()))?;
     let mut candidates = Vec::new();
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dev_sidecar_dir = manifest_dir.join("../sidecars/cockpit-cliproxy/bin");
+
+    if cfg!(debug_assertions) {
+        push_sidecar_binary_candidates(&mut candidates, &dev_sidecar_dir);
+    }
     push_sidecar_binary_candidates(&mut candidates, parent);
     if let Some(contents_dir) = parent.parent() {
         push_sidecar_binary_candidates(&mut candidates, &contents_dir.join("Resources"));
     }
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    push_sidecar_binary_candidates(
-        &mut candidates,
-        &manifest_dir.join("../sidecars/cockpit-cliproxy/bin"),
-    );
+    if !cfg!(debug_assertions) {
+        push_sidecar_binary_candidates(&mut candidates, &dev_sidecar_dir);
+    }
     Ok(candidates)
 }
 
@@ -5367,29 +5540,158 @@ fn sidecar_codex_key_config_value(
     Some(value)
 }
 
-fn sidecar_effective_proxy_url(
+fn sidecar_effective_proxy_signature(
     collection: &CodexLocalAccessCollection,
-) -> Result<Option<String>, String> {
-    if let Some(proxy_url) = collection
-        .upstream_proxy_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+) -> Result<UpstreamHttpClientSignature, String> {
+    let signature =
+        current_upstream_http_client_signature(collection.upstream_proxy_url.as_deref());
+    if let Some(proxy_url) = signature.proxy_url.as_deref() {
+        Proxy::all(proxy_url).map_err(|e| match signature.proxy_source {
+            UpstreamProxySource::ApiService => format!("API 代理地址无效: {}", e),
+            UpstreamProxySource::Global => format!("全局代理地址无效: {}", e),
+            UpstreamProxySource::SystemEnv => format!("环境代理地址无效: {}", e),
+            UpstreamProxySource::SystemAuto => format!("上游代理地址无效: {}", e),
+        })?;
+    }
+    Ok(signature)
+}
+
+fn gateway_mode_label(mode: CodexLocalAccessGatewayMode) -> &'static str {
+    gateway_mode_to_db_value(mode)
+}
+
+fn collection_gateway_mode(collection: &CodexLocalAccessCollection) -> CodexLocalAccessGatewayMode {
+    collection.gateway_mode
+}
+
+fn log_gateway_mode_info(mode: CodexLocalAccessGatewayMode, message: impl AsRef<str>) {
+    logger::log_codex_api_info(&format!(
+        "[CodexLocalAccess][{}] {}",
+        gateway_mode_label(mode),
+        message.as_ref()
+    ));
+}
+
+fn log_gateway_mode_warn(mode: CodexLocalAccessGatewayMode, message: impl AsRef<str>) {
+    logger::log_codex_api_warn(&format!(
+        "[CodexLocalAccess][{}] {}",
+        gateway_mode_label(mode),
+        message.as_ref()
+    ));
+}
+
+fn legacy_debug_log(enabled: bool, message: impl AsRef<str>) {
+    if !enabled {
+        return;
+    }
+
+    logger::log_codex_api_info(&format!(
+        "[CodexLocalAccess][legacy][debug] {}",
+        message.as_ref()
+    ));
+}
+
+fn request_kind_log_label(request_kind: CodexLocalAccessRequestKind) -> &'static str {
+    match request_kind {
+        CodexLocalAccessRequestKind::Text => "text",
+        CodexLocalAccessRequestKind::ImageGeneration => "image_generation",
+        CodexLocalAccessRequestKind::ImageEdit => "image_edit",
+        CodexLocalAccessRequestKind::Other => "other",
+    }
+}
+
+fn is_client_disconnect_error_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("broken pipe")
+        || lower.contains("connection reset")
+        || lower.contains("connection aborted")
+        || lower.contains("unexpected eof")
+        || lower.contains("客户端已断开")
+        || lower.contains("客户端在发送")
+}
+
+fn legacy_stream_error_category(message: &str) -> &'static str {
+    if message.contains("流式响应超时")
+        || (message.contains("连续") && message.contains("未收到新数据"))
     {
-        Proxy::all(proxy_url).map_err(|e| format!("API 代理地址无效: {}", e))?;
-        return Ok(Some(proxy_url.to_string()));
+        "upstream_stream_timeout"
+    } else if message.contains("读取上游") {
+        "upstream_stream_read_failed"
+    } else {
+        "stream_write_failed"
     }
+}
 
-    let config = crate::modules::config::get_user_config();
-    if config.global_proxy_enabled {
-        let proxy_url = config.global_proxy_url.trim();
-        if !proxy_url.is_empty() {
-            Proxy::all(proxy_url).map_err(|e| format!("全局代理地址无效: {}", e))?;
-            return Ok(Some(proxy_url.to_string()));
+async fn start_legacy_gateway_locked(
+    collection: &CodexLocalAccessCollection,
+) -> Result<(), String> {
+    let bind_host = bind_host_for_collection(collection).to_string();
+    let port = collection.port;
+    let listener = bind_gateway_listener(&bind_host, port)
+        .await
+        .map_err(|error| format_gateway_bind_error(&bind_host, port, &error))?;
+    let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
+    let task = tokio::spawn(async move {
+        let listener = listener;
+        loop {
+            tokio::select! {
+                changed = shutdown_receiver.changed() => {
+                    if changed.is_ok() && *shutdown_receiver.borrow() {
+                        break;
+                    }
+                    if changed.is_err() {
+                        break;
+                    }
+                }
+                accept_result = listener.accept() => {
+                    match accept_result {
+                        Ok((stream, addr)) => {
+                            tokio::spawn(async move {
+                                if let Err(error) = handle_connection(stream, addr).await {
+                                    if is_client_disconnect_error_message(&error) {
+                                        logger::log_codex_api_info(&format!(
+                                            "[CodexLocalAccess][legacy] 客户端已断开，停止写入响应: {}",
+                                            error
+                                        ));
+                                    } else {
+                                        logger::log_codex_api_warn(&format!(
+                                            "[CodexLocalAccess][legacy] 处理网关请求失败: {}",
+                                            error
+                                        ));
+                                    }
+                                }
+                            });
+                        }
+                        Err(error) => {
+                            logger::log_codex_api_warn(&format!(
+                                "[CodexLocalAccess][legacy] 网关监听 accept 失败: {}",
+                                error
+                            ));
+                            break;
+                        }
+                    }
+                }
+            }
         }
-    }
+    });
 
-    Ok(None)
+    logger::log_codex_api_info(&format!(
+        "[CodexLocalAccess][legacy] API 服务 legacy 网关已启动: bind={}:{} base={}",
+        bind_host,
+        port,
+        build_base_url(port)
+    ));
+
+    let mut runtime = gateway_runtime().lock().await;
+    runtime.running = true;
+    runtime.actual_port = Some(port);
+    runtime.actual_bind_host = Some(bind_host);
+    runtime.sidecar_config_fingerprint = None;
+    runtime.last_error = None;
+    runtime.shutdown_sender = Some(shutdown_sender);
+    runtime.task = Some(task);
+    runtime.sidecar_child = None;
+    Ok(())
 }
 
 async fn load_sidecar_account(account_id: &str) -> Option<CodexAccount> {
@@ -5417,12 +5719,11 @@ async fn prepare_sidecar_launch_config(
     std::fs::create_dir_all(&auths_dir)
         .map_err(|e| format!("创建 API 服务 sidecar 认证目录失败: {}", e))?;
 
-    let effective_proxy_url = sidecar_effective_proxy_url(collection)?;
-    let effective_proxy_url_ref = effective_proxy_url.as_deref();
+    let proxy_signature = sidecar_effective_proxy_signature(collection)?;
+    let effective_proxy_url_ref = proxy_signature.proxy_url.as_deref();
 
     let mut manifest_accounts = Vec::new();
     let mut codex_keys = Vec::new();
-    let mut oauth_account_count = 0usize;
     for account_id in &collection.account_ids {
         let Some(account) = load_sidecar_account(account_id).await else {
             logger::log_codex_api_warn(&format!(
@@ -5440,6 +5741,12 @@ async fn prepare_sidecar_launch_config(
                 sidecar_codex_key_config_value(&account, collection, effective_proxy_url_ref)
             {
                 codex_keys.push(config_value);
+                manifest_accounts.push(sidecar_account_manifest_value(&account, None));
+            } else {
+                logger::log_codex_api_warn(&format!(
+                    "[CodexLocalAccess][sidecar] 跳过缺少上游 API Key 的 API Key 账号: account_id={}",
+                    account.id
+                ));
             }
             continue;
         }
@@ -5452,14 +5759,6 @@ async fn prepare_sidecar_launch_config(
             .map_err(|e| format!("序列化 sidecar Codex OAuth 认证失败: {}", e))?;
         write_string_atomic(&auth_path, &auth_content)?;
         manifest_accounts.push(sidecar_account_manifest_value(&account, Some(&file_name)));
-        oauth_account_count += 1;
-    }
-
-    if oauth_account_count == 0 && !codex_keys.is_empty() {
-        return Err(
-            "当前 API 服务 sidecar 暂不支持纯 API Key 账号池；请至少加入一个 Codex OAuth 账号，或继续改为主网关直连 API Key 路径。"
-                .to_string(),
-        );
     }
 
     let health_snapshot = {
@@ -5483,6 +5782,7 @@ async fn prepare_sidecar_launch_config(
             "priority": rule.priority,
             "weight": rule.weight,
         })).collect::<Vec<_>>(),
+        "debugLogs": collection.debug_logs,
     });
 
     let mut config = Map::new();
@@ -5495,7 +5795,7 @@ async fn prepare_sidecar_launch_config(
         "auth-dir".to_string(),
         json!(auths_dir.to_string_lossy().to_string()),
     );
-    config.insert("debug".to_string(), json!(false));
+    config.insert("debug".to_string(), json!(collection.debug_logs));
     config.insert("request-log".to_string(), json!(false));
     config.insert("logging-to-file".to_string(), json!(false));
     config.insert("commercial-mode".to_string(), json!(true));
@@ -5575,6 +5875,7 @@ async fn prepare_sidecar_launch_config(
         config_path,
         manifest_path,
         fingerprint,
+        proxy_signature,
     })
 }
 
@@ -5776,11 +6077,70 @@ async fn record_sidecar_usage_event(event: SidecarUsageEvent) {
     }
 }
 
-async fn handle_sidecar_stdout_line(line: &str) {
+type SharedSidecarStartupDiagnostics = Arc<Mutex<SidecarStartupDiagnostics>>;
+
+fn update_sidecar_stdout_diagnostics(
+    diagnostics: &SharedSidecarStartupDiagnostics,
+    line: &str,
+    ready_seen: bool,
+) {
+    if let Ok(mut diagnostics) = diagnostics.lock() {
+        diagnostics.last_stdout = clean_diagnostic_text(line);
+        if ready_seen {
+            diagnostics.ready_seen = true;
+        }
+    }
+}
+
+fn update_sidecar_stderr_diagnostics(diagnostics: &SharedSidecarStartupDiagnostics, line: &str) {
+    if let Ok(mut diagnostics) = diagnostics.lock() {
+        diagnostics.last_stderr = clean_diagnostic_text(line);
+    }
+}
+
+fn sidecar_startup_diagnostics_text(diagnostics: &SharedSidecarStartupDiagnostics) -> String {
+    let diagnostics = diagnostics.lock().ok().map(|item| item.clone());
+    let Some(diagnostics) = diagnostics else {
+        return "startup_diagnostics_unavailable".to_string();
+    };
+    format!(
+        "ready_seen={}, last_stdout={}, last_stderr={}",
+        diagnostics.ready_seen,
+        diagnostics
+            .last_stdout
+            .as_deref()
+            .unwrap_or("未捕获 stdout"),
+        diagnostics
+            .last_stderr
+            .as_deref()
+            .unwrap_or("未捕获 stderr")
+    )
+}
+
+fn sidecar_ready_signal_from_value(value: &Value) -> SidecarReadySignal {
+    let port = value
+        .get("port")
+        .and_then(Value::as_u64)
+        .and_then(|port| u16::try_from(port).ok());
+    let host = value
+        .get("host")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    SidecarReadySignal { host, port }
+}
+
+async fn handle_sidecar_stdout_line(
+    line: &str,
+    ready_sender: &mut Option<oneshot::Sender<SidecarReadySignal>>,
+    diagnostics: &SharedSidecarStartupDiagnostics,
+) {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return;
     }
+    update_sidecar_stdout_diagnostics(diagnostics, trimmed, false);
     let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
         logger::log_codex_api_info(&format!("[CodexLocalAccess][sidecar] {}", trimmed));
         return;
@@ -5808,6 +6168,10 @@ async fn handle_sidecar_stdout_line(line: &str) {
             logger::log_codex_api_info(&format!("[CodexLocalAccess][sidecar] {}", trimmed));
         }
         "ready" => {
+            update_sidecar_stdout_diagnostics(diagnostics, trimmed, true);
+            if let Some(sender) = ready_sender.take() {
+                let _ = sender.send(sidecar_ready_signal_from_value(&value));
+            }
             logger::log_codex_api_info(&format!("[CodexLocalAccess] sidecar 已就绪: {}", trimmed));
         }
         "error" => {
@@ -5828,11 +6192,18 @@ async fn handle_sidecar_stdout_line(line: &str) {
     }
 }
 
-async fn drain_sidecar_stdout(stdout: tokio::process::ChildStdout) {
+async fn drain_sidecar_stdout(
+    stdout: tokio::process::ChildStdout,
+    ready_sender: oneshot::Sender<SidecarReadySignal>,
+    diagnostics: SharedSidecarStartupDiagnostics,
+) {
     let mut lines = BufReader::new(stdout).lines();
+    let mut ready_sender = Some(ready_sender);
     loop {
         match lines.next_line().await {
-            Ok(Some(line)) => handle_sidecar_stdout_line(&line).await,
+            Ok(Some(line)) => {
+                handle_sidecar_stdout_line(&line, &mut ready_sender, &diagnostics).await
+            }
             Ok(None) => break,
             Err(error) => {
                 logger::log_codex_api_warn(&format!(
@@ -5845,13 +6216,17 @@ async fn drain_sidecar_stdout(stdout: tokio::process::ChildStdout) {
     }
 }
 
-async fn drain_sidecar_stderr(stderr: tokio::process::ChildStderr) {
+async fn drain_sidecar_stderr(
+    stderr: tokio::process::ChildStderr,
+    diagnostics: SharedSidecarStartupDiagnostics,
+) {
     let mut lines = BufReader::new(stderr).lines();
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
+                    update_sidecar_stderr_diagnostics(&diagnostics, trimmed);
                     logger::log_codex_api_warn(&format!("[CodexLocalAccess][sidecar] {}", trimmed));
                 }
             }
@@ -5867,22 +6242,38 @@ async fn drain_sidecar_stderr(stderr: tokio::process::ChildStderr) {
     }
 }
 
-async fn wait_for_sidecar_ready(collection: &CodexLocalAccessCollection) -> Result<(), String> {
+async fn wait_for_sidecar_ready(
+    ready_receiver: &mut oneshot::Receiver<SidecarReadySignal>,
+    child: &mut Child,
+) -> Result<SidecarReadySignal, String> {
     let started_at = Instant::now();
-    let mut last_error = None;
-    while started_at.elapsed() < SIDECAR_READY_TIMEOUT {
-        match probe_sidecar_ready_once(collection, Duration::from_millis(800)).await {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                last_error = Some(error);
+
+    loop {
+        let Some(remaining) = SIDECAR_READY_TIMEOUT.checked_sub(started_at.elapsed()) else {
+            return Err("API 服务 sidecar 启动后未收到 ready 事件".to_string());
+        };
+        if remaining.is_zero() {
+            return Err("API 服务 sidecar 启动后未收到 ready 事件".to_string());
+        }
+
+        let poll_interval = remaining.min(Duration::from_millis(120));
+        tokio::select! {
+            result = &mut *ready_receiver => {
+                return result.map_err(|_| "API 服务 sidecar stdout 在 ready 前关闭".to_string());
+            }
+            _ = tokio::time::sleep(poll_interval) => {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        return Err(format!("API 服务 sidecar 在 ready 前退出: {}", status));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        return Err(format!("检查 API 服务 sidecar ready 状态失败: {}", error));
+                    }
+                }
             }
         }
-        tokio::time::sleep(Duration::from_millis(120)).await;
     }
-    Err(format!(
-        "API 服务 sidecar 启动后健康检测超时: {}",
-        last_error.unwrap_or_else(|| "未返回响应".to_string())
-    ))
 }
 
 async fn probe_sidecar_ready_once(
@@ -5893,10 +6284,7 @@ async fn probe_sidecar_ready_once(
         "http://{}:{}/v1/models",
         CODEX_LOCAL_ACCESS_URL_HOST, collection.port
     );
-    let client = Client::builder()
-        .timeout(request_timeout)
-        .build()
-        .map_err(|e| format!("创建 sidecar 健康检测客户端失败: {}", e))?;
+    let client = build_localhost_http_client(request_timeout, "sidecar 健康检测")?;
     match client
         .get(&url)
         .bearer_auth(collection.api_key.trim())
@@ -7109,13 +7497,6 @@ fn is_free_plan_type(plan_type: Option<&str>) -> bool {
 }
 
 fn is_local_access_eligible_account(account: &CodexAccount, restrict_free_accounts: bool) -> bool {
-    if account.is_api_key_auth() {
-        return account
-            .openai_api_key
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|api_key| !api_key.is_empty());
-    }
     if restrict_free_accounts && is_free_plan_type(account.plan_type.as_deref()) {
         return false;
     }
@@ -7289,6 +7670,7 @@ async fn ensure_runtime_loaded_without_start() -> Result<(), String> {
             api_keys: Vec::new(),
             access_scope: CodexLocalAccessScope::Localhost,
             image_generation_mode: CodexLocalAccessImageGenerationMode::default(),
+            gateway_mode: CodexLocalAccessGatewayMode::default(),
             upstream_proxy_url: None,
             routing_strategy: CodexLocalAccessRoutingStrategy::default(),
             custom_routing_rules: Vec::new(),
@@ -7301,6 +7683,7 @@ async fn ensure_runtime_loaded_without_start() -> Result<(), String> {
             max_retry_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
             disable_cooling: false,
             restrict_free_accounts: true,
+            debug_logs: true,
             bound_oauth_account_id: None,
             account_ids: Vec::new(),
             created_at: now_ms(),
@@ -7383,7 +7766,7 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
                 match child.try_wait() {
                     Ok(Some(status)) => {
                         let message = format!("API 服务 sidecar 已退出: {}", status);
-                        logger::log_codex_api_warn(&format!("[CodexLocalAccess] {}", message));
+                        log_gateway_mode_warn(CodexLocalAccessGatewayMode::Sidecar, &message);
                         runtime.running = false;
                         runtime.actual_port = None;
                         runtime.actual_bind_host = None;
@@ -7394,7 +7777,7 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
                     Ok(None) => {}
                     Err(error) => {
                         let message = format!("检查 API 服务 sidecar 状态失败: {}", error);
-                        logger::log_codex_api_warn(&format!("[CodexLocalAccess] {}", message));
+                        log_gateway_mode_warn(CodexLocalAccessGatewayMode::Sidecar, &message);
                         runtime.running = false;
                         runtime.actual_port = None;
                         runtime.actual_bind_host = None;
@@ -7434,8 +7817,38 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
         return Ok(());
     }
 
-    let launch_config = prepare_sidecar_launch_config(&collection).await?;
     let bind_host = bind_host_for_collection(&collection);
+    let mode = collection_gateway_mode(&collection);
+    if mode == CodexLocalAccessGatewayMode::Legacy {
+        if running
+            && actual_port == Some(collection.port)
+            && actual_bind_host.as_deref() == Some(bind_host)
+            && actual_fingerprint.is_none()
+        {
+            return Ok(());
+        }
+        if running {
+            log_gateway_mode_info(
+                CodexLocalAccessGatewayMode::Legacy,
+                format!(
+                    "API 服务网关配置已变化，准备重启: mode=legacy port={}->{} bind={}->{}",
+                    actual_port
+                        .map(|port| port.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
+                    collection.port,
+                    actual_bind_host.as_deref().unwrap_or("-"),
+                    bind_host,
+                ),
+            );
+        }
+        let stopped_endpoint = stop_gateway_locked().await;
+        if let Some(endpoint) = stopped_endpoint {
+            wait_for_gateway_port_release(&endpoint.bind_host, endpoint.port).await?;
+        }
+        return start_legacy_gateway_locked(&collection).await;
+    }
+
+    let launch_config = prepare_sidecar_launch_config(&collection).await?;
     if running
         && actual_port == Some(collection.port)
         && actual_bind_host.as_deref() == Some(bind_host)
@@ -7444,16 +7857,19 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
         return Ok(());
     }
     if running {
-        logger::log_codex_api_info(&format!(
-            "[CodexLocalAccess] API 服务 sidecar 配置已变化，准备重启: port={}->{} bind={}->{} config_changed={}",
-            actual_port
-                .map(|port| port.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            collection.port,
-            actual_bind_host.as_deref().unwrap_or("-"),
-            bind_host,
-            actual_fingerprint.as_deref() != Some(launch_config.fingerprint.as_str())
-        ));
+        log_gateway_mode_info(
+            CodexLocalAccessGatewayMode::Sidecar,
+            format!(
+                "API 服务网关配置已变化，准备重启: mode=sidecar port={}->{} bind={}->{} config_changed={}",
+                actual_port
+                    .map(|port| port.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                collection.port,
+                actual_bind_host.as_deref().unwrap_or("-"),
+                bind_host,
+                actual_fingerprint.as_deref() != Some(launch_config.fingerprint.as_str())
+            ),
+        );
     }
 
     let stopped_endpoint = stop_gateway_locked().await;
@@ -7467,10 +7883,13 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
     {
         match process::kill_port_processes(collection.port) {
             Ok(count) if count > 0 => {
-                logger::log_codex_api_info(&format!(
-                    "[CodexLocalAccess] 已停止旧 API 服务 sidecar 以加载新配置: port={}, killed={}",
-                    collection.port, count
-                ));
+                log_gateway_mode_info(
+                    CodexLocalAccessGatewayMode::Sidecar,
+                    format!(
+                        "已停止旧 API 服务 sidecar 以加载新配置: port={}, killed={}",
+                        collection.port, count
+                    ),
+                );
             }
             Ok(_) => {}
             Err(error) => {
@@ -7538,9 +7957,21 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+    let (ready_sender, mut ready_receiver) = oneshot::channel();
+    let startup_diagnostics = Arc::new(Mutex::new(SidecarStartupDiagnostics::default()));
+    let task_startup_diagnostics = Arc::clone(&startup_diagnostics);
     let task = tokio::spawn(async move {
-        let stdout_task = stdout.map(|stdout| tokio::spawn(drain_sidecar_stdout(stdout)));
-        let stderr_task = stderr.map(|stderr| tokio::spawn(drain_sidecar_stderr(stderr)));
+        let stdout_diagnostics = Arc::clone(&task_startup_diagnostics);
+        let stderr_diagnostics = Arc::clone(&task_startup_diagnostics);
+        let stdout_task = stdout.map(|stdout| {
+            tokio::spawn(drain_sidecar_stdout(
+                stdout,
+                ready_sender,
+                stdout_diagnostics,
+            ))
+        });
+        let stderr_task =
+            stderr.map(|stderr| tokio::spawn(drain_sidecar_stderr(stderr, stderr_diagnostics)));
         if let Some(task) = stdout_task {
             let _ = task.await;
         }
@@ -7549,7 +7980,57 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
         }
     });
 
-    if let Err(error) = wait_for_sidecar_ready(&collection).await {
+    let ready_signal = match wait_for_sidecar_ready(&mut ready_receiver, &mut child).await {
+        Ok(signal) => signal,
+        Err(error) => {
+            let diagnostics = sidecar_startup_diagnostics_text(&startup_diagnostics);
+            let message = format!("{}; {}", error, diagnostics);
+            logger::log_codex_api_warn(&format!(
+                "[CodexLocalAccess][sidecar] sidecar ready 等待失败，将停止进程: {}",
+                message
+            ));
+            let _ = child.kill().await;
+            task.abort();
+            let _ = task.await;
+            let mut runtime = gateway_runtime().lock().await;
+            runtime.running = false;
+            runtime.actual_port = None;
+            runtime.actual_bind_host = None;
+            runtime.sidecar_config_fingerprint = None;
+            runtime.last_error = Some(message.clone());
+            return Err(message);
+        }
+    };
+    if let Some(ready_port) = ready_signal.port {
+        if ready_port != collection.port {
+            let message = format!(
+                "API 服务 sidecar ready 端口不一致: expected={}, actual={}, host={}",
+                collection.port, ready_port, ready_signal.host
+            );
+            logger::log_codex_api_warn(&format!(
+                "[CodexLocalAccess][sidecar] sidecar ready 校验失败，将停止进程: {}",
+                message
+            ));
+            let _ = child.kill().await;
+            task.abort();
+            let _ = task.await;
+            let mut runtime = gateway_runtime().lock().await;
+            runtime.running = false;
+            runtime.actual_port = None;
+            runtime.actual_bind_host = None;
+            runtime.sidecar_config_fingerprint = None;
+            runtime.last_error = Some(message.clone());
+            return Err(message);
+        }
+    } else {
+        let message = format!(
+            "API 服务 sidecar ready 事件缺少端口: host={}",
+            ready_signal.host
+        );
+        logger::log_codex_api_warn(&format!(
+            "[CodexLocalAccess][sidecar] sidecar ready 校验失败，将停止进程: {}",
+            message
+        ));
         let _ = child.kill().await;
         task.abort();
         let _ = task.await;
@@ -7558,14 +8039,15 @@ async fn ensure_gateway_matches_runtime_locked() -> Result<(), String> {
         runtime.actual_port = None;
         runtime.actual_bind_host = None;
         runtime.sidecar_config_fingerprint = None;
-        runtime.last_error = Some(error.clone());
-        return Err(error);
+        runtime.last_error = Some(message.clone());
+        return Err(message);
     }
 
     let port = collection.port;
     let bind_host = bind_host.to_string();
+    log_sidecar_proxy_signature(&launch_config.proxy_signature);
     logger::log_codex_api_info(&format!(
-        "[CodexLocalAccess] API 服务 sidecar 已启动: bin={} bind={}:{} base={}",
+        "[CodexLocalAccess][sidecar] API 服务 sidecar 已启动: bin={} bind={}:{} base={}",
         binary.display(),
         bind_host,
         port,
@@ -7991,6 +8473,7 @@ async fn record_request_stats_with_meta(
         let usage_ref = usage.as_ref();
         let pricing = resolve_model_pricing(runtime.collection.as_ref(), model_id);
         let estimated_cost_usd = calculate_usage_cost_usd(usage_ref, pricing.as_ref());
+        let gateway_mode = runtime.collection.as_ref().map(collection_gateway_mode);
         if runtime.stats.since <= 0 {
             runtime.stats.since = now;
         }
@@ -8048,6 +8531,7 @@ async fn record_request_stats_with_meta(
             api_key_id,
             api_key_label,
             model_id,
+            gateway_mode,
             request_kind,
             success,
             meta.http_status,
@@ -8278,11 +8762,7 @@ async fn probe_local_access_gateway(
     model_id: &str,
 ) -> LocalAccessGatewayProbeResult {
     let url = format!("{}/v1/responses", base_url.trim_end_matches('/'));
-    let client = match Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(90))
-        .build()
-    {
+    let client = match build_localhost_http_client(Duration::from_secs(90), "本地网关诊断") {
         Ok(client) => client,
         Err(error) => {
             return LocalAccessGatewayProbeResult::Failed(LocalAccessGatewayProbeFailure {
@@ -8365,6 +8845,37 @@ fn format_cli_failure_output(
         lines.push(format!("last_message:\n{}", last_message));
     }
     clean_diagnostic_text(lines.join("\n\n"))
+}
+
+fn cli_error_indicates_local_proxy_interception(
+    error: &codex_wakeup::CodexWakeupCliConversationDetailedError,
+) -> bool {
+    let mut text = error.message.clone();
+    if let Some(value) = error.stdout.as_deref() {
+        text.push('\n');
+        text.push_str(value);
+    }
+    if let Some(value) = error.stderr.as_deref() {
+        text.push('\n');
+        text.push_str(value);
+    }
+    if let Some(value) = error.last_message.as_deref() {
+        text.push('\n');
+        text.push_str(value);
+    }
+
+    let lower = text.to_ascii_lowercase();
+    let mentions_loopback =
+        lower.contains("127.0.0.1") || lower.contains("localhost") || lower.contains("::1");
+    let mentions_proxy = lower.contains("proxy(")
+        || lower.contains(" intercepts ")
+        || lower.contains("proxy_url")
+        || lower.contains("proxy-url")
+        || lower.contains("bad gateway")
+        || lower.contains("status=502")
+        || lower.contains("http 502");
+
+    mentions_loopback && mentions_proxy
 }
 
 fn is_quota_or_rate_limit_message(status: Option<u16>, message: &str) -> bool {
@@ -8481,6 +8992,25 @@ fn build_cli_environment_failure(
     cli_error: codex_wakeup::CodexWakeupCliConversationDetailedError,
     gateway_passed: bool,
 ) -> CodexLocalAccessTestFailure {
+    if gateway_passed && cli_error_indicates_local_proxy_interception(&cli_error) {
+        return CodexLocalAccessTestFailure {
+            title: "本机 API 请求被代理拦截".to_string(),
+            stage: "Codex CLI 本机连接".to_string(),
+            cause: format!(
+                "本地网关直接诊断已通过，但 Codex CLI 访问 127.0.0.1/localhost 时被代理接管：{}",
+                cli_error.message
+            ),
+            suggestion:
+                "将 127.0.0.1、127.0.0.0/8、localhost、::1 加入代理工具直连规则，并确认 Codex 启动环境包含 NO_PROXY/no_proxy。"
+                    .to_string(),
+            status: None,
+            model_id: Some(model_id.to_string()),
+            detail: None,
+            cli_output: format_cli_failure_output(&cli_error),
+            gateway_output: None,
+        };
+    }
+
     CodexLocalAccessTestFailure {
         title: "Codex CLI 执行环境异常".to_string(),
         stage: "Codex CLI".to_string(),
@@ -8677,6 +9207,7 @@ pub async fn save_local_access_accounts(
                 api_keys: Vec::new(),
                 access_scope: CodexLocalAccessScope::Localhost,
                 image_generation_mode: CodexLocalAccessImageGenerationMode::default(),
+                gateway_mode: CodexLocalAccessGatewayMode::default(),
                 upstream_proxy_url: None,
                 routing_strategy: CodexLocalAccessRoutingStrategy::default(),
                 custom_routing_rules: Vec::new(),
@@ -8689,6 +9220,7 @@ pub async fn save_local_access_accounts(
                 max_retry_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
                 disable_cooling: false,
                 restrict_free_accounts: true,
+                debug_logs: true,
                 bound_oauth_account_id: None,
                 account_ids: Vec::new(),
                 created_at: now_ms(),
@@ -8904,6 +9436,68 @@ pub async fn update_local_access_upstream_proxy_config(
     }
 
     collection.upstream_proxy_url = normalized_upstream_proxy_url;
+    collection.updated_at = now_ms();
+    save_collection_to_disk(&collection)?;
+
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        sync_runtime_collection(&mut runtime, collection);
+    }
+
+    ensure_gateway_matches_runtime().await?;
+    snapshot_state().await
+}
+
+pub async fn update_local_access_gateway_mode(
+    gateway_mode: CodexLocalAccessGatewayMode,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded().await?;
+
+    let maybe_collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime.collection.clone()
+    };
+
+    let Some(mut collection) = maybe_collection else {
+        return Err("本地接入集合尚未创建".to_string());
+    };
+
+    if collection.gateway_mode == gateway_mode {
+        return snapshot_state().await;
+    }
+
+    collection.gateway_mode = gateway_mode;
+    collection.updated_at = now_ms();
+    save_collection_to_disk(&collection)?;
+
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        sync_runtime_collection(&mut runtime, collection);
+    }
+
+    ensure_gateway_matches_runtime().await?;
+    snapshot_state().await
+}
+
+pub async fn update_local_access_debug_logs(
+    debug_logs: bool,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded().await?;
+
+    let maybe_collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime.collection.clone()
+    };
+
+    let Some(mut collection) = maybe_collection else {
+        return Err("本地接入集合尚未创建".to_string());
+    };
+
+    if collection.debug_logs == debug_logs {
+        return snapshot_state().await;
+    }
+
+    collection.debug_logs = debug_logs;
     collection.updated_at = now_ms();
     save_collection_to_disk(&collection)?;
 
@@ -10947,6 +11541,9 @@ async fn write_chat_completions_compatible_response(
     stream_mode: bool,
     requested_model: &str,
     original_request_body: &[u8],
+    debug_logs: bool,
+    request: &ParsedRequest,
+    started_at: Instant,
 ) -> Result<ResponseCapture, String> {
     let status = upstream.status();
     let status_text = status.canonical_reason().unwrap_or("OK");
@@ -10965,8 +11562,66 @@ async fn write_chat_completions_compatible_response(
         let mut transformer =
             ChatCompletionStreamTransformer::new(original_request_body, requested_model);
         let mut body_stream = upstream.bytes_stream();
-        while let Some(chunk_result) = body_stream.next().await {
+        let stream_started_at = Instant::now();
+        let mut first_chunk_logged = false;
+        loop {
+            if stream_started_at.elapsed() > UPSTREAM_STREAM_TOTAL_TIMEOUT {
+                let message = format!(
+                    "读取上游流式响应超时: 总时长超过 {} 秒",
+                    UPSTREAM_STREAM_TOTAL_TIMEOUT.as_secs()
+                );
+                legacy_debug_log(
+                    debug_logs,
+                    format!(
+                        "stream_total_timeout method={} target={} latency_ms={} detail={}",
+                        request.method,
+                        request.target,
+                        started_at.elapsed().as_millis(),
+                        message
+                    ),
+                );
+                return Err(message);
+            }
+
+            let next_chunk = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, body_stream.next())
+                .await
+                .map_err(|_| {
+                    let message = format!(
+                        "读取上游流式响应超时: 连续 {} 秒未收到新数据",
+                        UPSTREAM_STREAM_IDLE_TIMEOUT.as_secs()
+                    );
+                    legacy_debug_log(
+                        debug_logs,
+                        format!(
+                            "stream_idle_timeout method={} target={} latency_ms={} detail={}",
+                            request.method,
+                            request.target,
+                            started_at.elapsed().as_millis(),
+                            message
+                        ),
+                    );
+                    message
+                })?;
+            let Some(chunk_result) = next_chunk else {
+                break;
+            };
             let chunk = chunk_result.map_err(|e| format!("读取上游响应失败: {}", e))?;
+            if chunk.is_empty() {
+                continue;
+            }
+            if !first_chunk_logged {
+                first_chunk_logged = true;
+                legacy_debug_log(
+                    debug_logs,
+                    format!(
+                        "stream_first_chunk method={} target={} latency_ms={} bytes={}",
+                        request.method,
+                        request.target,
+                        started_at.elapsed().as_millis(),
+                        chunk.len()
+                    ),
+                );
+            }
             let transformed = transformer.feed(&chunk);
             write_chunked_response_chunk(stream, &transformed).await?;
         }
@@ -10974,6 +11629,16 @@ async fn write_chat_completions_compatible_response(
         let (tail, response_capture) = transformer.finish();
         write_chunked_response_chunk(stream, &tail).await?;
         finish_chunked_response(stream).await?;
+        legacy_debug_log(
+            debug_logs,
+            format!(
+                "stream_completed method={} target={} status={} latency_ms={}",
+                request.method,
+                request.target,
+                status.as_u16(),
+                started_at.elapsed().as_millis()
+            ),
+        );
         return Ok(response_capture);
     }
 
@@ -11009,6 +11674,9 @@ async fn write_images_compatible_response(
     stream_mode: bool,
     response_format: &str,
     stream_prefix: &str,
+    debug_logs: bool,
+    request: &ParsedRequest,
+    started_at: Instant,
 ) -> Result<ResponseCapture, String> {
     let status = upstream.status();
     let status_text = status.canonical_reason().unwrap_or("OK");
@@ -11026,8 +11694,66 @@ async fn write_images_compatible_response(
 
         let mut transformer = ImageStreamTransformer::new(response_format, stream_prefix);
         let mut body_stream = upstream.bytes_stream();
-        while let Some(chunk_result) = body_stream.next().await {
+        let stream_started_at = Instant::now();
+        let mut first_chunk_logged = false;
+        loop {
+            if stream_started_at.elapsed() > UPSTREAM_STREAM_TOTAL_TIMEOUT {
+                let message = format!(
+                    "读取上游流式响应超时: 总时长超过 {} 秒",
+                    UPSTREAM_STREAM_TOTAL_TIMEOUT.as_secs()
+                );
+                legacy_debug_log(
+                    debug_logs,
+                    format!(
+                        "stream_total_timeout method={} target={} latency_ms={} detail={}",
+                        request.method,
+                        request.target,
+                        started_at.elapsed().as_millis(),
+                        message
+                    ),
+                );
+                return Err(message);
+            }
+
+            let next_chunk = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, body_stream.next())
+                .await
+                .map_err(|_| {
+                    let message = format!(
+                        "读取上游流式响应超时: 连续 {} 秒未收到新数据",
+                        UPSTREAM_STREAM_IDLE_TIMEOUT.as_secs()
+                    );
+                    legacy_debug_log(
+                        debug_logs,
+                        format!(
+                            "stream_idle_timeout method={} target={} latency_ms={} detail={}",
+                            request.method,
+                            request.target,
+                            started_at.elapsed().as_millis(),
+                            message
+                        ),
+                    );
+                    message
+                })?;
+            let Some(chunk_result) = next_chunk else {
+                break;
+            };
             let chunk = chunk_result.map_err(|e| format!("读取上游图片响应失败: {}", e))?;
+            if chunk.is_empty() {
+                continue;
+            }
+            if !first_chunk_logged {
+                first_chunk_logged = true;
+                legacy_debug_log(
+                    debug_logs,
+                    format!(
+                        "stream_first_chunk method={} target={} latency_ms={} bytes={}",
+                        request.method,
+                        request.target,
+                        started_at.elapsed().as_millis(),
+                        chunk.len()
+                    ),
+                );
+            }
             let transformed = transformer.feed(&chunk);
             write_chunked_response_chunk(stream, &transformed).await?;
         }
@@ -11035,6 +11761,16 @@ async fn write_images_compatible_response(
         let (tail, response_capture) = transformer.finish();
         write_chunked_response_chunk(stream, &tail).await?;
         finish_chunked_response(stream).await?;
+        legacy_debug_log(
+            debug_logs,
+            format!(
+                "stream_completed method={} target={} status={} latency_ms={}",
+                request.method,
+                request.target,
+                status.as_u16(),
+                started_at.elapsed().as_millis()
+            ),
+        );
         return Ok(response_capture);
     }
 
@@ -11067,10 +11803,21 @@ async fn write_gateway_response(
     stream: &mut TcpStream,
     upstream: reqwest::Response,
     response_adapter: GatewayResponseAdapter,
+    debug_logs: bool,
+    request: &ParsedRequest,
+    started_at: Instant,
 ) -> Result<ResponseCapture, String> {
     match response_adapter {
         GatewayResponseAdapter::Passthrough { request_is_stream } => {
-            write_upstream_response(stream, upstream, request_is_stream).await
+            write_upstream_response(
+                stream,
+                upstream,
+                request_is_stream,
+                debug_logs,
+                request,
+                started_at,
+            )
+            .await
         }
         GatewayResponseAdapter::ChatCompletions {
             stream: stream_mode,
@@ -11083,6 +11830,9 @@ async fn write_gateway_response(
                 stream_mode,
                 requested_model.as_str(),
                 original_request_body.as_slice(),
+                debug_logs,
+                request,
+                started_at,
             )
             .await
         }
@@ -11097,6 +11847,9 @@ async fn write_gateway_response(
                 stream_mode,
                 response_format.as_str(),
                 stream_prefix.as_str(),
+                debug_logs,
+                request,
+                started_at,
             )
             .await
         }
@@ -11107,6 +11860,9 @@ async fn write_upstream_response(
     stream: &mut TcpStream,
     upstream: reqwest::Response,
     request_is_stream: bool,
+    debug_logs: bool,
+    request: &ParsedRequest,
+    started_at: Instant,
 ) -> Result<ResponseCapture, String> {
     let status = upstream.status();
     let status_text = status.canonical_reason().unwrap_or("OK");
@@ -11120,17 +11876,82 @@ async fn write_upstream_response(
 
     let mut usage_collector = ResponseUsageCollector::new(is_stream);
     let mut body_stream = upstream.bytes_stream();
-    while let Some(chunk_result) = body_stream.next().await {
+    let stream_started_at = Instant::now();
+    let mut first_chunk_logged = false;
+    loop {
+        if stream_started_at.elapsed() > UPSTREAM_STREAM_TOTAL_TIMEOUT {
+            let message = format!(
+                "读取上游流式响应超时: 总时长超过 {} 秒",
+                UPSTREAM_STREAM_TOTAL_TIMEOUT.as_secs()
+            );
+            legacy_debug_log(
+                debug_logs && is_stream,
+                format!(
+                    "stream_total_timeout method={} target={} latency_ms={} detail={}",
+                    request.method,
+                    request.target,
+                    started_at.elapsed().as_millis(),
+                    message
+                ),
+            );
+            return Err(message);
+        }
+        let next_chunk = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, body_stream.next())
+            .await
+            .map_err(|_| {
+                let message = format!(
+                    "读取上游流式响应超时: 连续 {} 秒未收到新数据",
+                    UPSTREAM_STREAM_IDLE_TIMEOUT.as_secs()
+                );
+                legacy_debug_log(
+                    debug_logs && is_stream,
+                    format!(
+                        "stream_idle_timeout method={} target={} latency_ms={} detail={}",
+                        request.method,
+                        request.target,
+                        started_at.elapsed().as_millis(),
+                        message
+                    ),
+                );
+                message
+            })?;
+        let Some(chunk_result) = next_chunk else {
+            break;
+        };
         let chunk = chunk_result.map_err(|e| format!("读取上游响应失败: {}", e))?;
         if chunk.is_empty() {
             continue;
+        }
+        if is_stream && !first_chunk_logged {
+            first_chunk_logged = true;
+            legacy_debug_log(
+                debug_logs,
+                format!(
+                    "stream_first_chunk method={} target={} latency_ms={} bytes={}",
+                    request.method,
+                    request.target,
+                    started_at.elapsed().as_millis(),
+                    chunk.len()
+                ),
+            );
         }
         write_chunked_response_chunk(stream, &chunk).await?;
         usage_collector.feed(&chunk);
     }
 
     finish_chunked_response(stream).await?;
-    Ok(usage_collector.finish())
+    let response_capture = usage_collector.finish();
+    legacy_debug_log(
+        debug_logs && is_stream,
+        format!(
+            "stream_completed method={} target={} status={} latency_ms={}",
+            request.method,
+            request.target,
+            status.as_u16(),
+            started_at.elapsed().as_millis()
+        ),
+    );
+    Ok(response_capture)
 }
 
 async fn force_refresh_gateway_account(account_id: &str) -> Result<CodexAccount, String> {
@@ -11477,9 +12298,35 @@ async fn proxy_request_with_account_pool(
 
             last_account_id = Some(account.id.clone());
             last_account_email = Some(account.email.clone());
+            legacy_debug_log(
+                collection.debug_logs,
+                format!(
+                    "account_selected method={} target={} request_kind={} account_id={} account_email={} attempt={}/{}",
+                    request.method,
+                    request.target,
+                    request_kind_log_label(request_kind),
+                    account.id,
+                    account.email,
+                    attempts,
+                    max_credential_attempts
+                ),
+            );
 
             let mut single_account_status_retry_attempt = 0usize;
             loop {
+                let upstream_send_started_at = Instant::now();
+                legacy_debug_log(
+                    collection.debug_logs,
+                    format!(
+                        "upstream_send_started method={} target={} request_kind={} account_id={} account_email={} retry_attempt={}",
+                        request.method,
+                        request.target,
+                        request_kind_log_label(request_kind),
+                        account.id,
+                        account.email,
+                        single_account_status_retry_attempt
+                    ),
+                );
                 let first_response = send_upstream_request(
                     &request.method,
                     &upstream_target,
@@ -11493,8 +12340,34 @@ async fn proxy_request_with_account_pool(
                 .await;
 
                 let mut response = match first_response {
-                    Ok(response) => response,
+                    Ok(response) => {
+                        legacy_debug_log(
+                            collection.debug_logs,
+                            format!(
+                                "upstream_response_headers method={} target={} status={} account_id={} account_email={} upstream_latency_ms={}",
+                                request.method,
+                                request.target,
+                                response.status().as_u16(),
+                                account.id,
+                                account.email,
+                                upstream_send_started_at.elapsed().as_millis()
+                            ),
+                        );
+                        response
+                    }
                     Err(err) => {
+                        legacy_debug_log(
+                            collection.debug_logs,
+                            format!(
+                                "upstream_send_failed method={} target={} account_id={} account_email={} upstream_latency_ms={} detail={}",
+                                request.method,
+                                request.target,
+                                account.id,
+                                account.email,
+                                upstream_send_started_at.elapsed().as_millis(),
+                                escape_failure_detail(&err)
+                            ),
+                        );
                         last_status = StatusCode::BAD_GATEWAY.as_u16();
                         mark_account_failure(
                             &account,
@@ -12741,9 +13614,24 @@ async fn bridge_websocket_streams(
     let (mut upstream_write, mut upstream_read) = upstream.split();
     let mut capture = ResponseCapture::default();
     let mut upstream_error = None;
+    let mut heartbeat = tokio::time::interval_at(
+        tokio::time::Instant::now() + CODEX_WEBSOCKET_HEARTBEAT_INTERVAL,
+        CODEX_WEBSOCKET_HEARTBEAT_INTERVAL,
+    );
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
+            _ = heartbeat.tick() => {
+                upstream_write
+                    .send(Message::Ping(Vec::new().into()))
+                    .await
+                    .map_err(|e| format!("发送 Codex 上游 WebSocket 心跳失败: {}", e))?;
+                upstream_write
+                    .flush()
+                    .await
+                    .map_err(|e| format!("刷新 Codex 上游 WebSocket 心跳失败: {}", e))?;
+            }
             downstream_next = timeout(CODEX_WEBSOCKET_IDLE_TIMEOUT, downstream_read.next()) => {
                 let downstream_next = downstream_next
                     .map_err(|_| "WebSocket 客户端空闲超时".to_string())?;
@@ -13301,6 +14189,19 @@ async fn handle_connection(
     apply_codex_official_headers(&mut prepared_request);
     let stats_context =
         build_request_stats_context(&prepared_request, &response_adapter, &resolved_api_key);
+    legacy_debug_log(
+        collection.debug_logs,
+        format!(
+            "request_started addr={} method={} target={} request_kind={} model={} api_key_id={} api_key_label={}",
+            addr,
+            prepared_request.method,
+            prepared_request.target,
+            request_kind_log_label(stats_context.request_kind),
+            stats_context.model_id,
+            stats_context.api_key_id,
+            stats_context.api_key_label
+        ),
+    );
 
     match proxy_request_with_account_pool(
         &prepared_request,
@@ -13310,23 +14211,78 @@ async fn handle_connection(
     .await
     {
         Ok(success) => {
-            let response_capture =
-                write_gateway_response(&mut stream, success.upstream, response_adapter).await?;
+            let ProxyDispatchSuccess {
+                upstream,
+                account_id,
+                account_email,
+            } = success;
+            let response_capture = match write_gateway_response(
+                &mut stream,
+                upstream,
+                response_adapter,
+                collection.debug_logs,
+                &prepared_request,
+                started_at,
+            )
+            .await
+            {
+                Ok(response_capture) => response_capture,
+                Err(err) => {
+                    if !is_client_disconnect_error_message(&err) {
+                        let latency_ms = started_at.elapsed().as_millis() as u64;
+                        let error_category = legacy_stream_error_category(&err);
+                        let status = if error_category == "upstream_stream_timeout" {
+                            StatusCode::GATEWAY_TIMEOUT.as_u16()
+                        } else {
+                            StatusCode::BAD_GATEWAY.as_u16()
+                        };
+                        log_codex_api_failure(
+                            Some(&addr),
+                            Some(&prepared_request),
+                            Some(status),
+                            Some(account_id.as_str()),
+                            Some(account_email.as_str()),
+                            Some(latency_ms),
+                            err.as_str(),
+                        );
+                        if let Err(stats_err) = record_request_stats(
+                            Some(account_id.as_str()),
+                            Some(account_email.as_str()),
+                            Some(stats_context.api_key_id.as_str()),
+                            Some(stats_context.api_key_label.as_str()),
+                            Some(stats_context.model_id.as_str()),
+                            stats_context.request_kind,
+                            false,
+                            Some(error_category),
+                            latency_ms,
+                            None,
+                        )
+                        .await
+                        {
+                            logger::log_codex_api_warn(&format!(
+                                "[CodexLocalAccess] 写入流式失败统计失败: {}",
+                                stats_err
+                            ));
+                        }
+                    }
+                    return Err(err);
+                }
+            };
             if let Some(response_id) = response_capture.response_id.as_deref() {
-                bind_response_affinity(response_id, &success.account_id).await;
+                bind_response_affinity(response_id, &account_id).await;
             }
             if collection.session_affinity {
                 let session_key = build_request_routing_hint(&prepared_request)
                     .session_affinity_key
                     .map(|key| session_affinity_binding_key(&key));
                 if let Some(session_key) = session_key.as_deref() {
-                    bind_response_affinity(session_key, &success.account_id).await;
+                    bind_response_affinity(session_key, &account_id).await;
                 }
             }
             let latency_ms = started_at.elapsed().as_millis() as u64;
             if let Err(err) = record_request_stats(
-                Some(success.account_id.as_str()),
-                Some(success.account_email.as_str()),
+                Some(account_id.as_str()),
+                Some(account_email.as_str()),
                 Some(stats_context.api_key_id.as_str()),
                 Some(stats_context.api_key_label.as_str()),
                 Some(stats_context.model_id.as_str()),
@@ -13343,6 +14299,18 @@ async fn handle_connection(
                     err
                 ));
             }
+            legacy_debug_log(
+                collection.debug_logs,
+                format!(
+                    "request_completed addr={} method={} target={} status=200 account_id={} account_email={} latency_ms={}",
+                    addr,
+                    prepared_request.method,
+                    prepared_request.target,
+                    account_id,
+                    account_email,
+                    latency_ms
+                ),
+            );
             Ok(())
         }
         Err(error) => {
@@ -13414,10 +14382,11 @@ async fn handle_connection(
 mod tests {
     use super::{
         account_upstream_base_url, align_codex_prompt_cache, apply_codex_official_headers,
-        apply_routing_strategy, build_account_scoped_upstream_body, build_chat_completion_payload,
-        build_chat_completion_stream_body, build_codex_client_models_response,
-        build_images_api_payload, build_local_models_response, build_ordered_account_ids,
-        build_request_routing_hint, build_upstream_websocket_url, calculate_usage_cost_usd,
+        apply_routing_strategy, bridge_websocket_streams, build_account_scoped_upstream_body,
+        build_chat_completion_payload, build_chat_completion_stream_body,
+        build_codex_client_models_response, build_images_api_payload, build_local_models_response,
+        build_ordered_account_ids, build_request_routing_hint, build_upstream_websocket_url,
+        calculate_usage_cost_usd, canonical_model_for_client_model,
         classify_upstream_error_category, collect_local_access_profile_takeover_dirs_from_store,
         compare_routing_candidates, extract_import_content_from_request_body,
         extract_usage_capture, inspect_local_access_profile_config,
@@ -13429,9 +14398,13 @@ mod tests {
         recover_invalid_stats_file, remove_codex_local_access_config, resolve_plan_rank,
         resolve_supported_model_alias, resolve_upstream_target,
         should_retry_single_account_upstream_status, should_treat_response_as_stream,
-        should_try_next_account, websocket_connect_error_from_http_response,
-        GatewayResponseAdapter, ParsedRequest, ResolvedLocalApiKey, ResponseUsageCollector,
-        RoutingCandidate, UsageCapture, CODEX_ACCOUNT_IMPORT_PATH, CODEX_ACCOUNT_IMPORT_SHORT_PATH,
+        should_try_next_account, validate_client_model_visible,
+        visible_codex_model_ids_for_api_key, websocket_accept_value,
+        websocket_connect_error_from_http_response, CodexLocalAccessCollection,
+        CodexLocalAccessGatewayMode, CodexLocalAccessScope, GatewayResponseAdapter, ParsedRequest,
+        ResolvedLocalApiKey, ResponseUsageCollector, RoutingCandidate, UsageCapture,
+        CODEX_ACCOUNT_IMPORT_PATH, CODEX_ACCOUNT_IMPORT_SHORT_PATH, CODEX_AUTO_REVIEW_MODEL_ID,
+        DEFAULT_MAX_RETRY_INTERVAL_MS, DEFAULT_SESSION_AFFINITY_TTL_MS,
     };
     use crate::models::codex::{CodexAccount, CodexApiProviderMode, CodexAppSpeed, CodexTokens};
     use crate::models::codex_local_access::{
@@ -13441,11 +14414,45 @@ mod tests {
     use crate::models::{
         DefaultInstanceSettings, InstanceLaunchMode, InstanceProfile, InstanceStore,
     };
+    use futures_util::{SinkExt, StreamExt};
     use reqwest::StatusCode;
     use serde_json::{json, Value};
     use std::{collections::HashMap, fs, path::PathBuf};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::oneshot;
     use tokio::time::Duration;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::Message;
+
+    fn test_local_access_collection(account_ids: Vec<String>) -> CodexLocalAccessCollection {
+        CodexLocalAccessCollection {
+            enabled: true,
+            port: 14998,
+            api_key: "local-api-key".to_string(),
+            api_keys: Vec::new(),
+            access_scope: CodexLocalAccessScope::Localhost,
+            image_generation_mode: CodexLocalAccessImageGenerationMode::default(),
+            gateway_mode: CodexLocalAccessGatewayMode::default(),
+            upstream_proxy_url: None,
+            routing_strategy: CodexLocalAccessRoutingStrategy::default(),
+            custom_routing_rules: Vec::new(),
+            model_aliases: Vec::new(),
+            model_pricings: Vec::new(),
+            excluded_models: Vec::new(),
+            session_affinity: false,
+            session_affinity_ttl_ms: DEFAULT_SESSION_AFFINITY_TTL_MS,
+            max_retry_credentials: 0,
+            max_retry_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
+            disable_cooling: false,
+            restrict_free_accounts: true,
+            debug_logs: true,
+            bound_oauth_account_id: None,
+            account_ids,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
 
     fn make_temp_dir(prefix: &str) -> PathBuf {
         for _ in 0..10 {
@@ -13505,6 +14512,226 @@ mod tests {
                 })
             })
             .unwrap_or(false)
+    }
+
+    async fn accept_raw_upstream_websocket(listener: TcpListener) -> TcpStream {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        loop {
+            let mut byte = [0u8; 1];
+            socket.read_exact(&mut byte).await.unwrap();
+            request.push(byte[0]);
+            if request.ends_with(b"\r\n\r\n") {
+                break;
+            }
+        }
+        let request_text = String::from_utf8_lossy(&request);
+        let sec_key = request_text
+            .lines()
+            .find_map(|line| {
+                line.split_once(':').and_then(|(name, value)| {
+                    name.eq_ignore_ascii_case("sec-websocket-key")
+                        .then(|| value.trim().to_string())
+                })
+            })
+            .expect("client handshake should include sec-websocket-key");
+        let response = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",
+            websocket_accept_value(&sec_key)
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
+        socket
+    }
+
+    async fn read_raw_client_websocket_frame(socket: &mut TcpStream) -> (u8, Vec<u8>) {
+        let mut header = [0u8; 2];
+        socket.read_exact(&mut header).await.unwrap();
+        let opcode = header[0] & 0x0f;
+        let masked = header[1] & 0x80 != 0;
+        let len = match header[1] & 0x7f {
+            n @ 0..=125 => n as usize,
+            126 => {
+                let mut ext = [0u8; 2];
+                socket.read_exact(&mut ext).await.unwrap();
+                u16::from_be_bytes(ext) as usize
+            }
+            127 => {
+                let mut ext = [0u8; 8];
+                socket.read_exact(&mut ext).await.unwrap();
+                u64::from_be_bytes(ext) as usize
+            }
+            _ => unreachable!(),
+        };
+        let mut mask = [0u8; 4];
+        if masked {
+            socket.read_exact(&mut mask).await.unwrap();
+        }
+        let mut payload = vec![0u8; len];
+        if len > 0 {
+            socket.read_exact(&mut payload).await.unwrap();
+        }
+        if masked {
+            for (index, byte) in payload.iter_mut().enumerate() {
+                *byte ^= mask[index % 4];
+            }
+        }
+        (opcode, payload)
+    }
+
+    #[tokio::test]
+    async fn bridge_flushes_upstream_pong_when_downstream_is_silent() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let (pong_tx, pong_rx) = oneshot::channel();
+        let upstream_server = tokio::spawn(async move {
+            let (socket, _) = upstream_listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
+
+            let first = tokio::time::timeout(Duration::from_secs(1), ws.next())
+                .await
+                .expect("mock upstream should receive the initial payload")
+                .expect("mock upstream stream should stay open")
+                .expect("mock upstream should read a valid message");
+            assert!(matches!(first, Message::Text(_)));
+
+            ws.send(Message::Ping(b"probe".to_vec().into()))
+                .await
+                .unwrap();
+            let pong_result = tokio::time::timeout(Duration::from_millis(250), async {
+                loop {
+                    let message = ws
+                        .next()
+                        .await
+                        .expect("mock upstream stream should stay open")
+                        .expect("mock upstream should read a valid message");
+                    if let Message::Pong(payload) = message {
+                        return payload;
+                    }
+                }
+            })
+            .await;
+            let _ = pong_tx.send(pong_result);
+
+            let _ = tokio::time::timeout(Duration::from_secs(1), async {
+                while let Some(message) = ws.next().await {
+                    if matches!(message, Ok(Message::Close(_)) | Err(_)) {
+                        break;
+                    }
+                }
+            })
+            .await;
+        });
+
+        let upstream_socket = TcpStream::connect(upstream_addr).await.unwrap();
+        let upstream_request = format!("ws://{upstream_addr}/responses")
+            .into_client_request()
+            .unwrap();
+        let (downstream_listener, downstream_accept) = {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let accept = tokio::spawn(async move {
+                let (socket, _) = listener.accept().await.unwrap();
+                tokio_tungstenite::accept_async(socket).await.unwrap()
+            });
+            (addr, accept)
+        };
+        let (client_ws, _) =
+            tokio_tungstenite::connect_async(format!("ws://{downstream_listener}/responses"))
+                .await
+                .unwrap();
+        let (mut downstream_write, downstream_read) = client_ws.split();
+        drop(downstream_read);
+        let downstream = downstream_accept.await.unwrap();
+        let (upstream, _) = tokio_tungstenite::client_async_tls_with_config(
+            upstream_request,
+            upstream_socket,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let bridge_task = tokio::spawn(bridge_websocket_streams(
+            downstream,
+            upstream,
+            br#"{"type":"response.create","payload":{}}"#.to_vec(),
+        ));
+        let pong_result = pong_rx.await.unwrap();
+
+        let _ = downstream_write.send(Message::Close(None)).await;
+        tokio::time::timeout(Duration::from_secs(1), bridge_task)
+            .await
+            .expect("bridge should exit after downstream close")
+            .expect("bridge task should not panic")
+            .expect("bridge cleanup should succeed");
+        upstream_server.await.unwrap();
+
+        let payload = pong_result.expect("bridge should flush Pong back to the mock upstream");
+        assert_eq!(payload.as_ref(), b"probe");
+    }
+
+    #[tokio::test]
+    async fn bridge_sends_heartbeat_when_both_peers_are_quiet() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let upstream_socket = TcpStream::connect(upstream_addr).await.unwrap();
+        let upstream_request = format!("ws://{upstream_addr}/responses")
+            .into_client_request()
+            .unwrap();
+        let (mut raw_upstream, upstream_result) = tokio::join!(
+            accept_raw_upstream_websocket(upstream_listener),
+            tokio_tungstenite::client_async_tls_with_config(
+                upstream_request,
+                upstream_socket,
+                None,
+                None,
+            ),
+        );
+        let (upstream, _) = upstream_result.unwrap();
+
+        let downstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let downstream_addr = downstream_listener.local_addr().unwrap();
+        let downstream_accept = tokio::spawn(async move {
+            let (socket, _) = downstream_listener.accept().await.unwrap();
+            tokio_tungstenite::accept_async(socket).await.unwrap()
+        });
+        let (client_ws, _) =
+            tokio_tungstenite::connect_async(format!("ws://{downstream_addr}/responses"))
+                .await
+                .unwrap();
+        let (mut downstream_write, downstream_read) = client_ws.split();
+        drop(downstream_read);
+        let downstream = downstream_accept.await.unwrap();
+
+        let bridge_task = tokio::spawn(bridge_websocket_streams(
+            downstream,
+            upstream,
+            br#"{"type":"response.create","payload":{}}"#.to_vec(),
+        ));
+        let (first_opcode, first_payload) =
+            read_raw_client_websocket_frame(&mut raw_upstream).await;
+        assert_eq!(first_opcode, 0x1);
+        assert_eq!(first_payload, br#"{"type":"response.create","payload":{}}"#);
+        tokio::task::yield_now().await;
+        assert!(
+            !bridge_task.is_finished(),
+            "bridge exited before the quiet heartbeat window"
+        );
+        let (heartbeat_opcode, heartbeat_payload) = tokio::time::timeout(
+            Duration::from_secs(1),
+            read_raw_client_websocket_frame(&mut raw_upstream),
+        )
+        .await
+        .expect("bridge should send heartbeat Ping while both peers are quiet");
+        assert_eq!(heartbeat_opcode, 0x9);
+        assert!(heartbeat_payload.is_empty());
+
+        let _ = downstream_write.send(Message::Close(None)).await;
+        tokio::time::timeout(Duration::from_secs(1), bridge_task)
+            .await
+            .expect("bridge should exit after downstream close")
+            .expect("bridge task should not panic")
+            .expect("bridge cleanup should succeed");
     }
 
     #[test]
@@ -13687,7 +14914,7 @@ wire_api = "responses"
 
 [model_providers.codex_local_access]
 name = "Codex API Service"
-base_url = "http://127.0.0.1:14998/v1"
+base_url = "http://localhost:14998/v1"
 wire_api = "responses"
 requires_openai_auth = true
 experimental_bearer_token = "agt_codex_test"
@@ -13696,7 +14923,7 @@ supports_websockets = false
 
         let inspection = inspect_local_access_profile_config(
             config,
-            "http://127.0.0.1:14998/v1",
+            "http://localhost:14998/v1",
             "agt_codex_test",
         )
         .expect("inspect config");
@@ -13708,7 +14935,7 @@ supports_websockets = false
         );
         assert_eq!(
             inspection.base_url.as_deref(),
-            Some("http://127.0.0.1:14998/v1")
+            Some("http://localhost:14998/v1")
         );
     }
 
@@ -14235,8 +15462,11 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
 
     #[test]
     fn local_models_include_codex_image_model() {
-        let response =
-            build_local_models_response(&["gpt-5.4".to_string(), "gpt-image-2".to_string()]);
+        let response = build_local_models_response(&[
+            "gpt-5.4".to_string(),
+            "gpt-image-2".to_string(),
+            CODEX_AUTO_REVIEW_MODEL_ID.to_string(),
+        ]);
         let has_image_model = response
             .get("data")
             .and_then(Value::as_array)
@@ -14246,14 +15476,27 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
                     .any(|model| model.get("id").and_then(Value::as_str) == Some("gpt-image-2"))
             })
             .unwrap_or(false);
+        let has_auto_review_model = response
+            .get("data")
+            .and_then(Value::as_array)
+            .map(|models| {
+                models.iter().any(|model| {
+                    model.get("id").and_then(Value::as_str) == Some(CODEX_AUTO_REVIEW_MODEL_ID)
+                })
+            })
+            .unwrap_or(false);
 
         assert!(has_image_model);
+        assert!(has_auto_review_model);
     }
 
     #[test]
     fn codex_client_models_use_models_catalog_shape() {
-        let response =
-            build_codex_client_models_response(&["gpt-5.4".to_string(), "gpt-image-2".to_string()]);
+        let response = build_codex_client_models_response(&[
+            "gpt-5.4".to_string(),
+            "gpt-image-2".to_string(),
+            CODEX_AUTO_REVIEW_MODEL_ID.to_string(),
+        ]);
         assert!(response.get("object").is_none());
         assert!(response.get("data").is_none());
         let models = response
@@ -14266,6 +15509,38 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
         assert!(models
             .iter()
             .all(|model| model.get("prefer_websockets").and_then(Value::as_bool) == Some(true)));
+        assert!(models.iter().any(|model| {
+            model.get("slug").and_then(Value::as_str) == Some(CODEX_AUTO_REVIEW_MODEL_ID)
+                && model.get("visibility").and_then(Value::as_str) == Some("hide")
+        }));
+    }
+
+    #[test]
+    fn auto_review_model_bypasses_legacy_gateway_model_filters() {
+        let collection = test_local_access_collection(vec!["account-1".to_string()]);
+        let api_key = ResolvedLocalApiKey {
+            id: "key-1".to_string(),
+            label: "Key".to_string(),
+            model_prefix: Some("team".to_string()),
+            allowed_models: vec!["gpt-*".to_string()],
+            excluded_models: vec!["codex-*".to_string()],
+        };
+
+        let models = visible_codex_model_ids_for_api_key(&collection, &api_key, None);
+        assert!(models
+            .iter()
+            .any(|model| model == CODEX_AUTO_REVIEW_MODEL_ID));
+        assert_eq!(
+            canonical_model_for_client_model(CODEX_AUTO_REVIEW_MODEL_ID, &collection, &api_key),
+            CODEX_AUTO_REVIEW_MODEL_ID
+        );
+        assert!(validate_client_model_visible(
+            CODEX_AUTO_REVIEW_MODEL_ID,
+            CODEX_AUTO_REVIEW_MODEL_ID,
+            &collection,
+            &api_key,
+            None,
+        ));
     }
 
     #[test]
@@ -15228,7 +16503,7 @@ data: {"response":{"id":"resp_done","model":"gpt-5.4","status":"completed","usag
     }
 
     #[test]
-    fn api_key_accounts_are_eligible_with_upstream_key() {
+    fn api_key_accounts_are_eligible_for_local_access_pool() {
         let account = CodexAccount::new_api_key(
             "api-1".to_string(),
             "api-key@example.com".to_string(),

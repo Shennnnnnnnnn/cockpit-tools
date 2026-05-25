@@ -1768,7 +1768,7 @@
       "hideKey": "Скрыть ключ",
       "modal": {
         "title": "Добавить в API-сервис",
-        "desc": "Выберите OAuth-аккаунты, которые нужно включить в коллекцию API-сервиса. Добавленные аккаунты будут скрыты из обычного обзора и будут управляться только из карточки API-сервиса.",
+        "desc": "Выберите OAuth-аккаунты или аккаунты API Key для коллекции API-сервиса. Добавленные аккаунты будут скрыты из обычного обзора и будут управляться только из карточки API-сервиса.",
         "empty": "Нет доступных OAuth-аккаунтов",
         "selected": "В API-сервисе",
         "available": "Обычный обзор",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Правка",
         "other": "Другое"
       },
-      "testSuccessInline": "Проверка API-сервиса пройдена"
+      "testSuccessInline": "Проверка API-сервиса пройдена",
+      "gatewayModeLabel": "Режим шлюза",
+      "gatewayModeLegacyShort": "Старый",
+      "gatewayModeSidecarShort": "Новый",
+      "gatewayModeNewLabel": "API-сервис-Новый",
+      "gatewayModeOldLabel": "API-сервис-Старый",
+      "gatewayModeSaveSuccess": "Режим шлюза API-сервиса обновлен",
+      "gatewayGuideTitle": "Здесь можно сменить шлюз",
+      "gatewayGuideDesc": "По умолчанию используется новый шлюз. Если возникнут проблемы совместимости или ошибки клиентских запросов, здесь можно вернуться на старый шлюз.",
+      "gatewayGuideAction": "Понятно",
+      "upstreamProxyUrlPlaceholderLegacy": "Оставьте пустым, чтобы использовать глобальный прокси, прокси окружения или системный прокси",
+      "upstreamProxyUrlPlaceholderSidecar": "Оставьте пустым, чтобы использовать глобальный прокси",
+      "debugLogsLabel": "Отладочные логи",
+      "debugLogsDescription": "Выводит отладочные логи API-сервиса для диагностики шлюза и потоков",
+      "debugLogsEnabledSuccess": "Отладочные логи включены",
+      "debugLogsDisabledSuccess": "Отладочные логи отключены",
+      "debugLogsEnableConfirmTitle": "Включить отладочные логи",
+      "debugLogsEnableConfirmMessage": "После включения API-сервис будет выводить отладочные логи для диагностики шлюза, прокси, upstream-запросов и потоковых ответов. При высокой параллельности или длинных потоках это может немного влиять на производительность. После диагностики лучше отключить. Включить?",
+      "debugLogsEnableConfirmAction": "Включить",
+      "debugLogsDisableConfirmTitle": "Отключить отладочные логи",
+      "debugLogsDisableConfirmMessage": "После отключения API-сервис перестанет выводить отладочные логи, что уменьшит шум и накладные расходы. Их можно снова включить для диагностики шлюза, прокси или потоков. Отключить?",
+      "debugLogsDisableConfirmAction": "Отключить"
     },
     "local": {
       "desc": "Импортировать текущий аккаунт из ~/.codex/auth.json",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "API-сервис Codex",
       "title": "API-сервис Codex",
-      "subtitle": "Открывает пул OAuth-аккаунтов Codex как OpenAI-совместимый API для локальных клиентов или LAN.",
       "openPage": "Открыть API-сервис",
       "openFullPage": "Показать все функции",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Все типы",
         "allStatuses": "Все статусы",
+        "allGatewayModes": "Все режимы",
         "modelFilter": "Модель",
         "modelPlaceholder": "ID модели",
         "accountFilter": "Аккаунт",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Имя или ID",
         "kindFilter": "Тип",
         "statusFilter": "Статус",
+        "gatewayModeFilter": "Режим",
         "errorFilter": "Ошибка",
         "errorPlaceholder": "Категория ошибки",
         "clearFilters": "Сбросить фильтры",
         "loading": "Загрузка журналов",
+        "gatewayModeUnknown": "Неизвестный режим",
         "requestIdShort": "ID запроса {{id}}",
         "httpStatus": "Статус HTTP {{status}}"
       }

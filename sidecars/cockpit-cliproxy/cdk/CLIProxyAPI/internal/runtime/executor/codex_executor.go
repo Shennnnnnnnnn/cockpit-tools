@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	codexauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
@@ -36,6 +39,214 @@ const (
 )
 
 var dataTag = []byte("data:")
+
+type codexHTTPTraceState struct {
+	ctx       context.Context
+	kind      string
+	host      string
+	authID    string
+	proxyURL  string
+	startedAt time.Time
+
+	mu    sync.Mutex
+	stage string
+}
+
+func newCodexHTTPTraceState(ctx context.Context, kind string, req *http.Request, auth *cliproxyauth.Auth) *codexHTTPTraceState {
+	host := ""
+	if req != nil && req.URL != nil {
+		host = req.URL.Host
+	}
+	authID := ""
+	proxyURL := ""
+	if auth != nil {
+		authID = auth.ID
+		proxyURL = strings.TrimSpace(auth.ProxyURL)
+	}
+	return &codexHTTPTraceState{
+		ctx:       ctx,
+		kind:      kind,
+		host:      host,
+		authID:    authID,
+		proxyURL:  proxyURL,
+		startedAt: time.Now(),
+		stage:     "created",
+	}
+}
+
+func codexDebugLogsEnabled(cfg *config.Config) bool {
+	return cfg != nil && cfg.Debug
+}
+
+func (s *codexHTTPTraceState) mark(stage string, fields ...any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.stage = stage
+	s.mu.Unlock()
+
+	entry := helps.LogWithRequestID(s.ctx).WithFields(log.Fields{
+		"event":      "codex_upstream_http_trace",
+		"kind":       s.kind,
+		"stage":      stage,
+		"elapsed_ms": time.Since(s.startedAt).Milliseconds(),
+		"host":       s.host,
+		"auth_id":    s.authID,
+		"proxy":      s.proxyURL != "",
+	})
+	for i := 0; i+1 < len(fields); i += 2 {
+		key, ok := fields[i].(string)
+		if !ok || key == "" {
+			continue
+		}
+		entry = entry.WithField(key, fields[i+1])
+	}
+	entry.Info("codex upstream HTTP trace")
+}
+
+func (s *codexHTTPTraceState) currentStage() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stage
+}
+
+func (s *codexHTTPTraceState) startWaitingLogger(interval time.Duration) func() {
+	if s == nil || interval <= 0 {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				helps.LogWithRequestID(s.ctx).WithFields(log.Fields{
+					"event":      "codex_upstream_http_waiting",
+					"kind":       s.kind,
+					"stage":      s.currentStage(),
+					"elapsed_ms": time.Since(s.startedAt).Milliseconds(),
+					"host":       s.host,
+					"auth_id":    s.authID,
+					"proxy":      s.proxyURL != "",
+				}).Info("codex upstream HTTP still waiting")
+			}
+		}
+	}()
+	return func() {
+		close(done)
+	}
+}
+
+func (s *codexHTTPTraceState) clientTrace() *httptrace.ClientTrace {
+	if s == nil {
+		return nil
+	}
+	return &httptrace.ClientTrace{
+		GetConn: func(hostPort string) {
+			s.mark("get_conn", "host_port", hostPort)
+		},
+		GotConn: func(info httptrace.GotConnInfo) {
+			localAddr := ""
+			remoteAddr := ""
+			if info.Conn != nil {
+				localAddr = info.Conn.LocalAddr().String()
+				remoteAddr = info.Conn.RemoteAddr().String()
+			}
+			s.mark(
+				"got_conn",
+				"reused", info.Reused,
+				"was_idle", info.WasIdle,
+				"idle_ms", info.IdleTime.Milliseconds(),
+				"local_addr", localAddr,
+				"remote_addr", remoteAddr,
+			)
+		},
+		DNSStart: func(info httptrace.DNSStartInfo) {
+			s.mark("dns_start", "host", info.Host)
+		},
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			s.mark("dns_done", "error", errorString(info.Err), "addrs", len(info.Addrs))
+		},
+		ConnectStart: func(network, addr string) {
+			s.mark("connect_start", "network", network, "addr", addr)
+		},
+		ConnectDone: func(network, addr string, err error) {
+			s.mark("connect_done", "network", network, "addr", addr, "error", errorString(err))
+		},
+		TLSHandshakeStart: func() {
+			s.mark("tls_start")
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+			s.mark("tls_done", "error", errorString(err))
+		},
+		WroteHeaders: func() {
+			s.mark("wrote_headers")
+		},
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			s.mark("wrote_request", "error", errorString(info.Err))
+		},
+		GotFirstResponseByte: func() {
+			s.mark("first_response_byte")
+		},
+	}
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func emptyStringFallback(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func logCodexUpstreamStreamFinished(
+	debugLogs bool,
+	ctx context.Context,
+	reason string,
+	sawCompleted bool,
+	lastEventType string,
+	lineCount int64,
+	dataLineCount int64,
+	byteCount int64,
+	emittedChunkCount int64,
+	scanErr error,
+	ctxErr error,
+) {
+	if !debugLogs {
+		return
+	}
+	fields := log.Fields{
+		"event":               "codex_upstream_stream_finished",
+		"reason":              reason,
+		"saw_completed":       sawCompleted,
+		"last_event_type":     emptyStringFallback(lastEventType, "none"),
+		"line_count":          lineCount,
+		"data_line_count":     dataLineCount,
+		"byte_count":          byteCount,
+		"emitted_chunk_count": emittedChunkCount,
+		"scan_error":          errorString(scanErr),
+		"context_error":       errorString(ctxErr),
+	}
+	entry := helps.LogWithRequestID(ctx).WithFields(fields)
+	if scanErr != nil || (!sawCompleted && ctxErr == nil) {
+		entry.Warn("codex upstream stream ended before completion")
+		return
+	}
+	entry.Info("codex upstream stream finished")
+}
 
 // Streamed Codex responses may emit response.output_item.done events while leaving
 // response.completed.response.output empty. Keep the stream path aligned with the
@@ -459,12 +670,22 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		AuthValue: authValue,
 	})
 
+	debugLogs := codexDebugLogsEnabled(e.cfg)
+	var traceState *codexHTTPTraceState
+	if debugLogs {
+		traceState = newCodexHTTPTraceState(ctx, "stream", httpReq, auth)
+		httpReq = httpReq.WithContext(httptrace.WithClientTrace(httpReq.Context(), traceState.clientTrace()))
+	}
 	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
+	stopTraceWait := traceState.startWaitingLogger(15 * time.Second)
 	httpResp, err := httpClient.Do(httpReq)
+	stopTraceWait()
 	if err != nil {
+		traceState.mark("do_error", "error", err.Error())
 		helps.RecordAPIResponseError(ctx, e.cfg, err)
 		return nil, err
 	}
+	traceState.mark("response_headers", "status", httpResp.StatusCode)
 	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		data, readErr := io.ReadAll(httpResp.Body)
@@ -493,17 +714,33 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		var param any
 		outputItemsByIndex := make(map[int64][]byte)
 		var outputItemsFallback [][]byte
+		var (
+			sawCompleted      bool
+			lastEventType     string
+			lineCount         int64
+			dataLineCount     int64
+			byteCount         int64
+			emittedChunkCount int64
+		)
 		for scanner.Scan() {
 			line := scanner.Bytes()
+			lineCount++
+			byteCount += int64(len(line))
 			helps.AppendAPIResponseChunk(ctx, e.cfg, line)
 			translatedLine := bytes.Clone(line)
 
 			if bytes.HasPrefix(line, dataTag) {
+				dataLineCount++
 				data := bytes.TrimSpace(line[5:])
-				switch gjson.GetBytes(data, "type").String() {
+				eventType := gjson.GetBytes(data, "type").String()
+				if eventType != "" {
+					lastEventType = eventType
+				}
+				switch eventType {
 				case "response.output_item.done":
 					collectCodexOutputItemDone(data, outputItemsByIndex, &outputItemsFallback)
-				case "response.completed":
+				case "response.completed", "response.done":
+					sawCompleted = true
 					if detail, ok := helps.ParseCodexUsage(data); ok {
 						reporter.Publish(ctx, detail)
 					}
@@ -517,19 +754,34 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 			for i := range chunks {
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
+					emittedChunkCount++
 				case <-ctx.Done():
+					logCodexUpstreamStreamFinished(debugLogs, ctx, "context_done", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, nil, ctx.Err())
 					return
 				}
 			}
 		}
 		if errScan := scanner.Err(); errScan != nil {
+			logCodexUpstreamStreamFinished(debugLogs, ctx, "scan_error", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, errScan, ctx.Err())
 			helps.RecordAPIResponseError(ctx, e.cfg, errScan)
 			reporter.PublishFailure(ctx, errScan)
 			select {
 			case out <- cliproxyexecutor.StreamChunk{Err: errScan}:
 			case <-ctx.Done():
 			}
+			return
 		}
+		if !sawCompleted && ctx.Err() == nil {
+			errIncomplete := statusErr{code: 408, msg: fmt.Sprintf("stream error: stream disconnected before completion: stream closed before response.completed/response.done, last_event=%s", emptyStringFallback(lastEventType, "unknown"))}
+			logCodexUpstreamStreamFinished(debugLogs, ctx, "incomplete_eof", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, errIncomplete, nil)
+			reporter.PublishFailure(ctx, errIncomplete)
+			select {
+			case out <- cliproxyexecutor.StreamChunk{Err: errIncomplete}:
+			case <-ctx.Done():
+			}
+			return
+		}
+		logCodexUpstreamStreamFinished(debugLogs, ctx, "completed", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, nil, ctx.Err())
 	}()
 	return &cliproxyexecutor.StreamResult{Headers: httpResp.Header.Clone(), Chunks: out}, nil
 }

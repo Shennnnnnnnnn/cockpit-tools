@@ -1,5 +1,4 @@
 import {
-  isCodexApiKeyAccount,
   isCodexExplicitFreePlanType,
   type CodexAccount,
 } from '../types/codex';
@@ -8,9 +7,6 @@ export function isCodexLocalAccessEligibleAccount(
   account: CodexAccount,
   restrictFreeAccounts: boolean,
 ): boolean {
-  if (isCodexApiKeyAccount(account)) {
-    return false;
-  }
   if (restrictFreeAccounts && isCodexExplicitFreePlanType(account.plan_type)) {
     return false;
   }

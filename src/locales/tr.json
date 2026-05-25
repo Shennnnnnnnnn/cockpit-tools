@@ -1768,7 +1768,7 @@
       "hideKey": "Anahtarı gizle",
       "modal": {
         "title": "API hizmetine ekle",
-        "desc": "API hizmeti koleksiyonuna dahil etmek istediğiniz OAuth hesaplarını seçin. Eklenen hesaplar normal görünümden gizlenir ve yalnızca API hizmeti kartından yönetilir.",
+        "desc": "API hizmeti koleksiyonuna dahil etmek istediğiniz OAuth veya API Key hesaplarını seçin. Eklenen hesaplar normal görünümden gizlenir ve yalnızca API hizmeti kartından yönetilir.",
         "empty": "Kullanılabilir OAuth hesabı yok",
         "selected": "API hizmetinde",
         "available": "Normal görünüm",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Düzenleme",
         "other": "Diğer"
       },
-      "testSuccessInline": "API hizmeti testi başarılı"
+      "testSuccessInline": "API hizmeti testi başarılı",
+      "gatewayModeLabel": "Gecit modu",
+      "gatewayModeLegacyShort": "Eski",
+      "gatewayModeSidecarShort": "Yeni",
+      "gatewayModeNewLabel": "API Hizmeti-Yeni",
+      "gatewayModeOldLabel": "API Hizmeti-Eski",
+      "gatewayModeSaveSuccess": "API hizmeti gecit modu guncellendi",
+      "gatewayGuideTitle": "Ağ geçidini burada değiştirin",
+      "gatewayGuideDesc": "Varsayılan yeni ağ geçididir. Uyumluluk sorunu veya istemci isteği hatası yaşarsanız buradan eski ağ geçidine dönebilirsiniz.",
+      "gatewayGuideAction": "Anladım",
+      "upstreamProxyUrlPlaceholderLegacy": "Bos birakin; genel proxy, ortam proxysi veya sistem proxysi kullanilsin",
+      "upstreamProxyUrlPlaceholderSidecar": "Bos birakin; genel proxy kullanilsin",
+      "debugLogsLabel": "Hata ayıklama günlükleri",
+      "debugLogsDescription": "Ağ geçidi ve akış sorunlarını tanılamak için API hizmeti günlüklerini çıkarır",
+      "debugLogsEnabledSuccess": "Hata ayıklama günlükleri açıldı",
+      "debugLogsDisabledSuccess": "Hata ayıklama günlükleri kapatıldı",
+      "debugLogsEnableConfirmTitle": "Debug günlüklerini aç",
+      "debugLogsEnableConfirmMessage": "Açıldığında API hizmeti gateway, proxy, upstream istekleri ve akış yanıtı sorunlarını tanılamak için debug günlükleri üretir. Yüksek eşzamanlılıkta veya uzun akış isteklerinde küçük bir performans maliyeti oluşturabilir. Tanılama bitince kapatmanız önerilir. Açılsın mı?",
+      "debugLogsEnableConfirmAction": "Aç",
+      "debugLogsDisableConfirmTitle": "Debug günlüklerini kapat",
+      "debugLogsDisableConfirmMessage": "Kapatıldığında API hizmeti debug günlükleri üretmeyi durdurur; günlük gürültüsü ve ek yük azalır. Gateway, proxy veya akış sorunlarını tanılarken tekrar açabilirsiniz. Kapatılsın mı?",
+      "debugLogsDisableConfirmAction": "Kapat"
     },
     "local": {
       "desc": "~/.codex/auth.json'dan mevcut hesabı içe aktar",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Codex API Hizmeti",
       "title": "Codex API Hizmeti",
-      "subtitle": "Codex OAuth hesap havuzunu yerel veya LAN istemcileri için OpenAI uyumlu API olarak sunar.",
       "openPage": "API hizmetini aç",
       "openFullPage": "Tüm özellikleri görüntüle",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Tüm türler",
         "allStatuses": "Tüm durumlar",
+        "allGatewayModes": "Tum modlar",
         "modelFilter": "Model adı",
         "modelPlaceholder": "Model ID",
         "accountFilter": "Hesap",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Ad veya ID",
         "kindFilter": "Tür",
         "statusFilter": "Durum",
+        "gatewayModeFilter": "Mod",
         "errorFilter": "Hata",
         "errorPlaceholder": "Hata kategorisi",
         "clearFilters": "Filtreleri temizle",
         "loading": "İstek günlükleri yükleniyor",
+        "gatewayModeUnknown": "Bilinmeyen mod",
         "requestIdShort": "İstek ID {{id}}",
         "httpStatus": "HTTP durumu {{status}}"
       }

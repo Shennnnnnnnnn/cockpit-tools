@@ -1768,7 +1768,7 @@
       "hideKey": "Ukryj klucz",
       "modal": {
         "title": "Dodaj do usługi API",
-        "desc": "Wybierz konta OAuth, które chcesz dodać do kolekcji usługi API. Dodane konta zostaną ukryte w zwykłym widoku i będą zarządzane tylko z karty usługi API.",
+        "desc": "Wybierz konta OAuth lub API Key, które chcesz dodać do kolekcji usługi API. Dodane konta zostaną ukryte w zwykłym widoku i będą zarządzane tylko z karty usługi API.",
         "empty": "Brak dostępnych kont OAuth",
         "selected": "W usłudze API",
         "available": "Zwykły widok",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Edycja",
         "other": "Inne"
       },
-      "testSuccessInline": "Test usługi API zakończony powodzeniem"
+      "testSuccessInline": "Test usługi API zakończony powodzeniem",
+      "gatewayModeLabel": "Tryb bramy",
+      "gatewayModeLegacyShort": "Stary",
+      "gatewayModeSidecarShort": "Nowy",
+      "gatewayModeNewLabel": "Usluga API-Nowa",
+      "gatewayModeOldLabel": "Usluga API-Stara",
+      "gatewayModeSaveSuccess": "Zaktualizowano tryb bramy uslugi API",
+      "gatewayGuideTitle": "Tutaj zmienisz brame",
+      "gatewayGuideDesc": "Domyślna jest nowa brama. Przy problemach ze zgodnością lub błędach żądań klienta możesz tutaj wrócić do starej bramy.",
+      "gatewayGuideAction": "Rozumiem",
+      "upstreamProxyUrlPlaceholderLegacy": "Pozostaw puste, aby uzyc proxy globalnego, srodowiskowego lub systemowego",
+      "upstreamProxyUrlPlaceholderSidecar": "Pozostaw puste, aby uzyc proxy globalnego",
+      "debugLogsLabel": "Logi debug",
+      "debugLogsDescription": "Włącza logi debug usługi API do diagnozy bramy i strumieniowania",
+      "debugLogsEnabledSuccess": "Logi debug włączone",
+      "debugLogsDisabledSuccess": "Logi debug wyłączone",
+      "debugLogsEnableConfirmTitle": "Włącz logi debug",
+      "debugLogsEnableConfirmMessage": "Po włączeniu usługa API będzie zapisywać logi debug do diagnostyki bramy, proxy, żądań upstream i odpowiedzi strumieniowych. Przy dużej współbieżności lub długich strumieniach może to dodać niewielki koszt wydajności. Wyłącz po zakończeniu diagnostyki. Włączyć?",
+      "debugLogsEnableConfirmAction": "Włącz",
+      "debugLogsDisableConfirmTitle": "Wyłącz logi debug",
+      "debugLogsDisableConfirmMessage": "Po wyłączeniu usługa API przestanie zapisywać logi debug, co zmniejszy szum i narzut. Możesz je ponownie włączyć przy diagnozowaniu bramy, proxy lub strumieni. Wyłączyć?",
+      "debugLogsDisableConfirmAction": "Wyłącz"
     },
     "local": {
       "desc": "Importuj bieżące konto z ~/.codex/auth.json",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Usługa API Codex",
       "title": "Usługa API Codex",
-      "subtitle": "Udostępnia pulę kont Codex OAuth jako API zgodne z OpenAI dla klientów lokalnych lub LAN.",
       "openPage": "Otwórz usługę API",
       "openFullPage": "Zobacz wszystkie funkcje",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Wszystkie typy",
         "allStatuses": "Wszystkie statusy",
+        "allGatewayModes": "Wszystkie tryby",
         "modelFilter": "Modele",
         "modelPlaceholder": "ID modelu",
         "accountFilter": "Konto",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Nazwa lub ID",
         "kindFilter": "Typ",
         "statusFilter": "Stan",
+        "gatewayModeFilter": "Tryb",
         "errorFilter": "Błąd",
         "errorPlaceholder": "Kategoria błędu",
         "clearFilters": "Wyczyść filtry",
         "loading": "Ładowanie logów",
+        "gatewayModeUnknown": "Nieznany tryb",
         "requestIdShort": "ID żądania {{id}}",
         "httpStatus": "Status HTTP {{status}}"
       }

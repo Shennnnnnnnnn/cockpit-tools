@@ -1768,7 +1768,7 @@
       "hideKey": "Ẩn khóa",
       "modal": {
         "title": "Thêm vào dịch vụ API",
-        "desc": "Chọn các tài khoản OAuth muốn đưa vào bộ dịch vụ API. Các tài khoản được thêm sẽ bị ẩn khỏi bảng thông thường và chỉ được quản lý từ thẻ dịch vụ API.",
+        "desc": "Chọn tài khoản OAuth hoặc API Key muốn đưa vào bộ dịch vụ API. Các tài khoản được thêm sẽ bị ẩn khỏi bảng thông thường và chỉ được quản lý từ thẻ dịch vụ API.",
         "empty": "Không có tài khoản OAuth khả dụng",
         "selected": "Trong dịch vụ API",
         "available": "Bảng thông thường",
@@ -1971,7 +1971,28 @@
         "imageEdit": "Sửa ảnh",
         "other": "Khác"
       },
-      "testSuccessInline": "Kiểm thử dịch vụ API đã đạt"
+      "testSuccessInline": "Kiểm thử dịch vụ API đã đạt",
+      "gatewayModeLabel": "Che do cong",
+      "gatewayModeLegacyShort": "Cu",
+      "gatewayModeSidecarShort": "Moi",
+      "gatewayModeNewLabel": "Dich vu API-Moi",
+      "gatewayModeOldLabel": "Dich vu API-Cu",
+      "gatewayModeSaveSuccess": "Da cap nhat che do cong cua dich vu API",
+      "gatewayGuideTitle": "Đổi cổng tại đây",
+      "gatewayGuideDesc": "Mặc định dùng cổng mới. Nếu gặp vấn đề tương thích hoặc lỗi yêu cầu từ client, bạn có thể chuyển về cổng cũ tại đây.",
+      "gatewayGuideAction": "Đã hiểu",
+      "upstreamProxyUrlPlaceholderLegacy": "De trong de dung proxy toan cuc, proxy moi truong hoac proxy he thong",
+      "upstreamProxyUrlPlaceholderSidecar": "De trong de dung proxy toan cuc",
+      "debugLogsLabel": "Nhật ký debug",
+      "debugLogsDescription": "Xuất nhật ký debug của dịch vụ API để chẩn đoán cổng và luồng",
+      "debugLogsEnabledSuccess": "Đã bật nhật ký debug",
+      "debugLogsDisabledSuccess": "Đã tắt nhật ký debug",
+      "debugLogsEnableConfirmTitle": "Bật nhật ký debug",
+      "debugLogsEnableConfirmMessage": "Khi bật, dịch vụ API sẽ xuất nhật ký debug để chẩn đoán sự cố gateway, proxy, yêu cầu upstream và phản hồi streaming. Việc này có thể thêm một ít chi phí hiệu năng khi đồng thời cao hoặc streaming dài. Nên tắt sau khi chẩn đoán xong. Bật?",
+      "debugLogsEnableConfirmAction": "Bật",
+      "debugLogsDisableConfirmTitle": "Tắt nhật ký debug",
+      "debugLogsDisableConfirmMessage": "Khi tắt, dịch vụ API sẽ dừng xuất nhật ký debug, giảm nhiễu nhật ký và chi phí bổ sung. Bạn có thể bật lại khi chẩn đoán gateway, proxy hoặc streaming. Tắt?",
+      "debugLogsDisableConfirmAction": "Tắt"
     },
     "local": {
       "desc": "Nhập tài khoản hiện tại từ ~/.codex/auth.json",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Dịch vụ API Codex",
       "title": "Dịch vụ API Codex",
-      "subtitle": "Công bố nhóm tài khoản OAuth Codex dưới dạng API tương thích OpenAI cho máy cục bộ hoặc máy khách LAN.",
       "openPage": "Mở dịch vụ API",
       "openFullPage": "Xem tất cả tính năng",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "Mọi loại",
         "allStatuses": "Mọi trạng thái",
+        "allGatewayModes": "Tat ca che do",
         "modelFilter": "Mô hình",
         "modelPlaceholder": "ID mô hình",
         "accountFilter": "Tài khoản",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "Tên hoặc ID",
         "kindFilter": "Loại",
         "statusFilter": "Trạng thái",
+        "gatewayModeFilter": "Che do",
         "errorFilter": "Lỗi",
         "errorPlaceholder": "Nhóm lỗi",
         "clearFilters": "Xóa bộ lọc",
         "loading": "Đang tải nhật ký",
+        "gatewayModeUnknown": "Che do khong xac dinh",
         "requestIdShort": "ID yêu cầu {{id}}",
         "httpStatus": "Trạng thái HTTP {{status}}"
       }

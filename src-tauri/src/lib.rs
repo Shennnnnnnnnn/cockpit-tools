@@ -541,6 +541,8 @@ pub fn run() {
             commands::codex::codex_local_access_update_model_pricings,
             commands::codex::codex_local_access_update_routing_options,
             commands::codex::codex_local_access_update_upstream_proxy_config,
+            commands::codex::codex_local_access_update_gateway_mode,
+            commands::codex::codex_local_access_update_debug_logs,
             commands::codex::codex_local_access_update_access_scope,
             commands::codex::codex_local_access_update_image_generation_mode,
             commands::codex::codex_local_access_create_api_key,

@@ -4,6 +4,7 @@ export type CodexLocalAccessImageGenerationMode =
   | 'enabled'
   | 'images_only'
   | 'disabled';
+export type CodexLocalAccessGatewayMode = 'legacy' | 'sidecar';
 export type CodexLocalAccessRequestKind =
   | 'text'
   | 'image_generation'
@@ -63,11 +64,13 @@ export interface CodexLocalAccessCollection {
   apiKeys: CodexLocalAccessApiKey[];
   accessScope: CodexLocalAccessScope;
   imageGenerationMode: CodexLocalAccessImageGenerationMode;
+  gatewayMode: CodexLocalAccessGatewayMode;
   upstreamProxyUrl?: string | null;
   routingStrategy: CodexLocalAccessRoutingStrategy;
   customRoutingRules: CodexLocalAccessCustomRoutingRule[];
   modelAliases: CodexLocalAccessModelAlias[];
   modelPricings: CodexLocalAccessModelPricing[];
+  debugLogs: boolean;
   excludedModels: string[];
   sessionAffinity: boolean;
   sessionAffinityTtlMs: number;
@@ -136,6 +139,7 @@ export interface CodexLocalAccessUsageEvent {
   apiKeyId: string;
   apiKeyLabel: string;
   modelId: string;
+  gatewayMode?: CodexLocalAccessGatewayMode | null;
   requestKind: CodexLocalAccessRequestKind;
   success: boolean;
   httpStatus?: number | null;
@@ -181,6 +185,7 @@ export interface CodexLocalAccessRequestLogQuery {
   modelQuery?: string | null;
   accountQuery?: string | null;
   apiKeyQuery?: string | null;
+  gatewayMode?: CodexLocalAccessGatewayMode | null;
   requestKind?: CodexLocalAccessRequestKind | null;
   success?: boolean | null;
   errorCategory?: string | null;

@@ -73,15 +73,13 @@
 }
 
 .codex-api-service-title-copy {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
 }
 
 .codex-api-service-title-line {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   flex: 0 0 auto;
   gap: 7px;
   min-width: 0;
@@ -94,17 +92,6 @@
   line-height: 1.2;
   font-weight: 740;
   letter-spacing: 0;
-}
-
-.codex-api-service-title-copy p {
-  min-width: 0;
-  max-width: none;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .codex-api-service-status,
@@ -136,6 +123,18 @@
   border-color: color-mix(in srgb, var(--warning) 28%, transparent);
   background: color-mix(in srgb, var(--warning) 12%, transparent);
   color: #b45309;
+}
+
+.codex-api-service-pill.mode-sidecar {
+  border-color: color-mix(in srgb, #0891b2 24%, transparent);
+  background: color-mix(in srgb, #0891b2 12%, transparent);
+  color: #0f766e;
+}
+
+.codex-api-service-pill.mode-legacy {
+  border-color: color-mix(in srgb, #6366f1 24%, transparent);
+  background: color-mix(in srgb, #6366f1 12%, transparent);
+  color: #4338ca;
 }
 
 .codex-api-service-status.disabled,
@@ -180,6 +179,48 @@
   height: 13px;
 }
 
+.codex-api-service-page .single-select-dropdown.codex-api-service-title-mode-select {
+  position: relative;
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.codex-api-service-page .codex-api-service-title-mode-select .single-select-dropdown-trigger {
+  min-height: 24px;
+  padding: 0 3px 0 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.codex-api-service-page .codex-api-service-title-mode-select .single-select-dropdown-trigger:hover:not(:disabled),
+.codex-api-service-page .codex-api-service-title-mode-select .single-select-dropdown-trigger.open {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+  box-shadow: none;
+}
+
+.codex-api-service-page .codex-api-service-title-mode-select .single-select-dropdown-value {
+  max-width: 82px;
+}
+
+.codex-api-service-page .codex-api-service-title-mode-select .single-select-dropdown-arrow {
+  width: 13px;
+  height: 18px;
+  margin-left: 0;
+  background: transparent;
+}
+
+.codex-api-service-page .codex-api-service-title-mode-select .single-select-dropdown-arrow svg {
+  width: 12px;
+  height: 12px;
+}
+
 .codex-api-service-message-stack {
   display: flex;
   flex-direction: column;
@@ -219,59 +260,6 @@
   border-color: rgba(34, 197, 94, 0.22);
   background: rgba(34, 197, 94, 0.1);
   color: #15803d;
-}
-
-.codex-api-service-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.42);
-}
-
-.codex-api-service-dialog {
-  display: grid;
-  gap: 12px;
-  width: min(980px, 100%);
-  max-height: min(720px, calc(100vh - 48px));
-  padding: 14px;
-  border: 1px solid var(--codex-api-border);
-  border-radius: 12px;
-  background: var(--codex-api-surface-strong);
-  box-shadow: 0 24px 60px -36px rgba(15, 23, 42, 0.72);
-  overflow: hidden;
-}
-
-.codex-api-service-dialog-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-}
-
-.codex-api-service-dialog-head h2 {
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 760;
-  line-height: 1.35;
-}
-
-.codex-api-service-dialog-head p {
-  margin-top: 3px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.codex-api-service-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
 }
 
 .codex-api-service-summary-grid {
@@ -457,6 +445,10 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.codex-api-service-proxy-input-row {
+  max-width: 67%;
 }
 
 .codex-api-service-copy-row code,
@@ -963,35 +955,85 @@
   min-width: 0;
 }
 
+.codex-api-service-pricing-overlay {
+  padding: 24px;
+}
+
+.codex-api-service-pricing-modal {
+  max-width: min(980px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+}
+
+.codex-api-service-pricing-modal .modal-header {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px 16px;
+}
+
+.codex-api-service-pricing-modal .modal-header > div {
+  min-width: 0;
+}
+
+.codex-api-service-pricing-desc {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.codex-api-service-pricing-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px 24px;
+}
+
 .codex-api-service-pricing-table {
   display: grid;
-  gap: 6px;
   min-width: 0;
+  min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
 }
 
 .codex-api-service-pricing-head,
 .codex-api-service-pricing-row {
   display: grid;
-  grid-template-columns: minmax(170px, 1.25fr) repeat(3, minmax(110px, 0.8fr)) minmax(82px, 0.55fr) auto;
+  grid-template-columns: minmax(170px, 1.25fr) repeat(3, minmax(110px, 0.8fr)) minmax(82px, 0.55fr) 86px;
   align-items: center;
-  gap: 8px;
+  column-gap: 10px;
   min-width: 760px;
 }
 
 .codex-api-service-pricing-head {
-  padding: 0 9px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .codex-api-service-pricing-row {
-  padding: 8px 9px;
-  border: 1px solid var(--codex-api-border-soft);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  min-height: 54px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-surface);
+}
+
+.codex-api-service-pricing-row:last-child {
+  border-bottom: 0;
+}
+
+.codex-api-service-pricing-row:hover {
+  background: var(--bg-secondary);
 }
 
 .codex-api-service-pricing-row strong {
@@ -1007,20 +1049,28 @@
 .codex-api-service-pricing-row input {
   width: 100%;
   min-width: 0;
-  height: 32px;
-  padding: 0 9px;
-  border: 1px solid var(--codex-api-border);
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  background: var(--bg-tertiary);
   color: var(--text-primary);
   outline: none;
   font: inherit;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .codex-api-service-pricing-row input:focus {
-  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: var(--primary);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.codex-api-service-pricing-row .btn {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 10px;
 }
 
 .codex-api-service-stats-breakdown {
@@ -1033,7 +1083,7 @@
 
 .codex-api-service-log-filters {
   display: grid;
-  grid-template-columns: repeat(6, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(7, minmax(120px, 1fr)) auto;
   align-items: end;
   gap: 8px;
   min-width: 0;
@@ -1177,6 +1227,14 @@
   color: #fca5a5;
 }
 
+[data-theme="dark"] .codex-api-service-pill.mode-sidecar {
+  color: #67e8f9;
+}
+
+[data-theme="dark"] .codex-api-service-pill.mode-legacy {
+  color: #c4b5fd;
+}
+
 @media (max-width: 1180px) {
   .codex-api-service-grid.two {
     grid-template-columns: 1fr;
@@ -1244,15 +1302,6 @@
     flex-wrap: wrap;
   }
 
-  .codex-api-service-title-copy {
-    display: grid;
-    gap: 3px;
-  }
-
-  .codex-api-service-title-copy p {
-    white-space: normal;
-  }
-
   .codex-api-service-config-list label {
     grid-template-columns: 1fr;
     gap: 7px;
@@ -1270,11 +1319,12 @@
     grid-template-columns: 1fr;
   }
 
-  .codex-api-service-dialog-backdrop {
+  .codex-api-service-pricing-overlay {
     padding: 12px;
   }
 
-  .codex-api-service-dialog {
+  .codex-api-service-pricing-modal {
+    max-width: calc(100vw - 24px);
     max-height: calc(100vh - 24px);
   }
 
@@ -1312,6 +1362,10 @@
   .codex-api-service-input-row .btn,
   .codex-api-service-hero-actions .btn {
     width: 100%;
+  }
+
+  .codex-api-service-proxy-input-row {
+    max-width: none;
   }
 
   .codex-api-service-copy-row .folder-icon-btn {

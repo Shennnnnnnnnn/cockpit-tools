@@ -45,6 +45,7 @@ import type { CodexAccount } from '../types/codex';
 import type {
   CodexLocalAccessAddressKind,
   CodexLocalAccessCustomRoutingRule,
+  CodexLocalAccessGatewayMode,
   CodexLocalAccessImageGenerationMode,
   CodexLocalAccessModelAlias,
   CodexLocalAccessModelPricing,
@@ -73,6 +74,7 @@ type StatsRangeKey = 'daily' | 'weekly' | 'monthly';
 type CopyField = 'baseUrl' | 'lanBaseUrl' | 'apiKey' | 'modelId' | `apiKey:${string}`;
 type RequestLogKindFilter = 'all' | CodexLocalAccessRequestKind;
 type RequestLogStatusFilter = 'all' | 'success' | 'failed';
+type RequestLogGatewayModeFilter = 'all' | CodexLocalAccessGatewayMode;
 
 interface ApiKeyPolicyDraft {
   modelPrefix: string;
@@ -314,6 +316,19 @@ function requestKindLabel(
   return t('codex.localAccess.requestKind.other', '其他');
 }
 
+function gatewayModeLabel(
+  mode: CodexLocalAccessGatewayMode | null | undefined,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (mode === 'legacy') {
+    return t('codex.localAccess.gatewayModeOldLabel', 'API 服务-旧');
+  }
+  if (mode === 'sidecar') {
+    return t('codex.localAccess.gatewayModeNewLabel', 'API 服务-新');
+  }
+  return t('codex.apiService.logs.gatewayModeUnknown', '模式未知');
+}
+
 export function CodexApiServicePage() {
   const { t } = useTranslation();
   const { platformGroups } = usePlatformLayoutStore();
@@ -359,6 +374,8 @@ export function CodexApiServicePage() {
   const [requestLogError, setRequestLogError] = useState('');
   const [requestLogKindFilter, setRequestLogKindFilter] = useState<RequestLogKindFilter>('all');
   const [requestLogStatusFilter, setRequestLogStatusFilter] = useState<RequestLogStatusFilter>('all');
+  const [requestLogGatewayModeFilter, setRequestLogGatewayModeFilter] =
+    useState<RequestLogGatewayModeFilter>('all');
   const [requestLogModelQuery, setRequestLogModelQuery] = useState('');
   const [requestLogAccountQuery, setRequestLogAccountQuery] = useState('');
   const [requestLogApiKeyQuery, setRequestLogApiKeyQuery] = useState('');
@@ -396,6 +413,7 @@ export function CodexApiServicePage() {
   const accessScope = collection?.accessScope ?? 'localhost';
   const imageGenerationMode = collection?.imageGenerationMode ?? 'enabled';
   const routingStrategy = collection?.routingStrategy ?? 'auto';
+  const gatewayMode = collection?.gatewayMode ?? 'sidecar';
   const modelIds = state?.modelIds ?? [];
   const modelPricingRows = useMemo<ModelPricingRow[]>(() => {
     const presetMap = new Map<string, CodexLocalAccessModelPricing>();
@@ -506,6 +524,7 @@ export function CodexApiServicePage() {
     requestLogPageSize,
     requestLogKindFilter,
     requestLogStatusFilter,
+    requestLogGatewayModeFilter,
     requestLogModelQuery,
     requestLogAccountQuery,
     requestLogApiKeyQuery,
@@ -531,6 +550,7 @@ export function CodexApiServicePage() {
         modelQuery: requestLogModelQuery,
         accountQuery: requestLogAccountQuery,
         apiKeyQuery: requestLogApiKeyQuery,
+        gatewayMode: requestLogGatewayModeFilter === 'all' ? null : requestLogGatewayModeFilter,
         requestKind: requestLogKindFilter === 'all' ? null : requestLogKindFilter,
         success,
         errorCategory: requestLogErrorQuery,
@@ -563,6 +583,7 @@ export function CodexApiServicePage() {
     requestLogPageSize,
     requestLogKindFilter,
     requestLogStatusFilter,
+    requestLogGatewayModeFilter,
     requestLogModelQuery,
     requestLogAccountQuery,
     requestLogApiKeyQuery,
@@ -775,6 +796,14 @@ export function CodexApiServicePage() {
       );
       setState(next);
     }, t('codex.localAccess.routingSaveSuccess', 'API 服务调度策略已更新'));
+  };
+
+  const handleUpdateGatewayMode = async (value: CodexLocalAccessGatewayMode) => {
+    if (!collection || value === gatewayMode) return;
+    await runAction(async () => {
+      const next = await codexLocalAccessService.updateCodexLocalAccessGatewayMode(value);
+      setState(next);
+    }, t('codex.localAccess.gatewayModeSaveSuccess', 'API 服务网关模式已更新'));
   };
 
   const saveMembers = async (accountIds: string[], restrictFreeAccounts: boolean) => {
@@ -1112,6 +1141,21 @@ export function CodexApiServicePage() {
     { value: 'success', label: t('codex.localAccess.requestLogSuccess', '成功') },
     { value: 'failed', label: t('codex.localAccess.requestLogFailed', '失败') },
   ];
+  const requestLogGatewayModeOptions: Array<{
+    value: RequestLogGatewayModeFilter;
+    label: string;
+  }> = [
+    { value: 'all', label: t('codex.apiService.logs.allGatewayModes', '全部模式') },
+    { value: 'sidecar', label: t('codex.localAccess.gatewayModeNewLabel', 'API 服务-新') },
+    { value: 'legacy', label: t('codex.localAccess.gatewayModeOldLabel', 'API 服务-旧') },
+  ];
+  const gatewayModeOptions: Array<{
+    value: CodexLocalAccessGatewayMode;
+    label: string;
+  }> = [
+    { value: 'sidecar', label: t('codex.localAccess.gatewayModeNewLabel', 'API 服务-新') },
+    { value: 'legacy', label: t('codex.localAccess.gatewayModeOldLabel', 'API 服务-旧') },
+  ];
   const serviceTabs: Array<{ key: ServiceTab; label: string; icon: ReactNode }> = [
     { key: 'overview', label: t('codex.apiService.tabs.overview', '服务总览'), icon: <CodexIcon className="tab-icon" /> },
     { key: 'keys', label: t('codex.apiService.tabs.keys', '客户端 Key'), icon: <KeyRound className="tab-icon" /> },
@@ -1187,6 +1231,7 @@ export function CodexApiServicePage() {
   const hasRequestLogFilters = Boolean(
     requestLogKindFilter !== 'all'
     || requestLogStatusFilter !== 'all'
+    || requestLogGatewayModeFilter !== 'all'
     || requestLogModelQuery.trim()
     || requestLogAccountQuery.trim()
     || requestLogApiKeyQuery.trim()
@@ -1195,6 +1240,7 @@ export function CodexApiServicePage() {
   const clearRequestLogFilters = () => {
     setRequestLogKindFilter('all');
     setRequestLogStatusFilter('all');
+    setRequestLogGatewayModeFilter('all');
     setRequestLogModelQuery('');
     setRequestLogAccountQuery('');
     setRequestLogApiKeyQuery('');
@@ -1264,13 +1310,20 @@ export function CodexApiServicePage() {
                         : t('codex.localAccess.statusStopped', '未运行')
                       : t('codex.localAccess.statusDisabled', '已停用')}
                   </span>
+                  <SingleSelectDropdown
+                    value={gatewayMode}
+                    options={gatewayModeOptions}
+                    onChange={(value) =>
+                      void handleUpdateGatewayMode(value as CodexLocalAccessGatewayMode)
+                    }
+                    className="codex-api-service-title-mode-select"
+                    menuClassName="codex-local-access-title-mode-menu"
+                    menuWidth={116}
+                    menuMaxHeight={120}
+                    disabled={busy || testing || !collection}
+                    ariaLabel={t('codex.localAccess.gatewayModeLabel', '网关模式')}
+                  />
                 </div>
-                <p>
-                  {t(
-                    'codex.apiService.subtitle',
-                    '把 Codex OAuth / API Key 账号池作为 OpenAI-compatible API 暴露给本机或局域网客户端。',
-                  )}
-                </p>
               </div>
             </div>
           </div>
@@ -1416,12 +1469,19 @@ export function CodexApiServicePage() {
                 </label>
                 <label>
                   <span>{t('codex.localAccess.upstreamProxyLabel', 'API 代理地址')}</span>
-                  <div className="codex-api-service-input-row">
+                  <div className="codex-api-service-input-row codex-api-service-proxy-input-row">
                     <input
                       type="text"
                       value={proxyInput}
                       onChange={(event) => setProxyInput(event.target.value)}
-                      placeholder={t('codex.localAccess.upstreamProxyUrlPlaceholder', '留空用全局代理')}
+                      placeholder={t(
+                        gatewayMode === 'legacy'
+                          ? 'codex.localAccess.upstreamProxyUrlPlaceholderLegacy'
+                          : 'codex.localAccess.upstreamProxyUrlPlaceholderSidecar',
+                        gatewayMode === 'legacy'
+                          ? '留空依次使用全局代理、环境代理或系统代理'
+                          : '留空用全局代理',
+                      )}
                       disabled={busy}
                     />
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleSaveProxy()} disabled={busy}>
@@ -2015,6 +2075,17 @@ export function CodexApiServicePage() {
                     />
                   </label>
                   <label>
+                    <span>{t('codex.apiService.logs.gatewayModeFilter', '模式')}</span>
+                    <SingleSelectDropdown
+                      value={requestLogGatewayModeFilter}
+                      options={requestLogGatewayModeOptions}
+                      onChange={(value) =>
+                        setRequestLogGatewayModeFilter(value as RequestLogGatewayModeFilter)
+                      }
+                      ariaLabel={t('codex.apiService.logs.gatewayModeFilter', '模式')}
+                    />
+                  </label>
+                  <label>
                     <span>{t('codex.apiService.logs.errorFilter', '错误')}</span>
                     <input
                       value={requestLogErrorQuery}
@@ -2055,6 +2126,17 @@ export function CodexApiServicePage() {
                             {event.success
                               ? t('codex.localAccess.requestLogSuccess', '成功')
                               : t('codex.localAccess.requestLogFailed', '失败')}
+                          </span>
+                          <span
+                            className={`codex-api-service-pill ${
+                              event.gatewayMode === 'legacy'
+                                ? 'mode-legacy'
+                                : event.gatewayMode === 'sidecar'
+                                  ? 'mode-sidecar'
+                                  : 'muted'
+                            }`}
+                          >
+                            {gatewayModeLabel(event.gatewayMode, t)}
                           </span>
                         </div>
                         <div>
@@ -2111,97 +2193,101 @@ export function CodexApiServicePage() {
       </main>
 
       {pricingModalOpen && (
-        <div className="codex-api-service-dialog-backdrop" role="presentation">
-          <section
-            className="codex-api-service-dialog"
+        <div className="modal-overlay codex-api-service-pricing-overlay" role="presentation">
+          <div
+            className="modal codex-api-service-pricing-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="codex-api-service-pricing-title"
           >
-            <div className="codex-api-service-dialog-head">
+            <div className="modal-header">
               <div>
                 <h2 id="codex-api-service-pricing-title">
                   {t('codex.apiService.models.pricingTitle', '模型价格设置')}
                 </h2>
-                <p>{t('codex.apiService.models.pricingDesc', '单位为 USD / 1M tokens，仅用于本地价值统计。')}</p>
+                <p className="codex-api-service-pricing-desc">
+                  {t('codex.apiService.models.pricingDesc', '单位为 USD / 1M tokens，仅用于本地价值统计。')}
+                </p>
               </div>
               <button
                 type="button"
-                className="folder-icon-btn"
+                className="modal-close"
                 onClick={() => setPricingModalOpen(false)}
-                aria-label={t('common.cancel', '取消')}
+                aria-label={t('common.close', '关闭')}
               >
-                <X size={14} />
+                <X size={18} />
               </button>
             </div>
-            {pricingError && (
-              <div className="codex-api-service-message error">
-                <CircleAlert size={15} />
-                <span>{pricingError}</span>
-              </div>
-            )}
-            <div className="codex-api-service-pricing-table">
-              <div className="codex-api-service-pricing-head">
-                <span>{t('codex.apiService.models.pricingModel', '模型')}</span>
-                <span>{t('codex.apiService.models.pricingInput', '输入')}</span>
-                <span>{t('codex.apiService.models.pricingCache', '缓存输入')}</span>
-                <span>{t('codex.apiService.models.pricingOutput', '输出')}</span>
-                <span>{t('codex.apiService.models.pricingSource', '来源')}</span>
-                <span>{t('codex.apiService.models.pricingActions', '操作')}</span>
-              </div>
-              {pricingDrafts.map((draft) => (
-                <div key={draft.modelId} className="codex-api-service-pricing-row">
-                  <strong>{draft.modelId}</strong>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.000001"
-                    value={draft.inputUsdPerMillion}
-                    onChange={(event) =>
-                      updatePricingDraft(draft.modelId, 'inputUsdPerMillion', event.target.value)
-                    }
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.000001"
-                    value={draft.cachedInputUsdPerMillion}
-                    placeholder={t('codex.apiService.models.pricingCachePlaceholder', '同输入')}
-                    onChange={(event) =>
-                      updatePricingDraft(
-                        draft.modelId,
-                        'cachedInputUsdPerMillion',
-                        event.target.value,
-                      )
-                    }
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.000001"
-                    value={draft.outputUsdPerMillion}
-                    onChange={(event) =>
-                      updatePricingDraft(draft.modelId, 'outputUsdPerMillion', event.target.value)
-                    }
-                  />
-                  <span className={`codex-api-service-pill ${draft.custom ? 'success' : 'muted'}`}>
-                    {draft.custom
-                      ? t('codex.apiService.models.pricingCustom', '自定义')
-                      : draft.hasPreset
-                        ? t('codex.apiService.models.pricingPreset', '预设')
-                        : t('codex.apiService.models.pricingUnset', '未设置')}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => resetPricingDraft(draft.modelId)}
-                  >
-                    {t('codex.apiService.models.pricingReset', '重置')}
-                  </button>
+            <div className="modal-body codex-api-service-pricing-body">
+              {pricingError && (
+                <div className="codex-api-service-message error">
+                  <CircleAlert size={15} />
+                  <span>{pricingError}</span>
                 </div>
-              ))}
+              )}
+              <div className="codex-api-service-pricing-table">
+                <div className="codex-api-service-pricing-head">
+                  <span>{t('codex.apiService.models.pricingModel', '模型')}</span>
+                  <span>{t('codex.apiService.models.pricingInput', '输入')}</span>
+                  <span>{t('codex.apiService.models.pricingCache', '缓存输入')}</span>
+                  <span>{t('codex.apiService.models.pricingOutput', '输出')}</span>
+                  <span>{t('codex.apiService.models.pricingSource', '来源')}</span>
+                  <span>{t('codex.apiService.models.pricingActions', '操作')}</span>
+                </div>
+                {pricingDrafts.map((draft) => (
+                  <div key={draft.modelId} className="codex-api-service-pricing-row">
+                    <strong>{draft.modelId}</strong>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.000001"
+                      value={draft.inputUsdPerMillion}
+                      onChange={(event) =>
+                        updatePricingDraft(draft.modelId, 'inputUsdPerMillion', event.target.value)
+                      }
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.000001"
+                      value={draft.cachedInputUsdPerMillion}
+                      placeholder={t('codex.apiService.models.pricingCachePlaceholder', '同输入')}
+                      onChange={(event) =>
+                        updatePricingDraft(
+                          draft.modelId,
+                          'cachedInputUsdPerMillion',
+                          event.target.value,
+                        )
+                      }
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.000001"
+                      value={draft.outputUsdPerMillion}
+                      onChange={(event) =>
+                        updatePricingDraft(draft.modelId, 'outputUsdPerMillion', event.target.value)
+                      }
+                    />
+                    <span className={`codex-api-service-pill ${draft.custom ? 'success' : 'muted'}`}>
+                      {draft.custom
+                        ? t('codex.apiService.models.pricingCustom', '自定义')
+                        : draft.hasPreset
+                          ? t('codex.apiService.models.pricingPreset', '预设')
+                          : t('codex.apiService.models.pricingUnset', '未设置')}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => resetPricingDraft(draft.modelId)}
+                    >
+                      {t('codex.apiService.models.pricingReset', '重置')}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="codex-api-service-dialog-actions">
+            <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setPricingModalOpen(false)}>
                 {t('common.cancel', '取消')}
               </button>
@@ -2210,7 +2296,7 @@ export function CodexApiServicePage() {
                 {t('common.save', '保存')}
               </button>
             </div>
-          </section>
+          </div>
         </div>
       )}
 
@@ -2245,6 +2331,9 @@ export function CodexApiServicePage() {
         }
         onUpdateAccessScope={(scope: CodexLocalAccessScope) =>
           codexLocalAccessService.updateCodexLocalAccessAccessScope(scope).then(setState)
+        }
+        onUpdateDebugLogs={(debugLogs) =>
+          codexLocalAccessService.updateCodexLocalAccessDebugLogs(debugLogs).then(setState)
         }
         onUpdateUpstreamProxyConfig={(url) =>
           codexLocalAccessService.updateCodexLocalAccessUpstreamProxyConfig(url).then(setState)

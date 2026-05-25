@@ -1817,7 +1817,7 @@
       "hideKey": "Sembunyikan kunci",
       "modal": {
         "title": "Tambahkan ke Layanan API",
-        "desc": "Pilih akun OAuth yang ingin dimasukkan ke koleksi layanan API. Akun yang ditambahkan akan disembunyikan dari tampilan biasa dan hanya dikelola dari kartu layanan API.",
+        "desc": "Pilih akun OAuth atau API Key yang ingin dimasukkan ke koleksi layanan API. Akun yang ditambahkan akan disembunyikan dari tampilan biasa dan hanya dikelola dari kartu layanan API.",
         "empty": "Tidak ada akun OAuth yang tersedia",
         "selected": "Di layanan API",
         "available": "Tampilan biasa",
@@ -2020,7 +2020,28 @@
         "imageEdit": "Edit",
         "other": "Lainnya"
       },
-      "testSuccessInline": "Uji layanan API berhasil"
+      "testSuccessInline": "Uji layanan API berhasil",
+      "gatewayModeLabel": "Mode gateway",
+      "gatewayModeLegacyShort": "Lama",
+      "gatewayModeSidecarShort": "Baru",
+      "gatewayModeNewLabel": "Layanan API-Baru",
+      "gatewayModeOldLabel": "Layanan API-Lama",
+      "gatewayModeSaveSuccess": "Mode gateway layanan API telah diperbarui",
+      "gatewayGuideTitle": "Ganti gateway di sini",
+      "gatewayGuideDesc": "Gateway baru menjadi default. Jika ada masalah kompatibilitas atau error permintaan klien, kembali ke gateway lama dari sini.",
+      "gatewayGuideAction": "Mengerti",
+      "upstreamProxyUrlPlaceholderLegacy": "Kosongkan untuk memakai proxy global, proxy environment, atau proxy sistem",
+      "upstreamProxyUrlPlaceholderSidecar": "Kosongkan untuk memakai proxy global",
+      "debugLogsLabel": "Log debug",
+      "debugLogsDescription": "Keluarkan log debug layanan API untuk mendiagnosis gateway dan streaming",
+      "debugLogsEnabledSuccess": "Log debug diaktifkan",
+      "debugLogsDisabledSuccess": "Log debug dinonaktifkan",
+      "debugLogsEnableConfirmTitle": "Aktifkan Log Debug",
+      "debugLogsEnableConfirmMessage": "Saat aktif, layanan API akan mengeluarkan log debug untuk mendiagnosis masalah gateway, proxy, permintaan upstream, dan respons streaming. Ini dapat menambah sedikit beban performa saat konkurensi tinggi atau streaming panjang. Matikan setelah selesai mendiagnosis. Aktifkan?",
+      "debugLogsEnableConfirmAction": "Aktifkan",
+      "debugLogsDisableConfirmTitle": "Nonaktifkan Log Debug",
+      "debugLogsDisableConfirmMessage": "Saat nonaktif, layanan API berhenti mengeluarkan log debug sehingga kebisingan log dan beban tambahan berkurang. Anda dapat mengaktifkannya lagi saat mendiagnosis gateway, proxy, atau streaming. Nonaktifkan?",
+      "debugLogsDisableConfirmAction": "Nonaktifkan"
     },
     "api": {
       "baseUrl": "URL Dasar",
@@ -2630,7 +2651,6 @@
     "apiService": {
       "navTitle": "Layanan API Codex",
       "title": "Layanan API Codex",
-      "subtitle": "Mengekspos kumpulan akun OAuth Codex sebagai API yang kompatibel dengan OpenAI untuk klien lokal atau LAN.",
       "openPage": "Buka layanan API",
       "openFullPage": "Lihat semua fitur",
       "tabs": {
@@ -2707,6 +2727,7 @@
       "logs": {
         "allKinds": "Semua Jenis",
         "allStatuses": "Semua Status",
+        "allGatewayModes": "Semua mode",
         "modelFilter": "Model layanan",
         "modelPlaceholder": "ID model",
         "accountFilter": "Akun",
@@ -2715,10 +2736,12 @@
         "apiKeyPlaceholder": "Nama atau ID",
         "kindFilter": "Jenis",
         "statusFilter": "Keadaan",
+        "gatewayModeFilter": "Mode layanan",
         "errorFilter": "Kesalahan",
         "errorPlaceholder": "Kategori error",
         "clearFilters": "Hapus Filter",
         "loading": "Memuat log permintaan",
+        "gatewayModeUnknown": "Mode tidak diketahui",
         "requestIdShort": "ID permintaan {{id}}",
         "httpStatus": "Status HTTP {{status}}"
       }

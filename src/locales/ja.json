@@ -1768,7 +1768,7 @@
       "hideKey": "キーを非表示",
       "modal": {
         "title": "API サービスに追加",
-        "desc": "API サービスのコレクションに含める OAuth アカウントを選択します。追加したアカウントは通常の一覧から非表示になり、API サービスカードからのみ管理されます。",
+        "desc": "API サービスのコレクションに含める OAuth または API Key アカウントを選択します。追加したアカウントは通常の一覧から非表示になり、API サービスカードからのみ管理されます。",
         "empty": "利用可能な OAuth アカウントがありません",
         "selected": "API サービスに追加済み",
         "available": "通常一覧",
@@ -1971,7 +1971,28 @@
         "imageEdit": "画像編集",
         "other": "その他"
       },
-      "testSuccessInline": "API サービスのテストに成功しました"
+      "testSuccessInline": "API サービスのテストに成功しました",
+      "gatewayModeLabel": "Gateway mode",
+      "gatewayModeLegacyShort": "旧版",
+      "gatewayModeSidecarShort": "新版",
+      "gatewayModeNewLabel": "APIサービス-新",
+      "gatewayModeOldLabel": "APIサービス-旧",
+      "gatewayModeSaveSuccess": "APIサービスのゲートウェイモードを更新しました",
+      "gatewayGuideTitle": "ここでゲートウェイを切替",
+      "gatewayGuideDesc": "既定は新ゲートウェイです。互換性の問題やクライアント要求の異常がある場合は、ここで旧ゲートウェイに戻せます。",
+      "gatewayGuideAction": "了解",
+      "upstreamProxyUrlPlaceholderLegacy": "空欄でグローバルプロキシ、環境変数プロキシ、システムプロキシの順に使用",
+      "upstreamProxyUrlPlaceholderSidecar": "空欄でグローバルプロキシを使用",
+      "debugLogsLabel": "デバッグログ",
+      "debugLogsDescription": "API サービスのデバッグログを出力し、ゲートウェイとストリーミングの問題を調査します",
+      "debugLogsEnabledSuccess": "デバッグログを有効にしました",
+      "debugLogsDisabledSuccess": "デバッグログを無効にしました",
+      "debugLogsEnableConfirmTitle": "デバッグログを有効化",
+      "debugLogsEnableConfirmMessage": "有効にすると、API サービスがゲートウェイ、プロキシ、上流リクエスト、ストリーミング応答の診断用デバッグログを出力します。高並行時や長時間のストリーミングではわずかな性能負荷が発生する場合があります。調査後は無効にしてください。有効にしますか？",
+      "debugLogsEnableConfirmAction": "有効化",
+      "debugLogsDisableConfirmTitle": "デバッグログを無効化",
+      "debugLogsDisableConfirmMessage": "無効にすると、API サービスのデバッグログ出力を停止し、ログのノイズと追加負荷を減らします。ゲートウェイ、プロキシ、ストリーミングの調査時に再度有効化できます。無効にしますか？",
+      "debugLogsDisableConfirmAction": "無効化"
     },
     "local": {
       "desc": "~/.codex/auth.json から現在ログイン中のアカウントをインポート",
@@ -2584,7 +2605,6 @@
     "apiService": {
       "navTitle": "Codex API サービス",
       "title": "Codex API サービス",
-      "subtitle": "Codex OAuth アカウントプールを、ローカルまたは LAN クライアント向けの OpenAI 互換 API として公開します。",
       "openPage": "API サービスを開く",
       "openFullPage": "すべての機能を見る",
       "tabs": {
@@ -2661,6 +2681,7 @@
       "logs": {
         "allKinds": "全タイプ",
         "allStatuses": "全ステータス",
+        "allGatewayModes": "すべてのモード",
         "modelFilter": "モデル",
         "modelPlaceholder": "モデル ID",
         "accountFilter": "アカウント",
@@ -2669,10 +2690,12 @@
         "apiKeyPlaceholder": "名前または ID",
         "kindFilter": "タイプ",
         "statusFilter": "状態",
+        "gatewayModeFilter": "モード",
         "errorFilter": "エラー",
         "errorPlaceholder": "エラー分類",
         "clearFilters": "フィルター解除",
         "loading": "リクエストログを読み込み中",
+        "gatewayModeUnknown": "不明なモード",
         "requestIdShort": "リクエストID {{id}}",
         "httpStatus": "HTTP状態 {{status}}"
       }

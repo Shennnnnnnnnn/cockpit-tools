@@ -3,8 +3,8 @@ use crate::models::codex::{
     CodexQuota, CodexTokens,
 };
 use crate::models::codex_local_access::{
-    CodexLocalAccessCustomRoutingRule, CodexLocalAccessModelAlias, CodexLocalAccessModelPricing,
-    CodexLocalAccessPortCleanupResult, CodexLocalAccessRequestKind,
+    CodexLocalAccessCustomRoutingRule, CodexLocalAccessGatewayMode, CodexLocalAccessModelAlias,
+    CodexLocalAccessModelPricing, CodexLocalAccessPortCleanupResult, CodexLocalAccessRequestKind,
     CodexLocalAccessRoutingStrategy, CodexLocalAccessScope, CodexLocalAccessState,
     CodexLocalAccessTestResult, CodexLocalAccessUsageEventPage,
 };
@@ -955,6 +955,7 @@ pub async fn codex_local_access_query_request_logs(
     model_query: Option<String>,
     account_query: Option<String>,
     api_key_query: Option<String>,
+    gateway_mode: Option<CodexLocalAccessGatewayMode>,
     request_kind: Option<CodexLocalAccessRequestKind>,
     success: Option<bool>,
     error_category: Option<String>,
@@ -966,6 +967,7 @@ pub async fn codex_local_access_query_request_logs(
         model_query,
         account_query,
         api_key_query,
+        gateway_mode,
         request_kind,
         success,
         error_category,
@@ -1040,6 +1042,20 @@ pub async fn codex_local_access_update_upstream_proxy_config(
     upstream_proxy_url: Option<String>,
 ) -> Result<CodexLocalAccessState, String> {
     codex_local_access::update_local_access_upstream_proxy_config(upstream_proxy_url).await
+}
+
+#[tauri::command]
+pub async fn codex_local_access_update_gateway_mode(
+    gateway_mode: CodexLocalAccessGatewayMode,
+) -> Result<CodexLocalAccessState, String> {
+    codex_local_access::update_local_access_gateway_mode(gateway_mode).await
+}
+
+#[tauri::command]
+pub async fn codex_local_access_update_debug_logs(
+    debug_logs: bool,
+) -> Result<CodexLocalAccessState, String> {
+    codex_local_access::update_local_access_debug_logs(debug_logs).await
 }
 
 #[tauri::command]

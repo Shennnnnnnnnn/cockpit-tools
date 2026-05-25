@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,19 +22,22 @@ import (
 )
 
 func TestCodexClientModelsResponseShape(t *testing.T) {
-	response := buildCodexClientModelsResponse([]string{"gpt-5.4", "gpt-image-2"})
+	response := buildCodexClientModelsResponse([]string{"gpt-5.4", "gpt-image-2", codexAutoReviewModel})
 	models, ok := response["models"].([]gin.H)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
 	}
-	if len(models) != 2 {
-		t.Fatalf("expected 2 models, got %d", len(models))
+	if len(models) != 3 {
+		t.Fatalf("expected 3 models, got %d", len(models))
 	}
 	if models[0]["slug"] != "gpt-5.4" || models[0]["prefer_websockets"] != true {
 		t.Fatalf("unexpected first model: %#v", models[0])
 	}
 	if models[1]["visibility"] != "hide" {
 		t.Fatalf("image model should be hidden in Codex client catalog: %#v", models[1])
+	}
+	if models[2]["slug"] != codexAutoReviewModel || models[2]["visibility"] != "hide" {
+		t.Fatalf("auto review model should be hidden in Codex client catalog: %#v", models[2])
 	}
 }
 
@@ -54,6 +58,23 @@ func TestVisibleModelsForAPIKeyUsesPrefixAndFilters(t *testing.T) {
 	}
 }
 
+func TestClientCatalogModelsIncludesAutoReviewWithoutPrefix(t *testing.T) {
+	spec := &apiKeySpec{
+		ModelPrefix:    "team",
+		AllowedModels:  []string{"gpt-*"},
+		ExcludedModels: []string{"gpt-image-*"},
+	}
+	m := &manifest{
+		ModelIDs: []string{"gpt-5.4", "gpt-image-2", "custom-model"},
+	}
+
+	models := clientCatalogModelsForAPIKey(m, spec)
+
+	if len(models) != 2 || models[0] != "team/gpt-5.4" || models[1] != codexAutoReviewModel {
+		t.Fatalf("unexpected client catalog models: %#v", models)
+	}
+}
+
 func TestCanonicalModelForClientModelHandlesPrefixAliasAndSnapshot(t *testing.T) {
 	spec := &apiKeySpec{ModelPrefix: "team"}
 	m := &manifest{
@@ -66,6 +87,81 @@ func TestCanonicalModelForClientModelHandlesPrefixAliasAndSnapshot(t *testing.T)
 	}
 	if got := canonicalModelForClientModel(m, spec, "team/gpt-5.4-2026-03-05"); got != "gpt-5.4" {
 		t.Fatalf("snapshot should resolve to supported model, got %q", got)
+	}
+	if got := canonicalModelForClientModel(m, spec, codexAutoReviewModel); got != codexAutoReviewModel {
+		t.Fatalf("auto review model should stay canonical, got %q", got)
+	}
+}
+
+func TestLoadManifestIndexesAPIKeyAccounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(path, []byte(`{
+		"apiKeys": [{"id":"client","label":"Client","key":"client-key","enabled":true}],
+		"accounts": [{"id":"api-account","email":"api@example.com","upstreamApiKey":"  sk-upstream  "}]
+	}`), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	m, err := loadManifest(path)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	account := m.accountByAPIKey["sk-upstream"]
+	if account == nil {
+		t.Fatalf("API Key account should be indexed by upstream key: %#v", m.accountByAPIKey)
+	}
+	if account.ID != "api-account" || account.UpstreamAPIKey != "sk-upstream" {
+		t.Fatalf("unexpected indexed account: %#v", account)
+	}
+}
+
+func TestSidecarRuntimeRegistersConfigCodexAPIKeyAuths(t *testing.T) {
+	tempDir := t.TempDir()
+	authDir := filepath.Join(tempDir, "auths")
+	configPath := filepath.Join(tempDir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("write config path: %v", err)
+	}
+
+	cfg := &config.Config{
+		AuthDir: authDir,
+		CodexKey: []config.CodexKey{{
+			APIKey:  "sk-upstream",
+			BaseURL: "http://127.0.0.1:1",
+		}},
+	}
+	account := &accountSpec{ID: "api-account", Email: "api@example.com", UpstreamAPIKey: "sk-upstream"}
+	m := &manifest{
+		Accounts:        []accountSpec{*account},
+		accountByID:     map[string]*accountSpec{"api-account": account},
+		accountByAuthID: map[string]*accountSpec{},
+		accountByAPIKey: map[string]*accountSpec{"sk-upstream": account},
+		ModelIDs:        []string{"gpt-5.4"},
+	}
+	manager := buildCoreAuthManager(cfg, &cockpitSelector{manifest: m}, &authHook{manifest: m})
+
+	runtime, err := newSidecarRuntime(context.Background(), configPath, cfg, m, manager)
+	if err != nil {
+		t.Fatalf("newSidecarRuntime: %v", err)
+	}
+	defer runtime.Stop()
+
+	var codexAPIKeyAuth *coreauth.Auth
+	for _, auth := range manager.List() {
+		if auth == nil || !strings.EqualFold(auth.Provider, "codex") {
+			continue
+		}
+		if auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) == "sk-upstream" {
+			codexAPIKeyAuth = auth
+			break
+		}
+	}
+	if codexAPIKeyAuth == nil {
+		t.Fatalf("expected codex API Key auth to be registered, got %#v", manager.List())
+	}
+	if got := m.accountByAuthID[strings.ToLower(codexAPIKeyAuth.ID)]; got == nil || got.ID != "api-account" {
+		t.Fatalf("expected auth to be linked to manifest account, got %#v", got)
 	}
 }
 
@@ -383,6 +479,47 @@ func TestRelayServerExecutesNonStreamingRequestThroughRuntime(t *testing.T) {
 	}
 }
 
+func TestRelayServerAcceptsCodexAutoReviewModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	runtime := &fakeRuntime{
+		response: cliproxyexecutor.Response{
+			Headers: http.Header{"Content-Type": []string{"application/json"}},
+			Payload: []byte(`{"ok":true}`),
+		},
+	}
+	router := testRelayRouter(runtime)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"codex-auto-review","input":"allow?","stream":false}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if runtime.executeCalls != 1 || runtime.lastReq.Model != codexAutoReviewModel {
+		t.Fatalf("auto review request should be forwarded unchanged: calls=%d req=%#v", runtime.executeCalls, runtime.lastReq)
+	}
+}
+
+func TestRelayServerModelsExposeCodexAutoReview(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := testRelayRouter(&fakeRuntime{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer client-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), codexAutoReviewModel) {
+		t.Fatalf("models response should expose auto review model: %s", w.Body.String())
+	}
+}
+
 func TestRelayServerFramesStreamingChatCompletionThroughRuntime(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stream := make(chan cliproxyexecutor.StreamChunk, 2)
@@ -439,6 +576,135 @@ func TestRelayServerFramesStreamingChatCompletionThroughRuntime(t *testing.T) {
 	}
 }
 
+func TestRelayServerTimesOutWhenStreamDoesNotOpen(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldTimeout := streamOpenTimeout
+	oldAttempts := streamOpenMaxAttempts
+	streamOpenTimeout = 20 * time.Millisecond
+	streamOpenMaxAttempts = 2
+	defer func() {
+		streamOpenTimeout = oldTimeout
+		streamOpenMaxAttempts = oldAttempts
+	}()
+	router := testRelayRouter(&fakeRuntime{streamWaitForContext: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"hello","stream":true}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "stream_open") {
+		t.Fatalf("timeout response should name stream_open phase: %s", w.Body.String())
+	}
+}
+
+func TestRelayServerRetriesWhenStreamDoesNotOpen(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldTimeout := streamOpenTimeout
+	oldAttempts := streamOpenMaxAttempts
+	streamOpenTimeout = 20 * time.Millisecond
+	streamOpenMaxAttempts = 2
+	defer func() {
+		streamOpenTimeout = oldTimeout
+		streamOpenMaxAttempts = oldAttempts
+	}()
+	stream := make(chan cliproxyexecutor.StreamChunk, 1)
+	stream <- cliproxyexecutor.StreamChunk{Payload: []byte(`[DONE]`)}
+	close(stream)
+	runtime := &fakeRuntime{
+		streamWaitAttempts: 1,
+		streamResult: &cliproxyexecutor.StreamResult{
+			Headers: http.Header{"Content-Type": []string{"application/json"}},
+			Chunks:  stream,
+		},
+	}
+	router := testRelayRouter(runtime)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"hello","stream":true}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if runtime.streamCalls != 2 {
+		t.Fatalf("expected retry to call stream runtime twice, got %d", runtime.streamCalls)
+	}
+	if !strings.Contains(w.Body.String(), "[DONE]") {
+		t.Fatalf("retry should stream successful second attempt: %s", w.Body.String())
+	}
+}
+
+func TestRelayServerKeepsStreamContextOpenAfterOpen(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldOpenTimeout := streamOpenTimeout
+	oldIdleTimeout := streamIdleTimeout
+	streamOpenTimeout = 100 * time.Millisecond
+	streamIdleTimeout = time.Second
+	defer func() {
+		streamOpenTimeout = oldOpenTimeout
+		streamIdleTimeout = oldIdleTimeout
+	}()
+	runtime := &fakeRuntime{
+		streamResultFromContext: true,
+		streamResultDelay:       20 * time.Millisecond,
+		streamResultPayload:     []byte(`[DONE]`),
+	}
+	router := testRelayRouter(runtime)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"hello","stream":true}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if runtime.streamCalls != 1 {
+		t.Fatalf("expected one stream runtime call, got %d", runtime.streamCalls)
+	}
+	if !strings.Contains(w.Body.String(), "[DONE]") {
+		t.Fatalf("stream context should stay alive after opening: %s", w.Body.String())
+	}
+}
+
+func TestRelayServerTimesOutIdleOpenedStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldTimeout := streamIdleTimeout
+	streamIdleTimeout = 20 * time.Millisecond
+	defer func() {
+		streamIdleTimeout = oldTimeout
+	}()
+	stream := make(chan cliproxyexecutor.StreamChunk)
+	runtime := &fakeRuntime{
+		streamResult: &cliproxyexecutor.StreamResult{
+			Headers: http.Header{"Content-Type": []string{"application/json"}},
+			Chunks:  stream,
+		},
+	}
+	router := testRelayRouter(runtime)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"hello","stream":true}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("stream should be opened before idle timeout, got status: %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "stream_idle") {
+		t.Fatalf("idle timeout should be sent as terminal SSE error: %s", w.Body.String())
+	}
+}
+
 func TestRelayServerHandlesCORSPreflight(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := testRelayRouter(&fakeRuntime{})
@@ -475,9 +741,14 @@ func testRelayRouter(runtime executorRuntime) *gin.Engine {
 }
 
 type fakeRuntime struct {
-	response     cliproxyexecutor.Response
-	streamResult *cliproxyexecutor.StreamResult
-	err          error
+	response                cliproxyexecutor.Response
+	streamResult            *cliproxyexecutor.StreamResult
+	err                     error
+	streamWaitForContext    bool
+	streamWaitAttempts      int
+	streamResultFromContext bool
+	streamResultDelay       time.Duration
+	streamResultPayload     []byte
 
 	executeCalls int
 	streamCalls  int
@@ -492,10 +763,40 @@ func (r *fakeRuntime) Execute(_ context.Context, _ []string, req cliproxyexecuto
 	return r.response, r.err
 }
 
-func (r *fakeRuntime) ExecuteStream(_ context.Context, _ []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
+func (r *fakeRuntime) ExecuteStream(ctx context.Context, _ []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 	r.streamCalls++
 	r.lastReq = req
 	r.lastOpts = opts
+	if r.streamWaitForContext || r.streamCalls <= r.streamWaitAttempts {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	if r.streamResultFromContext {
+		stream := make(chan cliproxyexecutor.StreamChunk, 1)
+		delay := r.streamResultDelay
+		if delay <= 0 {
+			delay = 10 * time.Millisecond
+		}
+		payload := r.streamResultPayload
+		if len(payload) == 0 {
+			payload = []byte(`[DONE]`)
+		}
+		go func() {
+			defer close(stream)
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				stream <- cliproxyexecutor.StreamChunk{Payload: payload}
+			}
+		}()
+		return &cliproxyexecutor.StreamResult{
+			Headers: http.Header{"Content-Type": []string{"application/json"}},
+			Chunks:  stream,
+		}, nil
+	}
 	return r.streamResult, r.err
 }
 
