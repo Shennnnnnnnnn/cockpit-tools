@@ -33,6 +33,7 @@ import type {
   CodexLocalAccessState,
   CodexLocalAccessStatsWindow,
   CodexLocalAccessTestResult,
+  CodexLocalAccessUsageStats,
 } from '../types/codexLocalAccess';
 import {
   getCodexPlanFilterKey,
@@ -300,6 +301,24 @@ export function CodexLocalAccessModal({
     selectedTotals && selectedTotals.requestCount > 0
       ? Math.round((selectedTotals.successCount / selectedTotals.requestCount) * 100)
       : 0;
+  const formatRequestResultDetail = (usage?: CodexLocalAccessUsageStats | null) =>
+    t('codex.localAccess.stats.requestsDetail', {
+      success: formatCompactNumber(usage?.successCount ?? 0),
+      failed: formatCompactNumber(
+        Math.max(
+            (usage?.failureCount ?? 0) -
+            (usage?.clientCanceledCount ?? 0) -
+            (usage?.upstreamResponseFailedCount ?? 0) -
+            (usage?.streamIncompleteCount ?? 0),
+          0,
+        ),
+      ),
+      canceled: formatCompactNumber(usage?.clientCanceledCount ?? 0),
+      upstreamFailed: formatCompactNumber(usage?.upstreamResponseFailedCount ?? 0),
+      incomplete: formatCompactNumber(usage?.streamIncompleteCount ?? 0),
+      defaultValue:
+        '成功 {{success}} / 失败 {{failed}} / 取消 {{canceled}} / 上游失败 {{upstreamFailed}} / 流未完成 {{incomplete}}',
+    });
   const testDialogBusy = testDialogRunning || testing;
   const actionBusy = saving || testing || starting || portCleanupBusy;
   const summaryStats = useMemo(
@@ -308,11 +327,7 @@ export function CodexLocalAccessModal({
         key: 'requests',
         label: t('codex.localAccess.stats.requests', '总请求数'),
         value: formatCompactNumber(selectedTotals?.requestCount ?? 0),
-        detail: t('codex.localAccess.stats.requestsDetail', {
-          success: formatCompactNumber(selectedTotals?.successCount ?? 0),
-          failed: formatCompactNumber(selectedTotals?.failureCount ?? 0),
-          defaultValue: '成功 {{success}} / 失败 {{failed}}',
-        }),
+        detail: formatRequestResultDetail(selectedTotals),
       },
       {
         key: 'tokens',
@@ -1958,11 +1973,7 @@ export function CodexLocalAccessModal({
                           <div className="codex-local-access-account-stat-block codex-local-access-account-stat-block-metrics">
                             <div className="codex-local-access-account-stat-metrics">
                               <span className="codex-local-access-account-stat-pill">
-                                {t('codex.localAccess.stats.accountResult', {
-                                  success: accountStats?.successCount ?? 0,
-                                  failed: accountStats?.failureCount ?? 0,
-                                  defaultValue: '成功 {{success}} / 失败 {{failed}}',
-                                })}
+                                {formatRequestResultDetail(accountStats)}
                               </span>
                               <span className="codex-local-access-account-stat-pill">
                                 {(accountStats?.totalTokens ?? 0) === 0

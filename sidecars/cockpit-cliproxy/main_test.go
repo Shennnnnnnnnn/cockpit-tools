@@ -395,6 +395,15 @@ func TestErrorCategoryClassifiesClientCanceled(t *testing.T) {
 	if got := errorCategory(0, "context canceled", false); got != "client_canceled" {
 		t.Fatalf("expected client_canceled, got %q", got)
 	}
+	if got := errorCategory(http.StatusGatewayTimeout, `Post "https://chatgpt.com/backend-api/codex/responses": context canceled`, false); got != "gateway_context_canceled" {
+		t.Fatalf("expected gateway_context_canceled for upstream context cancellation, got %q", got)
+	}
+	if got := errorCategory(http.StatusBadGateway, "write tcp: broken pipe", false); got != "client_canceled" {
+		t.Fatalf("expected client_canceled for broken pipe, got %q", got)
+	}
+	if got := errorCategory(http.StatusGatewayTimeout, "upstream timed out in stream_open attempt=1/1 after 60s", false); got != "upstream_first_byte_timeout" {
+		t.Fatalf("expected upstream_first_byte_timeout, got %q", got)
+	}
 }
 
 func TestAuthHookEmitsRequestScopedResultDiagnostics(t *testing.T) {
@@ -600,6 +609,99 @@ func TestRelayServerTimesOutWhenStreamDoesNotOpen(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "stream_open") {
 		t.Fatalf("timeout response should name stream_open phase: %s", w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), "upstream_first_byte_timeout") {
+		t.Fatalf("timeout response should expose first-byte timeout code: %s", w.Body.String())
+	}
+}
+
+func TestRelayServerUsesLongOpenTimeoutForImageGenerationTool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldOpenTimeout := streamOpenTimeout
+	oldImageOpenTimeout := imageStreamOpenTimeout
+	oldAttempts := streamOpenMaxAttempts
+	streamOpenTimeout = 20 * time.Millisecond
+	imageStreamOpenTimeout = 120 * time.Millisecond
+	streamOpenMaxAttempts = 1
+	defer func() {
+		streamOpenTimeout = oldOpenTimeout
+		imageStreamOpenTimeout = oldImageOpenTimeout
+		streamOpenMaxAttempts = oldAttempts
+	}()
+	stream := make(chan cliproxyexecutor.StreamChunk, 1)
+	stream <- cliproxyexecutor.StreamChunk{Payload: []byte(`event: response.completed
+data: {"type":"response.completed"}
+
+`)}
+	close(stream)
+	runtime := &fakeRuntime{
+		streamOpenDelay: 60 * time.Millisecond,
+		streamResult: &cliproxyexecutor.StreamResult{
+			Headers: http.Header{"Content-Type": []string{"text/event-stream"}},
+			Chunks:  stream,
+		},
+	}
+	router := testRelayRouter(runtime)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5","input":"draw","stream":true,"tools":[{"type":"image_generation","model":"gpt-image-2"}]}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("image stream should use longer open timeout, got status: %d body=%s", w.Code, w.Body.String())
+	}
+	if runtime.streamCalls != 1 {
+		t.Fatalf("expected one stream runtime call, got %d", runtime.streamCalls)
+	}
+	if !strings.Contains(w.Body.String(), "response.completed") {
+		t.Fatalf("image stream response was not forwarded: %s", w.Body.String())
+	}
+}
+
+func TestRelayServerHandlesImagesGenerationsEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stream := make(chan cliproxyexecutor.StreamChunk, 1)
+	stream <- cliproxyexecutor.StreamChunk{Payload: []byte(`event: response.completed
+data: {"type":"response.completed","response":{"created_at":1710000000,"output":[{"type":"image_generation_call","result":"ZmFrZS1wbmc=","output_format":"png","size":"1024x1024"}]}}
+
+`)}
+	close(stream)
+	runtime := &fakeRuntime{
+		streamResult: &cliproxyexecutor.StreamResult{
+			Headers: http.Header{"Content-Type": []string{"text/event-stream"}},
+			Chunks:  stream,
+		},
+	}
+	router := testRelayRouter(runtime)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image-2","prompt":"draw","response_format":"b64_json"}`))
+	req.Header.Set("Authorization", "Bearer client-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if runtime.streamCalls != 1 || runtime.executeCalls != 0 {
+		t.Fatalf("unexpected runtime calls: execute=%d stream=%d", runtime.executeCalls, runtime.streamCalls)
+	}
+	if runtime.lastReq.Model != defaultImagesMainModel {
+		t.Fatalf("image endpoint should execute via main model, got %q", runtime.lastReq.Model)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response should be json: %v body=%s", err, w.Body.String())
+	}
+	data, _ := body["data"].([]any)
+	if len(data) != 1 {
+		t.Fatalf("expected one image result: %#v", body)
+	}
+	first, _ := data[0].(map[string]any)
+	if first["b64_json"] != "ZmFrZS1wbmc=" {
+		t.Fatalf("unexpected image payload: %#v", body)
+	}
 }
 
 func TestRelayServerRetriesWhenStreamDoesNotOpen(t *testing.T) {
@@ -726,7 +828,7 @@ func TestRelayServerHandlesCORSPreflight(t *testing.T) {
 func testRelayRouter(runtime executorRuntime) *gin.Engine {
 	m := &manifest{
 		APIKeys:  []apiKeySpec{{ID: "key_1", Label: "Test key", Key: "client-key", Enabled: true}},
-		ModelIDs: []string{"gpt-5.5"},
+		ModelIDs: []string{"gpt-5.5", "gpt-image-2"},
 		apiKeyByValue: map[string]*apiKeySpec{
 			"client-key": {ID: "key_1", Label: "Test key", Key: "client-key", Enabled: true},
 		},
@@ -747,6 +849,7 @@ type fakeRuntime struct {
 	streamWaitForContext    bool
 	streamWaitAttempts      int
 	streamResultFromContext bool
+	streamOpenDelay         time.Duration
 	streamResultDelay       time.Duration
 	streamResultPayload     []byte
 
@@ -770,6 +873,15 @@ func (r *fakeRuntime) ExecuteStream(ctx context.Context, _ []string, req cliprox
 	if r.streamWaitForContext || r.streamCalls <= r.streamWaitAttempts {
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	if r.streamOpenDelay > 0 {
+		timer := time.NewTimer(r.streamOpenDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 	if r.streamResultFromContext {
 		stream := make(chan cliproxyexecutor.StreamChunk, 1)

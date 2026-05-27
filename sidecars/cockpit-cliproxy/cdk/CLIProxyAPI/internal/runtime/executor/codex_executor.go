@@ -4,14 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptrace"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	codexauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
@@ -39,214 +36,6 @@ const (
 )
 
 var dataTag = []byte("data:")
-
-type codexHTTPTraceState struct {
-	ctx       context.Context
-	kind      string
-	host      string
-	authID    string
-	proxyURL  string
-	startedAt time.Time
-
-	mu    sync.Mutex
-	stage string
-}
-
-func newCodexHTTPTraceState(ctx context.Context, kind string, req *http.Request, auth *cliproxyauth.Auth) *codexHTTPTraceState {
-	host := ""
-	if req != nil && req.URL != nil {
-		host = req.URL.Host
-	}
-	authID := ""
-	proxyURL := ""
-	if auth != nil {
-		authID = auth.ID
-		proxyURL = strings.TrimSpace(auth.ProxyURL)
-	}
-	return &codexHTTPTraceState{
-		ctx:       ctx,
-		kind:      kind,
-		host:      host,
-		authID:    authID,
-		proxyURL:  proxyURL,
-		startedAt: time.Now(),
-		stage:     "created",
-	}
-}
-
-func codexDebugLogsEnabled(cfg *config.Config) bool {
-	return cfg != nil && cfg.Debug
-}
-
-func (s *codexHTTPTraceState) mark(stage string, fields ...any) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.stage = stage
-	s.mu.Unlock()
-
-	entry := helps.LogWithRequestID(s.ctx).WithFields(log.Fields{
-		"event":      "codex_upstream_http_trace",
-		"kind":       s.kind,
-		"stage":      stage,
-		"elapsed_ms": time.Since(s.startedAt).Milliseconds(),
-		"host":       s.host,
-		"auth_id":    s.authID,
-		"proxy":      s.proxyURL != "",
-	})
-	for i := 0; i+1 < len(fields); i += 2 {
-		key, ok := fields[i].(string)
-		if !ok || key == "" {
-			continue
-		}
-		entry = entry.WithField(key, fields[i+1])
-	}
-	entry.Info("codex upstream HTTP trace")
-}
-
-func (s *codexHTTPTraceState) currentStage() string {
-	if s == nil {
-		return ""
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.stage
-}
-
-func (s *codexHTTPTraceState) startWaitingLogger(interval time.Duration) func() {
-	if s == nil || interval <= 0 {
-		return func() {}
-	}
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				helps.LogWithRequestID(s.ctx).WithFields(log.Fields{
-					"event":      "codex_upstream_http_waiting",
-					"kind":       s.kind,
-					"stage":      s.currentStage(),
-					"elapsed_ms": time.Since(s.startedAt).Milliseconds(),
-					"host":       s.host,
-					"auth_id":    s.authID,
-					"proxy":      s.proxyURL != "",
-				}).Info("codex upstream HTTP still waiting")
-			}
-		}
-	}()
-	return func() {
-		close(done)
-	}
-}
-
-func (s *codexHTTPTraceState) clientTrace() *httptrace.ClientTrace {
-	if s == nil {
-		return nil
-	}
-	return &httptrace.ClientTrace{
-		GetConn: func(hostPort string) {
-			s.mark("get_conn", "host_port", hostPort)
-		},
-		GotConn: func(info httptrace.GotConnInfo) {
-			localAddr := ""
-			remoteAddr := ""
-			if info.Conn != nil {
-				localAddr = info.Conn.LocalAddr().String()
-				remoteAddr = info.Conn.RemoteAddr().String()
-			}
-			s.mark(
-				"got_conn",
-				"reused", info.Reused,
-				"was_idle", info.WasIdle,
-				"idle_ms", info.IdleTime.Milliseconds(),
-				"local_addr", localAddr,
-				"remote_addr", remoteAddr,
-			)
-		},
-		DNSStart: func(info httptrace.DNSStartInfo) {
-			s.mark("dns_start", "host", info.Host)
-		},
-		DNSDone: func(info httptrace.DNSDoneInfo) {
-			s.mark("dns_done", "error", errorString(info.Err), "addrs", len(info.Addrs))
-		},
-		ConnectStart: func(network, addr string) {
-			s.mark("connect_start", "network", network, "addr", addr)
-		},
-		ConnectDone: func(network, addr string, err error) {
-			s.mark("connect_done", "network", network, "addr", addr, "error", errorString(err))
-		},
-		TLSHandshakeStart: func() {
-			s.mark("tls_start")
-		},
-		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
-			s.mark("tls_done", "error", errorString(err))
-		},
-		WroteHeaders: func() {
-			s.mark("wrote_headers")
-		},
-		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			s.mark("wrote_request", "error", errorString(info.Err))
-		},
-		GotFirstResponseByte: func() {
-			s.mark("first_response_byte")
-		},
-	}
-}
-
-func errorString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-func emptyStringFallback(value string, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
-}
-
-func logCodexUpstreamStreamFinished(
-	debugLogs bool,
-	ctx context.Context,
-	reason string,
-	sawCompleted bool,
-	lastEventType string,
-	lineCount int64,
-	dataLineCount int64,
-	byteCount int64,
-	emittedChunkCount int64,
-	scanErr error,
-	ctxErr error,
-) {
-	if !debugLogs {
-		return
-	}
-	fields := log.Fields{
-		"event":               "codex_upstream_stream_finished",
-		"reason":              reason,
-		"saw_completed":       sawCompleted,
-		"last_event_type":     emptyStringFallback(lastEventType, "none"),
-		"line_count":          lineCount,
-		"data_line_count":     dataLineCount,
-		"byte_count":          byteCount,
-		"emitted_chunk_count": emittedChunkCount,
-		"scan_error":          errorString(scanErr),
-		"context_error":       errorString(ctxErr),
-	}
-	entry := helps.LogWithRequestID(ctx).WithFields(fields)
-	if scanErr != nil || (!sawCompleted && ctxErr == nil) {
-		entry.Warn("codex upstream stream ended before completion")
-		return
-	}
-	entry.Info("codex upstream stream finished")
-}
 
 // Streamed Codex responses may emit response.output_item.done events while leaving
 // response.completed.response.output empty. Keep the stream path aligned with the
@@ -311,6 +100,168 @@ func patchCodexCompletedOutput(eventData []byte, outputItemsByIndex map[int64][]
 	return completedDataPatched
 }
 
+func codexTerminalStreamErr(eventData []byte) (statusErr, bool) {
+	eventType := gjson.GetBytes(eventData, "type").String()
+	var body []byte
+	switch eventType {
+	case "error":
+		body = codexTerminalErrorBody(eventData, "error")
+		if len(body) == 0 {
+			body = codexTerminalTopLevelErrorBody(eventData)
+		}
+	case "response.failed":
+		body = codexTerminalErrorBody(eventData, "response.error")
+		if len(body) == 0 {
+			body = codexTerminalErrorBody(eventData, "error")
+		}
+	default:
+		return statusErr{}, false
+	}
+	if len(body) == 0 {
+		return statusErr{}, false
+	}
+	if codexTerminalErrorIsContextLength(body) {
+		return newCodexStatusErr(http.StatusBadRequest, body), true
+	}
+	return newCodexStatusErr(http.StatusBadGateway, codexTerminalUpstreamFailedBody(body)), true
+}
+
+func codexCompletionEventData(eventData []byte) ([]byte, bool) {
+	switch strings.TrimSpace(gjson.GetBytes(eventData, "type").String()) {
+	case "response.completed":
+		return eventData, true
+	case "response.done":
+		out, _ := sjson.SetBytes(eventData, "type", "response.completed")
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+func codexIncompleteStreamErr(lastEventType string) statusErr {
+	lastEventType = strings.TrimSpace(lastEventType)
+	if lastEventType == "" {
+		lastEventType = "unknown"
+	}
+	return statusErr{
+		code: http.StatusRequestTimeout,
+		msg: fmt.Sprintf(
+			"stream error: stream disconnected before completion: stream closed before response.completed/response.done, last_event=%s",
+			lastEventType,
+		),
+	}
+}
+
+func codexTerminalStreamContextLengthErr(eventData []byte) (statusErr, bool) {
+	err, ok := codexTerminalStreamErr(eventData)
+	if !ok || !strings.Contains(err.Error(), "context_too_large") {
+		return statusErr{}, false
+	}
+	return err, true
+}
+
+func codexTerminalUpstreamFailedBody(body []byte) []byte {
+	upstreamCode := strings.TrimSpace(gjson.GetBytes(body, "error.code").String())
+	upstreamType := strings.TrimSpace(gjson.GetBytes(body, "error.type").String())
+	upstreamMessage := strings.TrimSpace(gjson.GetBytes(body, "error.message").String())
+	if upstreamMessage == "" {
+		upstreamMessage = strings.TrimSpace(gjson.GetBytes(body, "message").String())
+	}
+	if upstreamMessage == "" {
+		upstreamMessage = strings.TrimSpace(string(body))
+	}
+	if upstreamCode == "" {
+		upstreamCode = "response_failed"
+	}
+	if upstreamType == "" {
+		upstreamType = "upstream_response_failed"
+	}
+	message := "Codex upstream response.failed"
+	if upstreamCode != "" {
+		message += ": code=" + upstreamCode
+	}
+	if upstreamMessage != "" {
+		message += ", message=" + upstreamMessage
+	}
+	out := []byte(`{"error":{}}`)
+	out, _ = sjson.SetBytes(out, "error.message", message)
+	out, _ = sjson.SetBytes(out, "error.type", "upstream_response_failed")
+	out, _ = sjson.SetBytes(out, "error.code", upstreamCode)
+	out, _ = sjson.SetBytes(out, "error.upstream_type", upstreamType)
+	return out
+}
+
+func codexTerminalErrorBody(eventData []byte, path string) []byte {
+	errorResult := gjson.GetBytes(eventData, path)
+	if !errorResult.Exists() {
+		return nil
+	}
+	body := []byte(`{"error":{}}`)
+	if errorResult.Type == gjson.JSON {
+		body, _ = sjson.SetRawBytes(body, "error", []byte(errorResult.Raw))
+	} else if message := strings.TrimSpace(errorResult.String()); message != "" {
+		body, _ = sjson.SetBytes(body, "error.message", message)
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "error.message").String()) == "" {
+		if message := strings.TrimSpace(gjson.GetBytes(eventData, "response.error.message").String()); message != "" {
+			body, _ = sjson.SetBytes(body, "error.message", message)
+		}
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "error.message").String()) == "" {
+		if code := strings.TrimSpace(gjson.GetBytes(body, "error.code").String()); code != "" {
+			body, _ = sjson.SetBytes(body, "error.message", code)
+		}
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "error.message").String()) == "" {
+		if errorType := strings.TrimSpace(gjson.GetBytes(body, "error.type").String()); errorType != "" {
+			body, _ = sjson.SetBytes(body, "error.message", errorType)
+		}
+	}
+	return body
+}
+
+func codexTerminalTopLevelErrorBody(eventData []byte) []byte {
+	message := strings.TrimSpace(gjson.GetBytes(eventData, "message").String())
+	code := strings.TrimSpace(gjson.GetBytes(eventData, "code").String())
+	errorType := strings.TrimSpace(gjson.GetBytes(eventData, "error_type").String())
+	param := strings.TrimSpace(gjson.GetBytes(eventData, "param").String())
+	if message == "" && code == "" && errorType == "" && param == "" {
+		return nil
+	}
+
+	body := []byte(`{"error":{}}`)
+	if message != "" {
+		body, _ = sjson.SetBytes(body, "error.message", message)
+	}
+	if code != "" {
+		body, _ = sjson.SetBytes(body, "error.code", code)
+	}
+	if errorType != "" {
+		body, _ = sjson.SetBytes(body, "error.type", errorType)
+	}
+	if param != "" {
+		body, _ = sjson.SetBytes(body, "error.param", param)
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "error.message").String()) == "" {
+		if code != "" {
+			body, _ = sjson.SetBytes(body, "error.message", code)
+		} else if errorType != "" {
+			body, _ = sjson.SetBytes(body, "error.message", errorType)
+		}
+	}
+	return body
+}
+
+func codexTerminalErrorIsContextLength(body []byte) bool {
+	errorCode := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.code").String()))
+	message := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.message").String()))
+	return errorCode == "context_length_exceeded" ||
+		errorCode == "context_too_large" ||
+		strings.Contains(message, "context window") ||
+		strings.Contains(message, "context length") ||
+		strings.Contains(message, "too many tokens")
+}
+
 // CodexExecutor is a stateless executor for Codex (OpenAI Responses API entrypoint).
 // If api_key is unavailable on auth, it falls back to legacy via ClientAdapter.
 type CodexExecutor struct {
@@ -358,6 +309,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	if opts.Alt == "responses/compact" {
 		return e.executeCompact(ctx, auth, req, opts)
 	}
+	if isCodexOpenAIImageRequest(opts) {
+		return e.executeOpenAIImage(ctx, auth, req, opts)
+	}
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 
 	apiKey, baseURL := codexCreds(auth)
@@ -385,7 +339,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	body = helps.ApplyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel, requestPath)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 	body, _ = sjson.SetBytes(body, "stream", true)
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
@@ -449,6 +403,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	lines := bytes.Split(data, []byte("\n"))
 	outputItemsByIndex := make(map[int64][]byte)
 	var outputItemsFallback [][]byte
+	lastEventType := "unknown"
 	for _, line := range lines {
 		if !bytes.HasPrefix(line, dataTag) {
 			continue
@@ -456,6 +411,14 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 
 		eventData := bytes.TrimSpace(line[5:])
 		eventType := gjson.GetBytes(eventData, "type").String()
+		if strings.TrimSpace(eventType) != "" {
+			lastEventType = eventType
+		}
+
+		if streamErr, ok := codexTerminalStreamErr(eventData); ok {
+			err = streamErr
+			return resp, err
+		}
 
 		if eventType == "response.output_item.done" {
 			itemResult := gjson.GetBytes(eventData, "item")
@@ -471,16 +434,16 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 			continue
 		}
 
-		if eventType != "response.completed" {
+		completedData, ok := codexCompletionEventData(eventData)
+		if !ok {
 			continue
 		}
 
-		if detail, ok := helps.ParseCodexUsage(eventData); ok {
+		if detail, ok := helps.ParseCodexUsage(completedData); ok {
 			reporter.Publish(ctx, detail)
 		}
-		publishCodexImageToolUsage(ctx, reporter, body, eventData)
+		publishCodexImageToolUsage(ctx, reporter, body, completedData)
 
-		completedData := eventData
 		outputResult := gjson.GetBytes(completedData, "response.output")
 		shouldPatchOutput := (!outputResult.Exists() || !outputResult.IsArray() || len(outputResult.Array()) == 0) && (len(outputItemsByIndex) > 0 || len(outputItemsFallback) > 0)
 		if shouldPatchOutput {
@@ -508,7 +471,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 		resp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
 		return resp, nil
 	}
-	err = statusErr{code: 408, msg: "stream error: stream disconnected before completion: stream closed before response.completed"}
+	err = codexIncompleteStreamErr(lastEventType)
 	return resp, err
 }
 
@@ -540,7 +503,7 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	body = helps.ApplyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel, requestPath)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 	body, _ = sjson.DeleteBytes(body, "stream")
 	body = normalizeCodexInstructions(body)
@@ -608,6 +571,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	if opts.Alt == "responses/compact" {
 		return nil, statusErr{code: http.StatusBadRequest, msg: "streaming not supported for /responses/compact"}
 	}
+	if isCodexOpenAIImageRequest(opts) {
+		return e.executeOpenAIImageStream(ctx, auth, req, opts)
+	}
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 
 	apiKey, baseURL := codexCreds(auth)
@@ -635,7 +601,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	body = helps.ApplyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel, requestPath)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
@@ -670,22 +636,12 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		AuthValue: authValue,
 	})
 
-	debugLogs := codexDebugLogsEnabled(e.cfg)
-	var traceState *codexHTTPTraceState
-	if debugLogs {
-		traceState = newCodexHTTPTraceState(ctx, "stream", httpReq, auth)
-		httpReq = httpReq.WithContext(httptrace.WithClientTrace(httpReq.Context(), traceState.clientTrace()))
-	}
 	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
-	stopTraceWait := traceState.startWaitingLogger(15 * time.Second)
 	httpResp, err := httpClient.Do(httpReq)
-	stopTraceWait()
 	if err != nil {
-		traceState.mark("do_error", "error", err.Error())
 		helps.RecordAPIResponseError(ctx, e.cfg, err)
 		return nil, err
 	}
-	traceState.mark("response_headers", "status", httpResp.StatusCode)
 	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		data, readErr := io.ReadAll(httpResp.Body)
@@ -714,38 +670,42 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		var param any
 		outputItemsByIndex := make(map[int64][]byte)
 		var outputItemsFallback [][]byte
-		var (
-			sawCompleted      bool
-			lastEventType     string
-			lineCount         int64
-			dataLineCount     int64
-			byteCount         int64
-			emittedChunkCount int64
-		)
+		sawCompleted := false
+		lastEventType := "unknown"
 		for scanner.Scan() {
 			line := scanner.Bytes()
-			lineCount++
-			byteCount += int64(len(line))
 			helps.AppendAPIResponseChunk(ctx, e.cfg, line)
 			translatedLine := bytes.Clone(line)
 
 			if bytes.HasPrefix(line, dataTag) {
-				dataLineCount++
 				data := bytes.TrimSpace(line[5:])
-				eventType := gjson.GetBytes(data, "type").String()
+				eventType := strings.TrimSpace(gjson.GetBytes(data, "type").String())
 				if eventType != "" {
 					lastEventType = eventType
+				}
+				if streamErr, ok := codexTerminalStreamErr(data); ok {
+					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
+					reporter.PublishFailure(ctx, streamErr)
+					select {
+					case out <- cliproxyexecutor.StreamChunk{Err: streamErr}:
+					case <-ctx.Done():
+					}
+					return
 				}
 				switch eventType {
 				case "response.output_item.done":
 					collectCodexOutputItemDone(data, outputItemsByIndex, &outputItemsFallback)
-				case "response.completed", "response.done":
+				default:
+					completedData, ok := codexCompletionEventData(data)
+					if !ok {
+						break
+					}
 					sawCompleted = true
-					if detail, ok := helps.ParseCodexUsage(data); ok {
+					if detail, ok := helps.ParseCodexUsage(completedData); ok {
 						reporter.Publish(ctx, detail)
 					}
-					publishCodexImageToolUsage(ctx, reporter, body, data)
-					data = patchCodexCompletedOutput(data, outputItemsByIndex, outputItemsFallback)
+					publishCodexImageToolUsage(ctx, reporter, body, completedData)
+					data = patchCodexCompletedOutput(completedData, outputItemsByIndex, outputItemsFallback)
 					translatedLine = append([]byte("data: "), data...)
 				}
 			}
@@ -754,15 +714,12 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 			for i := range chunks {
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
-					emittedChunkCount++
 				case <-ctx.Done():
-					logCodexUpstreamStreamFinished(debugLogs, ctx, "context_done", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, nil, ctx.Err())
 					return
 				}
 			}
 		}
 		if errScan := scanner.Err(); errScan != nil {
-			logCodexUpstreamStreamFinished(debugLogs, ctx, "scan_error", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, errScan, ctx.Err())
 			helps.RecordAPIResponseError(ctx, e.cfg, errScan)
 			reporter.PublishFailure(ctx, errScan)
 			select {
@@ -772,16 +729,14 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 			return
 		}
 		if !sawCompleted && ctx.Err() == nil {
-			errIncomplete := statusErr{code: 408, msg: fmt.Sprintf("stream error: stream disconnected before completion: stream closed before response.completed/response.done, last_event=%s", emptyStringFallback(lastEventType, "unknown"))}
-			logCodexUpstreamStreamFinished(debugLogs, ctx, "incomplete_eof", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, errIncomplete, nil)
+			errIncomplete := codexIncompleteStreamErr(lastEventType)
+			helps.RecordAPIResponseError(ctx, e.cfg, errIncomplete)
 			reporter.PublishFailure(ctx, errIncomplete)
 			select {
 			case out <- cliproxyexecutor.StreamChunk{Err: errIncomplete}:
 			case <-ctx.Done():
 			}
-			return
 		}
-		logCodexUpstreamStreamFinished(debugLogs, ctx, "completed", sawCompleted, lastEventType, lineCount, dataLineCount, byteCount, emittedChunkCount, nil, ctx.Err())
 	}()
 	return &cliproxyexecutor.StreamResult{Headers: httpResp.Header.Clone(), Chunks: out}, nil
 }

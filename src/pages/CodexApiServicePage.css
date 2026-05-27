@@ -458,7 +458,9 @@
 .codex-api-service-key-main input,
 .codex-api-service-key-main code,
 .codex-api-service-policy-grid input,
-.codex-api-service-policy-grid textarea {
+.codex-api-service-policy-grid textarea,
+.codex-api-service-timeout-preset-row input,
+.codex-api-service-timeout-preset-row select {
   min-width: 0;
   border: 1px solid var(--codex-api-border);
   border-radius: var(--radius-md);
@@ -494,11 +496,23 @@
   font-size: 12px;
 }
 
+.codex-api-service-timeout-preset-row input,
+.codex-api-service-timeout-preset-row select {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+
 .codex-api-service-input-row input:focus,
 .codex-api-service-table-row input:focus,
 .codex-api-service-key-main input:focus,
 .codex-api-service-policy-grid input:focus,
 .codex-api-service-policy-grid textarea:focus,
+.codex-api-service-timeout-preset-row input:focus,
+.codex-api-service-timeout-preset-row select:focus,
 .codex-api-service-config-list label > input[type="number"]:focus,
 .codex-api-service-config-list label > input[type="text"]:focus {
   border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
@@ -989,6 +1003,64 @@
   padding: 16px 24px;
 }
 
+.codex-api-service-timeouts-modal {
+  max-width: min(760px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 48px));
+}
+
+.codex-api-service-timeouts-body {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 24px;
+}
+
+.codex-api-service-timeout-section {
+  display: grid;
+  gap: 10px;
+}
+
+.codex-api-service-timeout-section h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.codex-api-service-timeout-section .codex-api-service-policy-grid {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.codex-api-service-timeout-preset-section {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.codex-api-service-timeout-preset-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 12px;
+}
+
+.codex-api-service-timeout-preset-row label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.codex-api-service-timeout-preset-row label > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.codex-api-service-timeout-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .codex-api-service-pricing-table {
   display: grid;
   min-width: 0;
@@ -1326,6 +1398,15 @@
   .codex-api-service-pricing-modal {
     max-width: calc(100vw - 24px);
     max-height: calc(100vh - 24px);
+  }
+
+  .codex-api-service-timeouts-modal {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+
+  .codex-api-service-timeout-section .codex-api-service-policy-grid {
+    grid-template-columns: 1fr;
   }
 
   .codex-api-service-log-panel-head {

@@ -10,6 +10,7 @@ use serde_json::{json, Value as JsonValue};
 use std::os::windows::process::CommandExt;
 
 const CODEX_APP_SERVER_EXECUTABLE: &str = "/Applications/Codex.app/Contents/Resources/codex";
+const CODEX_APP_SERVER_EXECUTABLE_ENV: &str = "CODEX_APP_SERVER_EXECUTABLE";
 const APP_SERVER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub fn rebuild_thread_metadata(codex_home: &Path) -> Result<(), String> {
@@ -81,13 +82,28 @@ pub fn rebuild_thread_metadata(codex_home: &Path) -> Result<(), String> {
 }
 
 fn official_app_server_executable() -> Result<PathBuf, String> {
-    let executable = PathBuf::from(CODEX_APP_SERVER_EXECUTABLE);
-    if executable.exists() {
-        return Ok(executable);
+    let mut candidates = Vec::new();
+    if let Some(executable) = std::env::var_os(CODEX_APP_SERVER_EXECUTABLE_ENV) {
+        if !executable.as_os_str().is_empty() {
+            candidates.push(PathBuf::from(executable));
+        }
     }
+    candidates.push(PathBuf::from(CODEX_APP_SERVER_EXECUTABLE));
+
+    for executable in &candidates {
+        if executable.exists() {
+            return Ok(executable.clone());
+        }
+    }
+
+    let searched_paths = candidates
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
     Err(format!(
         "未找到官方 Codex app-server 可执行文件: {}",
-        executable.display()
+        searched_paths
     ))
 }
 

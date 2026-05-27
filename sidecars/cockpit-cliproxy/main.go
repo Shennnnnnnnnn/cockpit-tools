@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -48,11 +50,18 @@ const ginUserAPIKeyKey = "userApiKey"
 
 const defaultStreamKeepAliveSeconds = 15
 const codexAutoReviewModel = "codex-auto-review"
+const defaultImagesMainModel = "gpt-5.4-mini"
+const defaultImagesToolModel = "gpt-image-2"
+const imagesGenerationsPath = "/v1/images/generations"
+const imagesEditsPath = "/v1/images/edits"
+const maxImageUploadBytes int64 = 64 * 1024 * 1024
 
 var (
-	streamOpenTimeout     = 10 * time.Second
-	streamOpenMaxAttempts = 2
-	streamIdleTimeout     = 60 * time.Second
+	streamOpenTimeout      = 10 * time.Second
+	streamOpenMaxAttempts  = 2
+	streamIdleTimeout      = 60 * time.Second
+	imageStreamOpenTimeout = 10 * time.Second
+	imageStreamIdleTimeout = 60 * time.Second
 )
 
 type manifest struct {
@@ -172,6 +181,22 @@ func (e relayTimeoutError) Error() string {
 
 func (e relayTimeoutError) StatusCode() int {
 	return http.StatusGatewayTimeout
+}
+
+type relayStatusError struct {
+	status  int
+	message string
+}
+
+func (e relayStatusError) Error() string {
+	return e.message
+}
+
+func (e relayStatusError) StatusCode() int {
+	if e.status > 0 {
+		return e.status
+	}
+	return http.StatusBadGateway
 }
 
 type usageDetails struct {
@@ -1421,11 +1446,37 @@ func errorCategory(status int, body string, success bool) string {
 	}
 	lower := strings.ToLower(body)
 	switch {
-	case strings.Contains(lower, "context canceled") ||
+	case strings.Contains(lower, "upstream timed out in stream_open") ||
+		strings.Contains(lower, "phase=execute_stream upstream timed out in stream_open") ||
+		strings.Contains(lower, "stream_open"):
+		return "upstream_first_byte_timeout"
+	case strings.Contains(lower, "upstream timed out in stream_idle") ||
+		strings.Contains(lower, "stream_idle"):
+		return "upstream_stream_timeout"
+	case strings.Contains(lower, "upstream timed out") ||
+		strings.Contains(lower, "request_timeout") ||
+		strings.Contains(lower, "deadline exceeded"):
+		return "upstream_stream_timeout"
+	case strings.Contains(lower, "downstream_client_closed") ||
+		strings.Contains(lower, "stream_client_gone") ||
+		strings.Contains(lower, "client_gone") ||
 		strings.Contains(lower, "client canceled") ||
 		strings.Contains(lower, "client disconnected") ||
-		strings.Contains(lower, "client closed"):
+		strings.Contains(lower, "client closed") ||
+		strings.Contains(lower, "broken pipe") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "connection aborted") ||
+		strings.Contains(lower, "unexpected eof"):
 		return "client_canceled"
+	case strings.Contains(lower, "context canceled"):
+		if status >= http.StatusInternalServerError || status == http.StatusRequestTimeout {
+			return "gateway_context_canceled"
+		}
+		return "client_canceled"
+	case strings.Contains(lower, "upstream_response_failed") ||
+		strings.Contains(lower, "codex upstream response.failed") ||
+		strings.Contains(lower, "last_event=response.failed"):
+		return "upstream_response_failed"
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		return "auth_failed"
 	case status == http.StatusNotFound:
@@ -1830,6 +1881,8 @@ func (s *relayServer) router() *gin.Engine {
 	router.POST("/v1/responses", s.handleResponses)
 	router.POST("/v1/responses/compact", s.handleResponsesCompact)
 	router.POST("/v1/chat/completions", s.handleChatCompletions)
+	router.POST(imagesGenerationsPath, s.handleImagesGenerations)
+	router.POST(imagesEditsPath, s.handleImagesEdits)
 	router.NoRoute(func(c *gin.Context) {
 		writeAPIError(c, http.StatusNotFound, "endpoint not supported", "not_found")
 	})
@@ -1872,6 +1925,751 @@ func (s *relayServer) handleResponsesCompact(c *gin.Context) {
 
 func (s *relayServer) handleChatCompletions(c *gin.Context) {
 	s.handleExecutorRequest(c, sdktranslator.FormatOpenAI, "")
+}
+
+func (s *relayServer) handleImagesGenerations(c *gin.Context) {
+	if _, ok := s.requireAPIKey(c); !ok {
+		return
+	}
+	rawJSON, err := c.GetRawData()
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "failed to read request body", "invalid_request")
+		return
+	}
+	imageReq, err := buildImageGenerationRelayRequest(rawJSON)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, err.Error(), "invalid_request")
+		return
+	}
+	s.handleImagesRelayRequest(c, imageReq)
+}
+
+func (s *relayServer) handleImagesEdits(c *gin.Context) {
+	if _, ok := s.requireAPIKey(c); !ok {
+		return
+	}
+	imageReq, err := buildImageEditRelayRequest(c)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, err.Error(), "invalid_request")
+		return
+	}
+	s.handleImagesRelayRequest(c, imageReq)
+}
+
+type imageRelayRequest struct {
+	body           []byte
+	stream         bool
+	responseFormat string
+	streamPrefix   string
+	requestedModel string
+}
+
+type imageRelayResult struct {
+	Result        string
+	RevisedPrompt string
+	OutputFormat  string
+	Size          string
+	Background    string
+	Quality       string
+}
+
+type imageSSEAccumulator struct {
+	pending []byte
+}
+
+func (a *imageSSEAccumulator) AddChunk(chunk []byte) [][]byte {
+	if len(chunk) == 0 {
+		return nil
+	}
+	if responsesSSENeedsLineBreak(a.pending, chunk) {
+		a.pending = append(a.pending, '\n')
+	}
+	a.pending = append(a.pending, chunk...)
+
+	var frames [][]byte
+	for {
+		frameLen := responsesSSEFrameLen(a.pending)
+		if frameLen == 0 {
+			break
+		}
+		frames = append(frames, a.pending[:frameLen])
+		copy(a.pending, a.pending[frameLen:])
+		a.pending = a.pending[:len(a.pending)-frameLen]
+	}
+	if len(bytes.TrimSpace(a.pending)) == 0 {
+		a.pending = a.pending[:0]
+		return frames
+	}
+	if responsesSSECanEmitWithoutDelimiter(a.pending) {
+		frames = append(frames, a.pending)
+		a.pending = a.pending[:0]
+	}
+	return frames
+}
+
+func (a *imageSSEAccumulator) Flush() [][]byte {
+	if len(a.pending) == 0 {
+		return nil
+	}
+	var frames [][]byte
+	for {
+		frameLen := responsesSSEFrameLen(a.pending)
+		if frameLen == 0 {
+			break
+		}
+		frames = append(frames, a.pending[:frameLen])
+		copy(a.pending, a.pending[frameLen:])
+		a.pending = a.pending[:len(a.pending)-frameLen]
+	}
+	if len(bytes.TrimSpace(a.pending)) > 0 && responsesSSECanEmitWithoutDelimiter(a.pending) {
+		frames = append(frames, a.pending)
+	}
+	a.pending = nil
+	return frames
+}
+
+func buildImageGenerationRelayRequest(rawJSON []byte) (imageRelayRequest, error) {
+	if !json.Valid(rawJSON) {
+		return imageRelayRequest{}, fmt.Errorf("body must be valid JSON")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rawJSON, &payload); err != nil {
+		return imageRelayRequest{}, err
+	}
+	prompt := strings.TrimSpace(stringField(payload, "prompt"))
+	if prompt == "" {
+		return imageRelayRequest{}, fmt.Errorf("prompt is required")
+	}
+	tool, err := buildImageTool(payload, "generate")
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	body, err := json.Marshal(buildImagesResponsesPayload(prompt, nil, tool))
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	return imageRelayRequest{
+		body:           body,
+		stream:         boolField(payload, "stream"),
+		responseFormat: normalizeImageResponseFormat(stringField(payload, "response_format")),
+		streamPrefix:   "image_generation",
+		requestedModel: imageModelOrDefault(payload),
+	}, nil
+}
+
+func buildImageEditRelayRequest(c *gin.Context) (imageRelayRequest, error) {
+	contentType := strings.ToLower(strings.TrimSpace(c.GetHeader("Content-Type")))
+	if strings.HasPrefix(contentType, "multipart/form-data") || contentType == "" {
+		return buildImageEditRelayRequestFromMultipart(c)
+	}
+	if !strings.HasPrefix(contentType, "application/json") {
+		return imageRelayRequest{}, fmt.Errorf("unsupported Content-Type %q", contentType)
+	}
+	rawJSON, err := c.GetRawData()
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	if !json.Valid(rawJSON) {
+		return imageRelayRequest{}, fmt.Errorf("body must be valid JSON")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rawJSON, &payload); err != nil {
+		return imageRelayRequest{}, err
+	}
+	prompt := strings.TrimSpace(stringField(payload, "prompt"))
+	if prompt == "" {
+		return imageRelayRequest{}, fmt.Errorf("prompt is required")
+	}
+	images := jsonImageURLs(payload)
+	if len(images) == 0 {
+		return imageRelayRequest{}, fmt.Errorf("images[].image_url is required")
+	}
+	tool, err := buildImageTool(payload, "edit")
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	if mask, ok := payload["mask"].(map[string]any); ok {
+		if url := strings.TrimSpace(stringField(mask, "image_url")); url != "" {
+			tool["input_image_mask"] = map[string]any{"image_url": url}
+		}
+	}
+	body, err := json.Marshal(buildImagesResponsesPayload(prompt, images, tool))
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	return imageRelayRequest{
+		body:           body,
+		stream:         boolField(payload, "stream"),
+		responseFormat: normalizeImageResponseFormat(stringField(payload, "response_format")),
+		streamPrefix:   "image_edit",
+		requestedModel: imageModelOrDefault(payload),
+	}, nil
+}
+
+func buildImageEditRelayRequestFromMultipart(c *gin.Context) (imageRelayRequest, error) {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	payload := map[string]any{
+		"model":              strings.TrimSpace(c.PostForm("model")),
+		"size":               strings.TrimSpace(c.PostForm("size")),
+		"quality":            strings.TrimSpace(c.PostForm("quality")),
+		"background":         strings.TrimSpace(c.PostForm("background")),
+		"output_format":      strings.TrimSpace(c.PostForm("output_format")),
+		"input_fidelity":     strings.TrimSpace(c.PostForm("input_fidelity")),
+		"moderation":         strings.TrimSpace(c.PostForm("moderation")),
+		"response_format":    strings.TrimSpace(c.PostForm("response_format")),
+		"stream":             parseBoolString(c.PostForm("stream")),
+		"output_compression": parseIntString(c.PostForm("output_compression")),
+		"partial_images":     parseIntString(c.PostForm("partial_images")),
+	}
+	prompt := strings.TrimSpace(c.PostForm("prompt"))
+	if prompt == "" {
+		return imageRelayRequest{}, fmt.Errorf("prompt is required")
+	}
+	imageFiles := form.File["image[]"]
+	if len(imageFiles) == 0 {
+		imageFiles = form.File["image"]
+	}
+	if len(imageFiles) == 0 {
+		return imageRelayRequest{}, fmt.Errorf("image is required")
+	}
+	images := make([]string, 0, len(imageFiles))
+	for _, fh := range imageFiles {
+		dataURL, err := multipartFileToDataURL(fh)
+		if err != nil {
+			return imageRelayRequest{}, err
+		}
+		images = append(images, dataURL)
+	}
+	tool, err := buildImageTool(payload, "edit")
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	if masks := form.File["mask"]; len(masks) > 0 && masks[0] != nil {
+		dataURL, err := multipartFileToDataURL(masks[0])
+		if err != nil {
+			return imageRelayRequest{}, err
+		}
+		tool["input_image_mask"] = map[string]any{"image_url": dataURL}
+	}
+	body, err := json.Marshal(buildImagesResponsesPayload(prompt, images, tool))
+	if err != nil {
+		return imageRelayRequest{}, err
+	}
+	return imageRelayRequest{
+		body:           body,
+		stream:         boolField(payload, "stream"),
+		responseFormat: normalizeImageResponseFormat(stringField(payload, "response_format")),
+		streamPrefix:   "image_edit",
+		requestedModel: imageModelOrDefault(payload),
+	}, nil
+}
+
+func (s *relayServer) handleImagesRelayRequest(c *gin.Context, imageReq imageRelayRequest) {
+	spec, _ := c.Request.Context().Value(clientAPIKeyContextKey).(*apiKeySpec)
+	requestedModel := strings.TrimSpace(imageReq.requestedModel)
+	if requestedModel == "" {
+		requestedModel = defaultImagesToolModel
+	}
+	if !validateClientModelVisible(s.manifest, spec, requestedModel, defaultImagesToolModel) {
+		writeAPIError(c, http.StatusNotFound, fmt.Sprintf("模型 %s 不在当前 API Key 的可用模型范围内", requestedModel), "model_not_available")
+		return
+	}
+	model := defaultImagesMainModel
+	req, opts := buildExecutorRequest(c, imageReq.body, model, sdktranslator.FormatOpenAIResponse, "", true)
+	startedAt := time.Now()
+	timeouts := s.streamTimeoutsForRequest(c.Request, imageReq.body, defaultImagesToolModel)
+	streamCtx, cancelStream := context.WithCancel(relayContext(c))
+	defer cancelStream()
+	result, err := s.executeStreamWithOpenTimeout(c, streamCtx, []string{"codex"}, req, opts, model, startedAt, timeouts.open)
+	if err != nil {
+		writeExecutorError(c, err)
+		return
+	}
+	if result == nil || result.Chunks == nil {
+		writeAPIError(c, http.StatusBadGateway, "upstream stream is unavailable", "bad_gateway")
+		return
+	}
+	if imageReq.stream {
+		s.forwardImagesStream(c, streamCtx, result, imageReq, timeouts.idle)
+		return
+	}
+	out, err := collectImagesResponse(streamCtx, result.Chunks, imageReq.responseFormat, timeouts.idle)
+	if err != nil {
+		writeExecutorError(c, err)
+		return
+	}
+	writeUpstreamHeaders(c.Writer.Header(), result.Headers)
+	c.Data(http.StatusOK, "application/json", out)
+}
+
+func (s *relayServer) forwardImagesStream(c *gin.Context, ctx context.Context, result *cliproxyexecutor.StreamResult, imageReq imageRelayRequest, idleTimeout time.Duration) {
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		writeAPIError(c, http.StatusInternalServerError, "streaming not supported", "streaming_not_supported")
+		return
+	}
+	setEventStreamHeaders(c.Writer.Header())
+	writeUpstreamHeaders(c.Writer.Header(), result.Headers)
+	c.Status(http.StatusOK)
+
+	writeEvent := func(eventName string, payload []byte) {
+		if strings.TrimSpace(eventName) != "" {
+			_, _ = fmt.Fprintf(c.Writer, "event: %s\n", eventName)
+		}
+		_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", string(payload))
+		flusher.Flush()
+	}
+	writeErr := func(err error) {
+		status := statusCodeFromError(err)
+		payload, _ := json.Marshal(map[string]any{
+			"error": map[string]any{
+				"message": errorMessage(err),
+				"type":    "upstream_error",
+				"code":    status,
+			},
+		})
+		writeEvent("error", payload)
+	}
+
+	acc := &imageSSEAccumulator{}
+	if idleTimeout <= 0 {
+		idleTimeout = imageStreamIdleTimeout
+	}
+	idleTimer := time.NewTimer(idleTimeout)
+	defer idleTimer.Stop()
+	for {
+		select {
+		case <-idleTimer.C:
+			writeErr(relayTimeoutError{phase: "stream_idle", timeout: idleTimeout})
+			return
+		case <-ctx.Done():
+			writeErr(ctx.Err())
+			return
+		case <-c.Request.Context().Done():
+			return
+		case chunk, ok := <-result.Chunks:
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(idleTimeout)
+			if !ok {
+				for _, frame := range acc.Flush() {
+					if done := forwardImageResponseFrame(frame, imageReq, writeEvent, writeErr); done {
+						return
+					}
+				}
+				return
+			}
+			if chunk.Err != nil {
+				writeErr(chunk.Err)
+				return
+			}
+			for _, frame := range acc.AddChunk(chunk.Payload) {
+				if done := forwardImageResponseFrame(frame, imageReq, writeEvent, writeErr); done {
+					return
+				}
+			}
+		}
+	}
+}
+
+func forwardImageResponseFrame(frame []byte, imageReq imageRelayRequest, writeEvent func(string, []byte), writeErr func(error)) bool {
+	for _, payload := range imageFramePayloads(frame) {
+		var event map[string]any
+		if err := json.Unmarshal(payload, &event); err != nil {
+			continue
+		}
+		switch stringField(event, "type") {
+		case "response.image_generation_call.partial_image":
+			b64 := stringField(event, "partial_image_b64")
+			if b64 == "" {
+				continue
+			}
+			index, _ := numericField(event["partial_image_index"])
+			eventName := imageReq.streamPrefix + ".partial_image"
+			out := map[string]any{
+				"type":                eventName,
+				"partial_image_index": index,
+			}
+			if normalizeImageResponseFormat(imageReq.responseFormat) == "url" {
+				out["url"] = "data:" + mimeTypeFromOutputFormat(stringField(event, "output_format")) + ";base64," + b64
+			} else {
+				out["b64_json"] = b64
+			}
+			data, _ := json.Marshal(out)
+			writeEvent(eventName, data)
+		case "response.completed":
+			results, usage, _ := extractImageResults(event)
+			if len(results) == 0 {
+				writeErr(relayStatusError{status: http.StatusBadGateway, message: "upstream did not return image output"})
+				return true
+			}
+			eventName := imageReq.streamPrefix + ".completed"
+			for _, img := range results {
+				out := map[string]any{"type": eventName}
+				if normalizeImageResponseFormat(imageReq.responseFormat) == "url" {
+					out["url"] = "data:" + mimeTypeFromOutputFormat(img.OutputFormat) + ";base64," + img.Result
+				} else {
+					out["b64_json"] = img.Result
+				}
+				if usage != nil {
+					out["usage"] = usage
+				}
+				data, _ := json.Marshal(out)
+				writeEvent(eventName, data)
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func stringField(payload map[string]any, key string) string {
+	value, _ := payload[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func boolField(payload map[string]any, key string) bool {
+	value, _ := payload[key].(bool)
+	return value
+}
+
+func parseBoolString(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseIntString(raw string) any {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return value
+}
+
+func normalizeImageResponseFormat(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "url") {
+		return "url"
+	}
+	return "b64_json"
+}
+
+func imageModelOrDefault(payload map[string]any) string {
+	if model := strings.TrimSpace(stringField(payload, "model")); model != "" {
+		return model
+	}
+	return defaultImagesToolModel
+}
+
+func buildImageTool(payload map[string]any, action string) (map[string]any, error) {
+	model := imageModelOrDefault(payload)
+	if modelBase(model) != defaultImagesToolModel {
+		return nil, fmt.Errorf("model %s is not supported on %s or %s. Use %s.", model, imagesGenerationsPath, imagesEditsPath, defaultImagesToolModel)
+	}
+	tool := map[string]any{
+		"type":   "image_generation",
+		"action": action,
+		"model":  defaultImagesToolModel,
+	}
+	for _, key := range []string{"size", "quality", "background", "output_format", "moderation"} {
+		if value := stringField(payload, key); value != "" {
+			tool[key] = value
+		}
+	}
+	if action == "edit" {
+		if value := stringField(payload, "input_fidelity"); value != "" {
+			tool["input_fidelity"] = value
+		}
+	}
+	for _, key := range []string{"output_compression", "partial_images"} {
+		if value, ok := numericField(payload[key]); ok {
+			tool[key] = value
+		}
+	}
+	return tool, nil
+}
+
+func numericField(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float64:
+		return int64(v), true
+	case json.Number:
+		n, err := v.Int64()
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func jsonImageURLs(payload map[string]any) []string {
+	var out []string
+	if image := stringField(payload, "image"); image != "" {
+		out = append(out, image)
+	}
+	if items, ok := payload["images"].([]any); ok {
+		for _, item := range items {
+			switch v := item.(type) {
+			case string:
+				if trimmed := strings.TrimSpace(v); trimmed != "" {
+					out = append(out, trimmed)
+				}
+			case map[string]any:
+				if url := stringField(v, "image_url"); url != "" {
+					out = append(out, url)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func buildImagesResponsesPayload(prompt string, images []string, tool map[string]any) map[string]any {
+	content := []any{map[string]any{
+		"type": "input_text",
+		"text": prompt,
+	}}
+	for _, image := range images {
+		if image = strings.TrimSpace(image); image != "" {
+			content = append(content, map[string]any{
+				"type":      "input_image",
+				"image_url": image,
+			})
+		}
+	}
+	return map[string]any{
+		"instructions":        "",
+		"stream":              true,
+		"reasoning":           map[string]any{"effort": "medium", "summary": "auto"},
+		"parallel_tool_calls": true,
+		"include":             []string{"reasoning.encrypted_content"},
+		"model":               defaultImagesMainModel,
+		"store":               false,
+		"tool_choice":         map[string]any{"type": "image_generation"},
+		"input": []any{map[string]any{
+			"type":    "message",
+			"role":    "user",
+			"content": content,
+		}},
+		"tools": []any{tool},
+	}
+}
+
+func multipartFileToDataURL(fileHeader *multipart.FileHeader) (string, error) {
+	if fileHeader == nil {
+		return "", fmt.Errorf("upload file is nil")
+	}
+	if fileHeader.Size > maxImageUploadBytes {
+		return "", fmt.Errorf("upload file exceeds %d bytes", maxImageUploadBytes)
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxImageUploadBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(data)) > maxImageUploadBytes {
+		return "", fmt.Errorf("upload file exceeds %d bytes", maxImageUploadBytes)
+	}
+	mediaType := strings.TrimSpace(fileHeader.Header.Get("Content-Type"))
+	if mediaType == "" {
+		mediaType = http.DetectContentType(data)
+	}
+	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+func collectImagesResponse(ctx context.Context, chunks <-chan cliproxyexecutor.StreamChunk, responseFormat string, idleTimeout time.Duration) ([]byte, error) {
+	acc := &imageSSEAccumulator{}
+	if idleTimeout <= 0 {
+		idleTimeout = imageStreamIdleTimeout
+	}
+	idleTimer := time.NewTimer(idleTimeout)
+	defer idleTimer.Stop()
+	for {
+		select {
+		case <-idleTimer.C:
+			return nil, relayTimeoutError{phase: "stream_idle", timeout: idleTimeout}
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case chunk, ok := <-chunks:
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(idleTimeout)
+			if !ok {
+				for _, frame := range acc.Flush() {
+					if out, done, err := processImageResponseFrame(frame, responseFormat); err != nil {
+						return nil, err
+					} else if done {
+						return out, nil
+					}
+				}
+				return nil, relayStatusError{status: http.StatusBadGateway, message: "stream disconnected before completion"}
+			}
+			if chunk.Err != nil {
+				return nil, chunk.Err
+			}
+			for _, frame := range acc.AddChunk(chunk.Payload) {
+				if out, done, err := processImageResponseFrame(frame, responseFormat); err != nil {
+					return nil, err
+				} else if done {
+					return out, nil
+				}
+			}
+		}
+	}
+}
+
+func processImageResponseFrame(frame []byte, responseFormat string) ([]byte, bool, error) {
+	for _, payload := range imageFramePayloads(frame) {
+		var event map[string]any
+		if err := json.Unmarshal(payload, &event); err != nil {
+			return nil, false, relayStatusError{status: http.StatusBadGateway, message: "invalid SSE data JSON"}
+		}
+		if stringField(event, "type") != "response.completed" {
+			continue
+		}
+		results, usage, createdAt := extractImageResults(event)
+		if len(results) == 0 {
+			return nil, false, relayStatusError{status: http.StatusBadGateway, message: "upstream did not return image output"}
+		}
+		out, err := buildImagesAPIResponse(results, usage, createdAt, responseFormat)
+		return out, true, err
+	}
+	return nil, false, nil
+}
+
+func imageFramePayloads(frame []byte) [][]byte {
+	var payloads [][]byte
+	for _, line := range bytes.Split(frame, []byte("\n")) {
+		trimmed := bytes.TrimSpace(bytes.TrimRight(line, "\r"))
+		if !bytes.HasPrefix(trimmed, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(trimmed[len("data:"):])
+		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+			continue
+		}
+		payloads = append(payloads, payload)
+	}
+	return payloads
+}
+
+func extractImageResults(event map[string]any) ([]imageRelayResult, any, int64) {
+	createdAt := time.Now().Unix()
+	if response, ok := event["response"].(map[string]any); ok {
+		if created, ok := numericField(response["created_at"]); ok && created > 0 {
+			createdAt = created
+		}
+		var usage any
+		if toolUsage, ok := response["tool_usage"].(map[string]any); ok {
+			usage = toolUsage["image_gen"]
+		}
+		var results []imageRelayResult
+		if output, ok := response["output"].([]any); ok {
+			for _, item := range output {
+				obj, ok := item.(map[string]any)
+				if !ok || stringField(obj, "type") != "image_generation_call" {
+					continue
+				}
+				result := stringField(obj, "result")
+				if result == "" {
+					continue
+				}
+				results = append(results, imageRelayResult{
+					Result:        result,
+					RevisedPrompt: stringField(obj, "revised_prompt"),
+					OutputFormat:  stringField(obj, "output_format"),
+					Size:          stringField(obj, "size"),
+					Background:    stringField(obj, "background"),
+					Quality:       stringField(obj, "quality"),
+				})
+			}
+		}
+		return results, usage, createdAt
+	}
+	return nil, nil, createdAt
+}
+
+func buildImagesAPIResponse(results []imageRelayResult, usage any, createdAt int64, responseFormat string) ([]byte, error) {
+	responseFormat = normalizeImageResponseFormat(responseFormat)
+	data := make([]any, 0, len(results))
+	for _, img := range results {
+		item := map[string]any{}
+		if responseFormat == "url" {
+			item["url"] = "data:" + mimeTypeFromOutputFormat(img.OutputFormat) + ";base64," + img.Result
+		} else {
+			item["b64_json"] = img.Result
+		}
+		if img.RevisedPrompt != "" {
+			item["revised_prompt"] = img.RevisedPrompt
+		}
+		data = append(data, item)
+	}
+	out := map[string]any{
+		"created": createdAt,
+		"data":    data,
+	}
+	if len(results) > 0 {
+		first := results[0]
+		if first.Background != "" {
+			out["background"] = first.Background
+		}
+		if first.OutputFormat != "" {
+			out["output_format"] = first.OutputFormat
+		}
+		if first.Quality != "" {
+			out["quality"] = first.Quality
+		}
+		if first.Size != "" {
+			out["size"] = first.Size
+		}
+	}
+	if usage != nil {
+		out["usage"] = usage
+	}
+	return json.Marshal(out)
+}
+
+func mimeTypeFromOutputFormat(outputFormat string) string {
+	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
+	case "":
+		return "image/png"
+	case "png":
+		return "image/png"
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "webp":
+		return "image/webp"
+	default:
+		if strings.Contains(outputFormat, "/") {
+			return outputFormat
+		}
+		return "image/png"
+	}
 }
 
 func (s *relayServer) requireAPIKey(c *gin.Context) (*apiKeySpec, bool) {
@@ -1942,11 +2740,12 @@ func (s *relayServer) handleNonStream(c *gin.Context, body []byte, model string,
 func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, sourceFormat sdktranslator.Format, alt string) {
 	req, opts := buildExecutorRequest(c, body, model, sourceFormat, alt, true)
 	startedAt := time.Now()
+	timeouts := s.streamTimeoutsForRequest(c.Request, body, model)
 	s.emitExecutorDiagnostic(c, "executor_started", model, "execute_stream", startedAt, "")
 	stopWaitLogger := s.startExecutorWaitLogger(c, model, "execute_stream", startedAt)
 	streamCtx, cancelStream := context.WithCancel(relayContext(c))
 	defer cancelStream()
-	result, err := s.executeStreamWithOpenTimeout(c, streamCtx, []string{"codex"}, req, opts, model, startedAt)
+	result, err := s.executeStreamWithOpenTimeout(c, streamCtx, []string{"codex"}, req, opts, model, startedAt, timeouts.open)
 	stopWaitLogger()
 	if err != nil {
 		s.emitExecutorDiagnostic(c, "executor_failed", model, "execute_stream", startedAt, err.Error())
@@ -1982,7 +2781,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	received := 0
 	endReason := "done"
 	firstChunkLogged := false
-	idleTimer := time.NewTimer(streamIdleTimeout)
+	idleTimer := time.NewTimer(timeouts.idle)
 	defer idleTimer.Stop()
 	defer func() {
 		s.emitStreamCompleted(c, model, received, endReason)
@@ -1993,7 +2792,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 		case <-idleTimer.C:
 			cancelStream()
 			endReason = "stream_idle_timeout"
-			err := relayTimeoutError{phase: "stream_idle", timeout: streamIdleTimeout}
+			err := relayTimeoutError{phase: "stream_idle", timeout: timeouts.idle}
 			s.emitExecutorDiagnostic(c, "stream_idle_timeout", model, "stream_loop", startedAt, err.Error())
 			writeStreamTerminalError(c, err)
 			flusher.Flush()
@@ -2020,7 +2819,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 				default:
 				}
 			}
-			idleTimer.Reset(streamIdleTimeout)
+			idleTimer.Reset(timeouts.idle)
 			if !ok {
 				if err := framer.Close(c.Writer); err != nil {
 					endReason = "write_failed"
@@ -2068,20 +2867,32 @@ func (s *relayServer) executeStreamWithOpenTimeout(
 	opts cliproxyexecutor.Options,
 	model string,
 	startedAt time.Time,
+	openTimeout time.Duration,
 ) (*cliproxyexecutor.StreamResult, error) {
-	attempts := streamOpenMaxAttempts
+	attempts := s.streamOpenMaxAttempts()
 	if attempts <= 0 {
 		attempts = 1
+	}
+	if openTimeout <= 0 {
+		openTimeout = streamOpenTimeout
 	}
 	for attempt := 1; attempt <= attempts; attempt++ {
 		attemptCtx, cancelAttempt := context.WithCancel(ctx)
 		done := make(chan executeStreamResult, 1)
+		s.emitExecutorDiagnostic(
+			c,
+			"stream_open_attempt",
+			model,
+			"execute_stream",
+			startedAt,
+			fmt.Sprintf("attempt=%d/%d open_timeout=%s", attempt, attempts, openTimeout),
+		)
 		go func() {
 			result, err := s.runtime.ExecuteStream(attemptCtx, providers, req, opts)
 			done <- executeStreamResult{result: result, err: err}
 		}()
 
-		timer := time.NewTimer(streamOpenTimeout)
+		timer := time.NewTimer(openTimeout)
 		select {
 		case out := <-done:
 			timer.Stop()
@@ -2092,19 +2903,28 @@ func (s *relayServer) executeStreamWithOpenTimeout(
 		case <-ctx.Done():
 			timer.Stop()
 			cancelAttempt()
+			s.emitExecutorDiagnostic(
+				c,
+				"stream_open_canceled",
+				model,
+				"execute_stream",
+				startedAt,
+				fmt.Sprintf("cancel_source=downstream_context err=%v", ctx.Err()),
+			)
 			return nil, ctx.Err()
 		case <-timer.C:
 			cancelAttempt()
-			err := relayTimeoutError{phase: fmt.Sprintf("stream_open attempt=%d", attempt), timeout: streamOpenTimeout}
+			err := relayTimeoutError{phase: fmt.Sprintf("stream_open attempt=%d/%d", attempt, attempts), timeout: openTimeout}
+			detail := fmt.Sprintf("cancel_source=gateway_timeout_cancel %s", err.Error())
 			if attempt < attempts {
-				s.emitExecutorDiagnostic(c, "stream_open_retry", model, "execute_stream", startedAt, err.Error())
+				s.emitExecutorDiagnostic(c, "stream_open_retry", model, "execute_stream", startedAt, detail)
 				continue
 			}
-			s.emitExecutorDiagnostic(c, "stream_open_retry_failed", model, "execute_stream", startedAt, err.Error())
+			s.emitExecutorDiagnostic(c, "stream_open_retry_failed", model, "execute_stream", startedAt, detail)
 			return nil, err
 		}
 	}
-	return nil, relayTimeoutError{phase: "stream_open", timeout: streamOpenTimeout}
+	return nil, relayTimeoutError{phase: "stream_open", timeout: openTimeout}
 }
 
 func (s *relayServer) startExecutorWaitLogger(c *gin.Context, model, phase string, startedAt time.Time) func() {
@@ -2208,6 +3028,106 @@ func requestBodyStream(body []byte) bool {
 	return stream
 }
 
+type streamTimeoutProfile struct {
+	open time.Duration
+	idle time.Duration
+}
+
+func durationFromConfigMillis(value int, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return time.Duration(value) * time.Millisecond
+}
+
+func (s *relayServer) streamOpenMaxAttempts() int {
+	attempts := streamOpenMaxAttempts
+	if s != nil && s.cfg != nil && s.cfg.Streaming.StreamOpenMaxAttempts > 0 {
+		attempts = s.cfg.Streaming.StreamOpenMaxAttempts
+	}
+	if attempts < 1 {
+		return 1
+	}
+	if attempts > 3 {
+		return 3
+	}
+	return attempts
+}
+
+func (s *relayServer) streamTimeoutsForRequest(r *http.Request, body []byte, model string) streamTimeoutProfile {
+	profile := streamTimeoutProfile{
+		open: durationFromConfigMillis(0, streamOpenTimeout),
+		idle: durationFromConfigMillis(0, streamIdleTimeout),
+	}
+	if s != nil && s.cfg != nil {
+		profile.open = durationFromConfigMillis(s.cfg.Streaming.StreamOpenTimeoutMS, profile.open)
+		profile.idle = durationFromConfigMillis(s.cfg.Streaming.StreamIdleTimeoutMS, profile.idle)
+	}
+	if !isImageGenerationRequest(r, body, model) {
+		return profile
+	}
+	profile.open = imageStreamOpenTimeout
+	profile.idle = imageStreamIdleTimeout
+	if s != nil && s.cfg != nil {
+		profile.open = durationFromConfigMillis(s.cfg.Streaming.ImageStreamOpenTimeoutMS, profile.open)
+		profile.idle = durationFromConfigMillis(s.cfg.Streaming.ImageStreamIdleTimeoutMS, profile.idle)
+	}
+	return profile
+}
+
+func isImageGenerationRequest(r *http.Request, body []byte, model string) bool {
+	if modelBase(model) == "gpt-image-2" {
+		return true
+	}
+	if r != nil && r.URL != nil {
+		path := strings.ToLower(strings.TrimSpace(r.URL.Path))
+		if strings.Contains(path, "/images/generations") || strings.Contains(path, "/images/edits") {
+			return true
+		}
+	}
+	return jsonContainsImageGenerationTool(body)
+}
+
+func modelBase(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndex(model, "/"); idx >= 0 && idx < len(model)-1 {
+		model = strings.TrimSpace(model[idx+1:])
+	}
+	return model
+}
+
+func jsonContainsImageGenerationTool(body []byte) bool {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return false
+	}
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	return valueContainsImageGenerationTool(payload)
+}
+
+func valueContainsImageGenerationTool(value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		if typ, ok := v["type"].(string); ok && strings.EqualFold(strings.TrimSpace(typ), "image_generation") {
+			return true
+		}
+		for _, child := range v {
+			if valueContainsImageGenerationTool(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if valueContainsImageGenerationTool(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func requestAlt(c *gin.Context) string {
 	if c == nil {
 		return ""
@@ -2297,6 +3217,11 @@ func writeExecutorError(c *gin.Context, err error) {
 		code = "rate_limited"
 	} else if status == http.StatusNotFound {
 		code = "not_found"
+	} else if status == http.StatusGatewayTimeout || status == http.StatusRequestTimeout {
+		code = errorCategory(status, errorMessage(err), false)
+	}
+	if err != nil {
+		_ = c.Error(err)
 	}
 	writeAPIError(c, status, errorMessage(err), code)
 }

@@ -7,6 +7,31 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [0.24.9] - 2026-05-26
+
+### 新增
+- **CLIProxyAPI sidecar 现支持 xAI 账号与 executor 路由**：已加入 xAI OAuth、token 刷新、模型思考配置、executor 绑定和相关服务测试，使 xAI 账号可进入 sidecar 账号池参与调度。
+- **Codex API 服务 sidecar 现暴露 OpenAI 兼容图片与视频端点**：`/v1/images/generations`、`/v1/images/edits` 与视频处理器会通过 Codex Responses 工具链转发，并支持流式输出、multipart 图片输入、响应格式转换和用量捕获。
+- **CLIProxyAPI sidecar 现包含 Codex 客户端模型目录生成能力**：sidecar 可拉取 Codex client models，内置生成后的 Codex 模型目录，并与内置模型定义一起使用。
+- **Home relay 模式现支持集群发现与 mTLS 注册**：Home JWT 注册可申请并校验证书，配置 TLS Redis 客户端，发现集群节点，并在 Home 目标不健康时切换到更合适的节点。
+- **Codex API 服务用量统计现区分客户端取消与流未完成结果**：总览、账号行与请求摘要会分别展示成功、失败、取消和流未完成数量。
+- **Codex API 服务现支持配置超时与重试参数**：完整 API 服务页新增高级设置，可调整 Sidecar 流式超时、图片流超时、打开尝试次数、连接保活、启动重试、旧网关请求读取/上游连接/流式超时、WebSocket 超时、上游发送重试和单账号短重试，并内置长等待/短等待方案与自定义方案保存。
+
+### 变更
+- **Codex 账号 API provider 默认值现优先使用 OpenAI Official**：Cockpit API 预设从常规预设列表中隐藏，但已有 Cockpit API Base URL 仍会识别为 Cockpit 管理的自定义 provider。
+- **CLIProxyAPI sidecar 请求处理增强了元数据、日志与 auth file 管理**：请求元数据、响应包装、auth file project ID、部分字段更新、Redis queue 处理和清理后的请求日志均补充了更完整的实现与测试。
+- **Codex API 服务流式处理现读取运行时超时配置**：Sidecar 与旧网关会从已保存的 API 服务配置读取流式、WebSocket、重试和连接超时，不再依赖代码中的固定值。
+- **Codex 同步会话元数据重建现改为 best effort**：project index 修复在元数据重建失败时仍会继续，并把会话可见性更新限制在可用数据范围内。感谢 @OvOYu。
+
+### 修复
+- **Codex 本地访问绑定失败后仍可修改端口**：启动绑定失败后，用户可以继续调整端口，不再被失败状态阻断。感谢 @Disaster-Terminator。
+- **Codex 同步会话项目可见性修复更可靠**：会从可用 session 文件和官方 App 元数据重建同步线程元数据，并且不会因为非关键重建失败而中断。感谢 @OvOYu。
+- **Codex 切号前现会刷新本地账号列表**：当目标账号已从本地存储消失时，会拒绝过期选择并显示明确提示。
+- **Codex API 服务现将上游流未完成与普通失败分开分类**：legacy 与 sidecar 中的断流、incomplete EOF、缺少完成事件等错误会迁移并统计为 `stream_incomplete`。
+- **Trae 账号认证存储现正确处理 iCube 密文记录**：共享 core 与 Tauri 模块都会按匹配的 cipher storage 路径读写加密认证记录。感谢 @wuhua111。
+- **Fork PR 构建不再要求不可用的签名密钥**：build matrix 仅在所需密钥存在时应用签名配置。感谢 @OvOYu。
+
+---
 ## [0.24.8] - 2026-05-25
 
 ### 新增

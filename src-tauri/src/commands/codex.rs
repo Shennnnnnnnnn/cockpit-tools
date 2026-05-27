@@ -6,7 +6,8 @@ use crate::models::codex_local_access::{
     CodexLocalAccessCustomRoutingRule, CodexLocalAccessGatewayMode, CodexLocalAccessModelAlias,
     CodexLocalAccessModelPricing, CodexLocalAccessPortCleanupResult, CodexLocalAccessRequestKind,
     CodexLocalAccessRoutingStrategy, CodexLocalAccessScope, CodexLocalAccessState,
-    CodexLocalAccessTestResult, CodexLocalAccessUsageEventPage,
+    CodexLocalAccessTestResult, CodexLocalAccessTimeoutPreset, CodexLocalAccessTimeouts,
+    CodexLocalAccessUsageEventPage,
 };
 use crate::modules::{
     account, codex_account, codex_local_access, codex_oauth, codex_quota, codex_session_visibility,
@@ -1033,6 +1034,26 @@ pub async fn codex_local_access_update_routing_options(
         max_retry_credentials,
         max_retry_interval_ms,
         disable_cooling,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn codex_local_access_update_timeouts(
+    timeouts: CodexLocalAccessTimeouts,
+    active_timeout_preset_id: Option<String>,
+) -> Result<CodexLocalAccessState, String> {
+    codex_local_access::update_local_access_timeouts(timeouts, active_timeout_preset_id).await
+}
+
+#[tauri::command]
+pub async fn codex_local_access_update_timeout_presets(
+    timeout_presets: Vec<CodexLocalAccessTimeoutPreset>,
+    active_timeout_preset_id: Option<String>,
+) -> Result<CodexLocalAccessState, String> {
+    codex_local_access::update_local_access_timeout_presets(
+        timeout_presets,
+        active_timeout_preset_id,
     )
     .await
 }

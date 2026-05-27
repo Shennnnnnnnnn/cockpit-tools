@@ -57,6 +57,38 @@ export interface CodexLocalAccessApiKey {
   lastUsedAt?: number | null;
 }
 
+export interface CodexLocalAccessTimeouts {
+  legacyRequestReadTimeoutMs: number;
+  legacyUpstreamConnectTimeoutMs: number;
+  legacyStreamIdleTimeoutMs: number;
+  legacyStreamTotalTimeoutMs: number;
+  sidecarStreamOpenTimeoutMs: number;
+  sidecarStreamIdleTimeoutMs: number;
+  sidecarImageStreamOpenTimeoutMs: number;
+  sidecarImageStreamIdleTimeoutMs: number;
+  sidecarStreamOpenMaxAttempts: number;
+  sidecarStreamKeepaliveSeconds: number;
+  websocketConnectTimeoutMs: number;
+  websocketInitialMessageTimeoutMs: number;
+  websocketIdleTimeoutMs: number;
+  websocketHeartbeatIntervalMs: number;
+  upstreamSendRetryAttempts: number;
+  upstreamSendRetryBaseDelayMs: number;
+  upstreamSendRetryMaxDelayMs: number;
+  singleAccountStatusRetryAttempts: number;
+  singleAccountStatusRetryBaseDelayMs: number;
+  singleAccountStatusRetryMaxDelayMs: number;
+  sidecarStreamingBootstrapRetries: number;
+}
+
+export interface CodexLocalAccessTimeoutPreset {
+  id: string;
+  name: string;
+  timeouts: CodexLocalAccessTimeouts;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface CodexLocalAccessCollection {
   enabled: boolean;
   port: number;
@@ -76,6 +108,9 @@ export interface CodexLocalAccessCollection {
   sessionAffinityTtlMs: number;
   maxRetryCredentials: number;
   maxRetryIntervalMs: number;
+  timeouts: CodexLocalAccessTimeouts;
+  activeTimeoutPresetId: string;
+  timeoutPresets: CodexLocalAccessTimeoutPreset[];
   disableCooling: boolean;
   restrictFreeAccounts: boolean;
   boundOauthAccountId?: string | null;
@@ -88,6 +123,9 @@ export interface CodexLocalAccessUsageStats {
   requestCount: number;
   successCount: number;
   failureCount: number;
+  clientCanceledCount: number;
+  upstreamResponseFailedCount: number;
+  streamIncompleteCount: number;
   totalLatencyMs: number;
   textRequestCount: number;
   imageRequestCount: number;

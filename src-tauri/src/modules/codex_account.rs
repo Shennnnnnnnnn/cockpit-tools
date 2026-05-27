@@ -1287,6 +1287,16 @@ fn clear_stale_missing_refresh_token_reauth(account: &mut CodexAccount) -> Resul
     save_account(account)
 }
 
+fn retain_existing_refresh_token_if_missing(
+    mut tokens: CodexTokens,
+    existing: Option<&CodexAccount>,
+) -> CodexTokens {
+    tokens.refresh_token = normalize_optional_value(tokens.refresh_token).or_else(|| {
+        existing.and_then(|account| normalize_optional_ref(account.tokens.refresh_token.as_deref()))
+    });
+    tokens
+}
+
 pub fn extract_chatgpt_account_id_from_access_token(access_token: &str) -> Option<String> {
     let payload = decode_jwt_payload_value(access_token)?;
     let auth_data = payload.get("https://api.openai.com/auth")?;
@@ -1629,6 +1639,10 @@ pub fn save_account_index(index: &CodexAccountIndex) -> Result<(), String> {
 fn repair_account_index_from_details(reason: &str) -> Option<CodexAccountIndex> {
     let index_path = get_accounts_storage_path();
     let accounts_dir = get_accounts_dir();
+    let previous_current_account_id = fs::read_to_string(&index_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<CodexAccountIndex>(&content).ok())
+        .and_then(|index| index.current_account_id);
     logger::log_warn(&format!(
         "[Codex Account][Repair] 检测到索引异常，开始按详情文件重建: reason={}, index_path={}, accounts_dir={}",
         reason,
@@ -1685,7 +1699,11 @@ fn repair_account_index_from_details(reason: &str) -> Option<CodexAccountIndex> 
             last_used: account.last_used,
         })
         .collect();
-    index.current_account_id = None;
+    index.current_account_id = previous_current_account_id.filter(|current_id| {
+        accounts
+            .iter()
+            .any(|account| account.id.as_str() == current_id.as_str())
+    });
 
     logger::log_info(&format!(
         "[Codex Account][Repair] 索引重建完成，准备写回本地文件: recovered_accounts={}, current_account_id={}",
@@ -1913,6 +1931,31 @@ fn parse_codex_account_compat(
 /// 读取单个账号详情
 pub fn load_account(account_id: &str) -> Option<CodexAccount> {
     load_account_with_summary(account_id, None).ok().flatten()
+}
+
+fn load_account_after_index_repair(account_id: &str) -> Option<CodexAccount> {
+    if let Some(account) = load_account(account_id) {
+        return Some(account);
+    }
+
+    logger::log_warn(&format!(
+        "[Codex Account][Repair] 切号目标账号详情缺失，尝试按详情文件重建索引后重试: account_id={}",
+        account_id
+    ));
+    let repaired = repair_account_index_from_details("切号目标账号不存在")?;
+    if !repaired
+        .accounts
+        .iter()
+        .any(|summary| summary.id == account_id)
+    {
+        logger::log_warn(&format!(
+            "[Codex Account][Repair] 重建索引后仍未找到切号目标账号: account_id={}",
+            account_id
+        ));
+        return None;
+    }
+
+    load_account(account_id)
 }
 
 fn load_account_with_summary(
@@ -2156,7 +2199,7 @@ pub fn upsert_api_key_account(
 }
 
 fn upsert_account_with_hints(
-    tokens: CodexTokens,
+    mut tokens: CodexTokens,
     account_id_hint: Option<String>,
     organization_id_hint: Option<String>,
 ) -> Result<CodexAccount, String> {
@@ -2198,6 +2241,7 @@ fn upsert_account_with_hints(
         let existing_id = index.accounts[pos].id.clone();
         let mut acc = load_account(&existing_id)
             .unwrap_or_else(|| CodexAccount::new(existing_id, email.clone(), tokens.clone()));
+        tokens = retain_existing_refresh_token_if_missing(tokens, Some(&acc));
         acc.tokens = tokens;
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
@@ -2216,6 +2260,7 @@ fn upsert_account_with_hints(
         acc
     } else {
         // 创建新账号
+        tokens = retain_existing_refresh_token_if_missing(tokens, None);
         let mut acc = CodexAccount::new(existing_id.clone(), email.clone(), tokens);
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
@@ -2922,7 +2967,7 @@ fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, St
         tokens: Some(CodexAuthTokens {
             id_token: account.tokens.id_token.clone(),
             access_token: account.tokens.access_token.clone(),
-            refresh_token: Some(account.tokens.refresh_token.clone().unwrap_or_default()),
+            refresh_token: normalize_optional_ref(account.tokens.refresh_token.as_deref()),
             account_id: account.account_id.clone(),
         }),
         last_refresh: Some(serde_json::Value::String(
@@ -3753,7 +3798,8 @@ fn switch_account_with_prepared(
 }
 
 pub async fn switch_account_managed(account_id: &str) -> Result<CodexAccount, String> {
-    let account = load_account(account_id).ok_or_else(|| format!("账号不存在: {}", account_id))?;
+    let account = load_account_after_index_repair(account_id)
+        .ok_or_else(|| format!("账号不存在: {}", account_id))?;
     if account.is_api_key_auth() {
         if normalize_optional_ref(account.bound_oauth_account_id.as_deref()).is_none() {
             return switch_account_with_prepared(account_id, account);
@@ -4105,7 +4151,7 @@ fn upsert_account_from_access_token(
         .or_else(|| account_id.as_ref().map(|value| format!("codex-{}", value)))
         .or_else(|| user_id.as_ref().map(|value| format!("codex-{}", value)))
         .unwrap_or_else(|| format!("codex-access-{}", access_token_fingerprint(&access_token)));
-    let tokens = CodexTokens {
+    let mut tokens = CodexTokens {
         id_token: String::new(),
         access_token,
         refresh_token: None,
@@ -4130,6 +4176,7 @@ fn upsert_account_from_access_token(
         let existing_id = index.accounts[pos].id.clone();
         let mut acc = load_account(&existing_id)
             .unwrap_or_else(|| CodexAccount::new(existing_id, email.clone(), tokens.clone()));
+        tokens = retain_existing_refresh_token_if_missing(tokens, Some(&acc));
         acc.tokens = tokens;
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
@@ -4150,6 +4197,7 @@ fn upsert_account_from_access_token(
         acc.update_last_used();
         acc
     } else {
+        tokens = retain_existing_refresh_token_if_missing(tokens, None);
         let mut acc = CodexAccount::new(existing_id.clone(), email.clone(), tokens);
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
@@ -4687,7 +4735,7 @@ mod tests {
         read_api_provider_from_config_toml, read_quick_config_from_config_toml,
         resolve_api_provider_config, save_account, save_account_index,
         should_accept_authority_snapshot, sync_account_from_auth_dir,
-        sync_managed_projection_from_auth_dir, upsert_account_from_access_token,
+        sync_managed_projection_from_auth_dir, upsert_account, upsert_account_from_access_token,
         upsert_account_from_auth_tokens, validate_api_key_credentials,
         write_api_key_provider_to_config_toml, write_api_provider_to_config_toml,
         write_managed_projection_to_dir, write_quick_config_to_config_toml, ApiProviderConfig,
@@ -4990,7 +5038,7 @@ mod tests {
     }
 
     #[test]
-    fn build_auth_file_value_keeps_empty_refresh_token_field_for_cpa_accounts() {
+    fn build_auth_file_value_omits_refresh_token_when_account_has_none() {
         let mut account = CodexAccount::new(
             "codex-cpa-account".to_string(),
             "cpa@example.com".to_string(),
@@ -5008,11 +5056,7 @@ mod tests {
             .and_then(|value| value.as_object())
             .expect("tokens object");
 
-        assert!(tokens.contains_key("refresh_token"));
-        assert_eq!(
-            tokens.get("refresh_token").and_then(|value| value.as_str()),
-            Some("")
-        );
+        assert!(!tokens.contains_key("refresh_token"));
     }
 
     #[test]
@@ -5378,6 +5422,75 @@ mod tests {
         assert_eq!(account.tokens.id_token, "");
         assert_eq!(account.tokens.access_token, access_token);
         assert_eq!(account.tokens.refresh_token, None);
+    }
+
+    #[test]
+    fn upsert_existing_account_keeps_own_refresh_token_when_import_has_none() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _env = TestEnvGuard::new("codex-preserve-refresh-token-test");
+        let existing = seed_oauth_account(make_codex_tokens(
+            "demo@example.com",
+            "acc-current",
+            "org-current",
+            "old",
+            "rt-existing",
+        ));
+        let mut imported_tokens = make_codex_tokens(
+            "demo@example.com",
+            "acc-current",
+            "org-current",
+            "new",
+            "rt-unused",
+        );
+        let imported_access_token = imported_tokens.access_token.clone();
+        imported_tokens.refresh_token = None;
+
+        let account = upsert_account(imported_tokens).expect("upsert existing account");
+
+        assert_eq!(account.id, existing.id);
+        assert_eq!(account.tokens.access_token, imported_access_token);
+        assert_eq!(account.tokens.refresh_token.as_deref(), Some("rt-existing"));
+        let persisted = load_account(&account.id).expect("persisted account");
+        assert_eq!(
+            persisted.tokens.refresh_token.as_deref(),
+            Some("rt-existing")
+        );
+    }
+
+    #[test]
+    fn upsert_access_token_only_existing_account_keeps_own_refresh_token() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _env = TestEnvGuard::new("codex-access-token-preserve-refresh-test");
+        let existing = upsert_account(make_codex_tokens(
+            "access@example.com",
+            "acc-access",
+            "org-access",
+            "old",
+            "rt-existing",
+        ))
+        .expect("seed existing account");
+        let access_token = make_jwt(serde_json::json!({
+            "email": "access@example.com",
+            "sub": "user-access-new",
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acc-access",
+                "chatgpt_user_id": "user-access-new",
+                "chatgpt_plan_type": "team",
+                "poid": "org-access"
+            }
+        }));
+
+        let account =
+            upsert_account_from_access_token(access_token.clone(), None).expect("upsert AT only");
+
+        assert_eq!(account.id, existing.id);
+        assert_eq!(account.tokens.access_token, access_token);
+        assert_eq!(account.tokens.refresh_token.as_deref(), Some("rt-existing"));
+        let persisted = load_account(&account.id).expect("persisted account");
+        assert_eq!(
+            persisted.tokens.refresh_token.as_deref(),
+            Some("rt-existing")
+        );
     }
 
     #[test]

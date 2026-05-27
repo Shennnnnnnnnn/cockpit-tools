@@ -56,4 +56,19 @@ type StreamingConfig struct {
 	// to allow auth rotation / transient recovery.
 	// <= 0 disables bootstrap retries. Default is 0.
 	BootstrapRetries int `yaml:"bootstrap-retries,omitempty" json:"bootstrap-retries,omitempty"`
+
+	// StreamOpenTimeoutMS controls how long the sidecar waits for a text stream to open.
+	StreamOpenTimeoutMS int `yaml:"stream-open-timeout-ms,omitempty" json:"stream-open-timeout-ms,omitempty"`
+
+	// StreamIdleTimeoutMS controls how long a text stream may remain idle between chunks.
+	StreamIdleTimeoutMS int `yaml:"stream-idle-timeout-ms,omitempty" json:"stream-idle-timeout-ms,omitempty"`
+
+	// ImageStreamOpenTimeoutMS controls how long the sidecar waits for an image stream to open.
+	ImageStreamOpenTimeoutMS int `yaml:"image-stream-open-timeout-ms,omitempty" json:"image-stream-open-timeout-ms,omitempty"`
+
+	// ImageStreamIdleTimeoutMS controls how long an image stream may remain idle between chunks.
+	ImageStreamIdleTimeoutMS int `yaml:"image-stream-idle-timeout-ms,omitempty" json:"image-stream-idle-timeout-ms,omitempty"`
+
+	// StreamOpenMaxAttempts controls how many attempts are allowed while opening a stream.
+	StreamOpenMaxAttempts int `yaml:"stream-open-max-attempts,omitempty" json:"stream-open-max-attempts,omitempty"`
 }

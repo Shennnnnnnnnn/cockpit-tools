@@ -110,52 +110,6 @@ func (s *Service) RegisterUsagePlugin(plugin usage.Plugin) {
 	usage.RegisterPlugin(plugin)
 }
 
-// UpsertRuntimeAuth registers or updates an auth record and ensures its provider
-// executor and model registry are bound for direct SDK execution.
-func (s *Service) UpsertRuntimeAuth(ctx context.Context, auth *coreauth.Auth) (*coreauth.Auth, error) {
-	if s == nil || s.coreManager == nil {
-		return nil, fmt.Errorf("cliproxy: service runtime is not initialized")
-	}
-	if auth == nil {
-		return nil, fmt.Errorf("cliproxy: auth is nil")
-	}
-	s.applyCoreAuthAddOrUpdate(ctx, auth)
-	if auth.ID == "" {
-		return nil, fmt.Errorf("cliproxy: auth id is empty")
-	}
-	current, ok := s.coreManager.GetByID(auth.ID)
-	if !ok || current == nil {
-		return nil, fmt.Errorf("cliproxy: auth %s was not registered", auth.ID)
-	}
-	return current, nil
-}
-
-// RebindRuntimeExecutors refreshes executor bindings for all currently loaded
-// auth records. It is useful for embedders that load auth records from an
-// external store before serving direct SDK executions.
-func (s *Service) RebindRuntimeExecutors() {
-	if s == nil {
-		return
-	}
-	s.rebindExecutors()
-}
-
-// Execute runs a non-streaming request through the embedded runtime manager.
-func (s *Service) Execute(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
-	if s == nil || s.coreManager == nil {
-		return cliproxyexecutor.Response{}, fmt.Errorf("cliproxy: service runtime is not initialized")
-	}
-	return s.coreManager.Execute(ctx, providers, req, opts)
-}
-
-// ExecuteStream runs a streaming request through the embedded runtime manager.
-func (s *Service) ExecuteStream(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
-	if s == nil || s.coreManager == nil {
-		return nil, fmt.Errorf("cliproxy: service runtime is not initialized")
-	}
-	return s.coreManager.ExecuteStream(ctx, providers, req, opts)
-}
-
 // newDefaultAuthManager creates a default authentication manager with all supported providers.
 func newDefaultAuthManager() *sdkAuth.Manager {
 	return sdkAuth.NewManager(
@@ -163,6 +117,7 @@ func newDefaultAuthManager() *sdkAuth.Manager {
 		sdkAuth.NewGeminiAuthenticator(),
 		sdkAuth.NewCodexAuthenticator(),
 		sdkAuth.NewClaudeAuthenticator(),
+		sdkAuth.NewXAIAuthenticator(),
 	)
 }
 
@@ -480,6 +435,8 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 		s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(s.cfg))
 	case "kimi":
 		s.coreManager.RegisterExecutor(executor.NewKimiExecutor(s.cfg))
+	case "xai":
+		s.coreManager.RegisterExecutor(executor.NewXAIExecutor(s.cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {
@@ -601,6 +558,9 @@ func (s *Service) applyConfigUpdate(newCfg *config.Config) {
 	if s.coreManager != nil {
 		s.coreManager.SetConfig(newCfg)
 		s.coreManager.SetOAuthModelAlias(newCfg.OAuthModelAlias)
+	}
+	if newCfg.Home.Enabled {
+		s.registerHomeExecutors()
 	}
 	s.rebindExecutors()
 }
@@ -985,76 +945,6 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 }
 
-// StartRuntime starts only the embedded execution runtime without exposing the
-// CLIProxyAPI HTTP server. It is intended for hosts that provide their own API
-// surface and call Execute/ExecuteStream directly.
-func (s *Service) StartRuntime(ctx context.Context) error {
-	if s == nil {
-		return fmt.Errorf("cliproxy: service is nil")
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	usage.StartDefault(ctx)
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
-	defer func() {
-		if err := s.Shutdown(shutdownCtx); err != nil {
-			log.Errorf("service shutdown returned error: %v", err)
-		}
-	}()
-
-	if err := s.ensureAuthDir(); err != nil {
-		return err
-	}
-
-	s.applyRetryConfig(s.cfg)
-
-	if s.coreManager != nil {
-		if errLoad := s.coreManager.Load(ctx); errLoad != nil {
-			log.Warnf("failed to load auth store: %v", errLoad)
-		}
-		s.coreManager.SetConfig(s.cfg)
-		s.coreManager.SetOAuthModelAlias(s.cfg.OAuthModelAlias)
-	}
-
-	if s.tokenProvider != nil {
-		if _, err := s.tokenProvider.Load(ctx, s.cfg); err != nil && !errors.Is(err, context.Canceled) {
-			return err
-		}
-	}
-	if s.apiKeyProvider != nil {
-		if _, err := s.apiKeyProvider.Load(ctx, s.cfg); err != nil && !errors.Is(err, context.Canceled) {
-			return err
-		}
-	}
-
-	if s.authManager == nil {
-		s.authManager = newDefaultAuthManager()
-	}
-
-	s.ensureWebsocketGateway()
-	s.rebindExecutors()
-
-	if s.hooks.OnBeforeStart != nil {
-		s.hooks.OnBeforeStart(s.cfg)
-	}
-	if s.hooks.OnAfterStart != nil {
-		s.hooks.OnAfterStart(s)
-	}
-
-	if s.coreManager != nil {
-		interval := 15 * time.Minute
-		s.coreManager.StartAutoRefresh(context.Background(), interval)
-		log.Infof("core auth auto-refresh started (interval=%s)", interval)
-	}
-
-	<-ctx.Done()
-	return ctx.Err()
-}
-
 // Shutdown gracefully stops background workers and the HTTP server.
 // It ensures all resources are properly cleaned up and connections are closed.
 // The shutdown is idempotent and can be called multiple times safely.
@@ -1270,6 +1160,9 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 	case "kimi":
 		models = registry.GetKimiModels()
 		models = applyExcludedModels(models, excluded)
+	case "xai":
+		models = registry.GetXAIModels()
+		models = applyExcludedModels(models, excluded)
 	default:
 		// Handle OpenAI-compatibility providers by name using config
 		if s.cfg != nil {
@@ -1316,30 +1209,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 				}
 				if strings.EqualFold(compat.Name, compatName) {
 					isCompatAuth = true
-					// Convert compatibility models to registry models
-					ms := make([]*ModelInfo, 0, len(compat.Models))
-					for j := range compat.Models {
-						m := compat.Models[j]
-						// Use alias as model ID, fallback to name if alias is empty
-						modelID := m.Alias
-						if modelID == "" {
-							modelID = m.Name
-						}
-						thinking := m.Thinking
-						if thinking == nil {
-							thinking = &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
-						}
-						ms = append(ms, &ModelInfo{
-							ID:          modelID,
-							Object:      "model",
-							Created:     time.Now().Unix(),
-							OwnedBy:     compat.Name,
-							Type:        "openai-compatibility",
-							DisplayName: modelID,
-							UserDefined: false,
-							Thinking:    thinking,
-						})
-					}
+					ms := buildOpenAICompatibilityConfigModels(compat)
 					// Register and return
 					if len(ms) > 0 {
 						if providerKey == "" {
@@ -1686,6 +1556,43 @@ type modelEntry interface {
 	GetAlias() string
 }
 
+func buildOpenAICompatibilityConfigModels(compat *config.OpenAICompatibility) []*ModelInfo {
+	if compat == nil || len(compat.Models) == 0 {
+		return nil
+	}
+	now := time.Now().Unix()
+	models := make([]*ModelInfo, 0, len(compat.Models))
+	for i := range compat.Models {
+		model := compat.Models[i]
+		modelID := strings.TrimSpace(model.Alias)
+		if modelID == "" {
+			modelID = strings.TrimSpace(model.Name)
+		}
+		if modelID == "" {
+			continue
+		}
+		modelType := "openai-compatibility"
+		if model.Image {
+			modelType = registry.OpenAIImageModelType
+		}
+		thinking := model.Thinking
+		if thinking == nil && !model.Image {
+			thinking = &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
+		}
+		models = append(models, &ModelInfo{
+			ID:          modelID,
+			Object:      "model",
+			Created:     now,
+			OwnedBy:     compat.Name,
+			Type:        modelType,
+			DisplayName: modelID,
+			UserDefined: false,
+			Thinking:    thinking,
+		})
+	}
+	return models
+}
+
 func buildConfigModels[T modelEntry](models []T, ownedBy, modelType string) []*ModelInfo {
 	if len(models) == 0 {
 		return nil
@@ -1887,4 +1794,137 @@ func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models 
 		}
 	}
 	return out
+}
+
+// StartRuntime starts only the embedded execution runtime without exposing the
+// CLIProxyAPI HTTP server. It is intended for hosts that provide their own API
+// surface and call Execute/ExecuteStream directly.
+func (s *Service) StartRuntime(ctx context.Context) error {
+	if s == nil {
+		return fmt.Errorf("cliproxy: service is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	usage.StartDefault(ctx)
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	defer func() {
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			log.Errorf("service shutdown returned error: %v", err)
+		}
+	}()
+
+	if err := s.ensureAuthDir(); err != nil {
+		return err
+	}
+
+	s.applyRetryConfig(s.cfg)
+
+	if s.coreManager != nil {
+		if errLoad := s.coreManager.Load(ctx); errLoad != nil {
+			log.Warnf("failed to load auth store: %v", errLoad)
+		}
+		s.coreManager.SetConfig(s.cfg)
+		s.coreManager.SetOAuthModelAlias(s.cfg.OAuthModelAlias)
+	}
+
+	if s.tokenProvider != nil {
+		if _, err := s.tokenProvider.Load(ctx, s.cfg); err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+	}
+	if s.apiKeyProvider != nil {
+		if _, err := s.apiKeyProvider.Load(ctx, s.cfg); err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+	}
+
+	if s.authManager == nil {
+		s.authManager = newDefaultAuthManager()
+	}
+
+	s.ensureWebsocketGateway()
+	s.rebindExecutors()
+
+	if s.hooks.OnBeforeStart != nil {
+		s.hooks.OnBeforeStart(s.cfg)
+	}
+	if s.hooks.OnAfterStart != nil {
+		s.hooks.OnAfterStart(s)
+	}
+
+	if s.coreManager != nil {
+		interval := 15 * time.Minute
+		s.coreManager.StartAutoRefresh(context.Background(), interval)
+		log.Infof("core auth auto-refresh started (interval=%s)", interval)
+	}
+
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// RebindRuntimeExecutors refreshes provider executors for the current configuration.
+func (s *Service) RebindRuntimeExecutors() {
+	s.rebindExecutors()
+}
+
+// UpsertRuntimeAuth registers or updates an auth entry in the embedded runtime.
+func (s *Service) UpsertRuntimeAuth(ctx context.Context, auth *coreauth.Auth) (*coreauth.Auth, error) {
+	if s == nil || s.coreManager == nil {
+		return nil, fmt.Errorf("cliproxy: core auth manager is not configured")
+	}
+	if auth == nil || strings.TrimSpace(auth.ID) == "" {
+		return nil, fmt.Errorf("cliproxy: auth id is required")
+	}
+
+	auth = auth.Clone()
+	s.ensureExecutorsForAuth(auth)
+
+	var (
+		registered *coreauth.Auth
+		err        error
+	)
+	if existing, ok := s.coreManager.GetByID(auth.ID); ok && existing != nil {
+		auth.CreatedAt = existing.CreatedAt
+		if !existing.Disabled && existing.Status != coreauth.StatusDisabled && !auth.Disabled && auth.Status != coreauth.StatusDisabled {
+			auth.LastRefreshedAt = existing.LastRefreshedAt
+			auth.NextRefreshAfter = existing.NextRefreshAfter
+			if len(auth.ModelStates) == 0 && len(existing.ModelStates) > 0 {
+				auth.ModelStates = existing.ModelStates
+			}
+		}
+		registered, err = s.coreManager.Update(ctx, auth)
+	} else {
+		registered, err = s.coreManager.Register(ctx, auth)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if registered == nil {
+		registered = auth
+	}
+
+	s.registerModelsForAuth(registered)
+	s.coreManager.ReconcileRegistryModelStates(ctx, registered.ID)
+	s.coreManager.RefreshSchedulerEntry(registered.ID)
+	return registered, nil
+}
+
+// Execute performs a non-streaming request through the embedded runtime manager.
+func (s *Service) Execute(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	if s == nil || s.coreManager == nil {
+		return cliproxyexecutor.Response{}, fmt.Errorf("cliproxy: core auth manager is not configured")
+	}
+	return s.coreManager.Execute(ctx, providers, req, opts)
+}
+
+// ExecuteStream performs a streaming request through the embedded runtime manager.
+func (s *Service) ExecuteStream(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
+	if s == nil || s.coreManager == nil {
+		return nil, fmt.Errorf("cliproxy: core auth manager is not configured")
+	}
+	return s.coreManager.ExecuteStream(ctx, providers, req, opts)
 }

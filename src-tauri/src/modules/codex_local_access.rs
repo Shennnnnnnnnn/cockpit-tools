@@ -8,8 +8,9 @@ use crate::models::codex_local_access::{
     CodexLocalAccessPortCleanupResult, CodexLocalAccessProfileAttachment,
     CodexLocalAccessRequestKind, CodexLocalAccessRoutingStrategy, CodexLocalAccessScope,
     CodexLocalAccessState, CodexLocalAccessStats, CodexLocalAccessStatsWindow,
-    CodexLocalAccessTestFailure, CodexLocalAccessTestResult, CodexLocalAccessUsageEvent,
-    CodexLocalAccessUsageEventPage, CodexLocalAccessUsageStats,
+    CodexLocalAccessTestFailure, CodexLocalAccessTestResult, CodexLocalAccessTimeoutPreset,
+    CodexLocalAccessTimeouts, CodexLocalAccessUsageEvent, CodexLocalAccessUsageEventPage,
+    CodexLocalAccessUsageStats,
 };
 use crate::modules::atomic_write::write_string_atomic;
 use crate::modules::{
@@ -70,17 +71,11 @@ const CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID: &str = "codex_local_access";
 const CODEX_PROFILE_AUTH_FILE: &str = "auth.json";
 const CODEX_PROFILE_CONFIG_FILE: &str = "config.toml";
 const MAX_HTTP_REQUEST_BYTES: usize = 64 * 1024 * 1024;
-const REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(15);
+const DEFAULT_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_REQUEST_RETRY_ATTEMPTS: usize = 1;
-const UPSTREAM_SEND_RETRY_ATTEMPTS: usize = 3;
-const UPSTREAM_SEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
-const UPSTREAM_SEND_RETRY_MAX_DELAY: Duration = Duration::from_millis(1200);
-const SINGLE_ACCOUNT_STATUS_RETRY_ATTEMPTS: usize = 2;
-const SINGLE_ACCOUNT_STATUS_RETRY_BASE_DELAY: Duration = Duration::from_millis(300);
-const SINGLE_ACCOUNT_STATUS_RETRY_MAX_DELAY: Duration = Duration::from_millis(1500);
-const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-const UPSTREAM_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
-const UPSTREAM_STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(180);
+const DEFAULT_UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const DEFAULT_UPSTREAM_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_UPSTREAM_STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(180);
 const STATS_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRY_CREDENTIALS_PER_REQUEST: usize = 8;
 const SESSION_AFFINITY_TTL_MIN_MS: i64 = 60 * 1000;
@@ -89,6 +84,22 @@ const DEFAULT_SESSION_AFFINITY_TTL_MS: i64 = 60 * 60 * 1000;
 const MAX_RETRY_INTERVAL_MIN_MS: u64 = 0;
 const MAX_RETRY_INTERVAL_MAX_MS: u64 = 30 * 1000;
 const DEFAULT_MAX_RETRY_INTERVAL_MS: u64 = 3 * 1000;
+const LOCAL_ACCESS_TIMEOUT_MIN_MS: u64 = 1_000;
+const LOCAL_ACCESS_TIMEOUT_MAX_MS: u64 = 600_000;
+const LEGACY_STREAM_TOTAL_TIMEOUT_MAX_MS: u64 = 30 * 60 * 1000;
+const SIDECAR_STREAM_OPEN_ATTEMPTS_MIN: u8 = 1;
+const SIDECAR_STREAM_OPEN_ATTEMPTS_MAX: u8 = 3;
+const SIDECAR_STREAM_KEEPALIVE_MIN_SECONDS: u16 = 0;
+const SIDECAR_STREAM_KEEPALIVE_MAX_SECONDS: u16 = 300;
+const LOCAL_ACCESS_RETRY_ATTEMPTS_MIN: u8 = 0;
+const LOCAL_ACCESS_RETRY_ATTEMPTS_MAX: u8 = 5;
+const LOCAL_ACCESS_RETRY_DELAY_MIN_MS: u64 = 50;
+const LOCAL_ACCESS_RETRY_DELAY_MAX_MS: u64 = 10 * 1000;
+const WEBSOCKET_IDLE_TIMEOUT_MAX_MS: u64 = 30 * 60 * 1000;
+const BUILTIN_TIMEOUT_PRESET_LONG_WAIT_ID: &str = "long_wait";
+const BUILTIN_TIMEOUT_PRESET_SHORT_WAIT_ID: &str = "short_wait";
+const MAX_CUSTOM_TIMEOUT_PRESETS: usize = 20;
+const TIMEOUT_PRESET_NAME_MAX_CHARS: usize = 40;
 const RESPONSE_AFFINITY_TTL_MS: i64 = 24 * 60 * 60 * 1000;
 const MAX_RESPONSE_AFFINITY_BINDINGS: usize = 4096;
 const PREPARED_ACCOUNT_CACHE_TTL_MS: i64 = 30 * 1000;
@@ -144,8 +155,6 @@ const CODEX_IMAGE_MODEL_ID: &str = "gpt-image-2";
 const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 const DEFAULT_IMAGES_MAIN_MODEL: &str = "gpt-5.4-mini";
 const MAX_MODEL_PRICE_USD_PER_MILLION: f64 = 1_000_000.0;
-const SIDECAR_STREAMING_KEEPALIVE_SECONDS: i32 = 15;
-const SIDECAR_STREAMING_BOOTSTRAP_RETRIES: i32 = 1;
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const RESPONSES_PATH: &str = "/v1/responses";
 const RESPONSES_COMPACT_PATH: &str = "/v1/responses/compact";
@@ -222,6 +231,16 @@ struct UsageCapture {
 struct ResponseCapture {
     usage: Option<UsageCapture>,
     response_id: Option<String>,
+    terminal_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct UpstreamResponseFailedSignal {
+    event_type: String,
+    code: Option<String>,
+    error_type: Option<String>,
+    message: Option<String>,
+    raw: String,
 }
 
 #[derive(Debug, Clone)]
@@ -304,6 +323,7 @@ struct CachedPreparedAccount {
 struct UpstreamHttpClientSignature {
     proxy_source: UpstreamProxySource,
     proxy_url: Option<String>,
+    connect_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -365,6 +385,7 @@ struct ResponseUsageCollector {
     stream_buffer: Vec<u8>,
     usage: Option<UsageCapture>,
     response_id: Option<String>,
+    terminal_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -441,6 +462,17 @@ fn upstream_http_client_cache() -> &'static Mutex<Option<CachedUpstreamHttpClien
     UPSTREAM_HTTP_CLIENT.get_or_init(|| Mutex::new(None))
 }
 
+fn duration_to_millis(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
+fn duration_from_millis(value: u64, fallback: Duration) -> Duration {
+    if value == 0 {
+        return fallback;
+    }
+    Duration::from_millis(value)
+}
+
 fn upstream_env_proxy_url() -> Option<String> {
     const ENV_PROXY_KEYS: [&str; 6] = [
         "HTTPS_PROXY",
@@ -465,7 +497,9 @@ fn upstream_env_proxy_url() -> Option<String> {
 
 fn current_upstream_http_client_signature(
     upstream_proxy_url: Option<&str>,
+    connect_timeout: Duration,
 ) -> UpstreamHttpClientSignature {
+    let connect_timeout_ms = duration_to_millis(connect_timeout);
     if let Some(proxy_url) = upstream_proxy_url
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -473,6 +507,7 @@ fn current_upstream_http_client_signature(
         return UpstreamHttpClientSignature {
             proxy_source: UpstreamProxySource::ApiService,
             proxy_url: Some(proxy_url.to_string()),
+            connect_timeout_ms,
         };
     }
 
@@ -483,6 +518,7 @@ fn current_upstream_http_client_signature(
             return UpstreamHttpClientSignature {
                 proxy_source: UpstreamProxySource::Global,
                 proxy_url: Some(proxy_url.to_string()),
+                connect_timeout_ms,
             };
         }
     }
@@ -491,12 +527,14 @@ fn current_upstream_http_client_signature(
         return UpstreamHttpClientSignature {
             proxy_source: UpstreamProxySource::SystemEnv,
             proxy_url: Some(proxy_url),
+            connect_timeout_ms,
         };
     }
 
     UpstreamHttpClientSignature {
         proxy_source: UpstreamProxySource::SystemAuto,
         proxy_url: None,
+        connect_timeout_ms,
     }
 }
 
@@ -518,7 +556,10 @@ fn redact_proxy_url_for_log(proxy_url: &str) -> String {
 fn current_upstream_proxy_diagnostics(
     upstream_proxy_url: Option<&str>,
 ) -> UpstreamProxyDiagnostics {
-    let signature = current_upstream_http_client_signature(upstream_proxy_url);
+    let signature = current_upstream_http_client_signature(
+        upstream_proxy_url,
+        DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
+    );
     UpstreamProxyDiagnostics {
         proxy_source: signature.proxy_source,
         proxy_url: signature.proxy_url.as_deref().map(redact_proxy_url_for_log),
@@ -526,7 +567,10 @@ fn current_upstream_proxy_diagnostics(
 }
 
 fn build_upstream_http_client(signature: &UpstreamHttpClientSignature) -> Result<Client, String> {
-    let mut builder = Client::builder().connect_timeout(UPSTREAM_CONNECT_TIMEOUT);
+    let mut builder = Client::builder().connect_timeout(duration_from_millis(
+        signature.connect_timeout_ms,
+        DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
+    ));
 
     if let Some(proxy_url) = signature.proxy_url.as_deref() {
         let proxy = Proxy::all(proxy_url).map_err(|e| format!("Codex 上游代理地址无效: {}", e))?;
@@ -588,8 +632,11 @@ fn log_sidecar_proxy_signature(signature: &UpstreamHttpClientSignature) {
     }
 }
 
-fn upstream_http_client(upstream_proxy_url: Option<&str>) -> Result<Client, String> {
-    let signature = current_upstream_http_client_signature(upstream_proxy_url);
+fn upstream_http_client(
+    upstream_proxy_url: Option<&str>,
+    connect_timeout: Duration,
+) -> Result<Client, String> {
+    let signature = current_upstream_http_client_signature(upstream_proxy_url, connect_timeout);
     let mut cache = upstream_http_client_cache()
         .lock()
         .map_err(|_| "Codex 上游 HTTP 客户端缓存已损坏".to_string())?;
@@ -811,18 +858,16 @@ fn supported_codex_model_ids() -> Vec<String> {
         })
         .unwrap_or_default();
 
-    if model_ids.is_empty() {
-        model_ids = DEFAULT_CODEX_MODELS
-            .iter()
-            .map(|model| (*model).to_string())
-            .collect();
-    }
-
     let mut seen_model_ids: HashSet<String> = model_ids
         .iter()
         .map(|model| model.trim().to_ascii_lowercase())
         .filter(|model| !model.is_empty())
         .collect();
+    for model in DEFAULT_CODEX_MODELS {
+        if seen_model_ids.insert((*model).to_ascii_lowercase()) {
+            model_ids.push((*model).to_string());
+        }
+    }
     if seen_model_ids.insert(CODEX_IMAGE_MODEL_ID.to_string()) {
         model_ids.push(CODEX_IMAGE_MODEL_ID.to_string());
     }
@@ -2953,6 +2998,12 @@ impl ChatCompletionStreamTransformer {
             return;
         };
 
+        if self.response_capture.terminal_error.is_none() {
+            if let Some(signal) = upstream_response_failed_signal(event_name.as_deref(), &event) {
+                self.response_capture.terminal_error =
+                    Some(format_upstream_response_failed_error(&signal));
+            }
+        }
         if let Some(usage) = extract_usage_capture(&event) {
             self.response_capture.usage = Some(usage);
         }
@@ -4119,6 +4170,38 @@ fn open_local_access_logs_db_once(path: &Path) -> Result<Connection, SqliteError
         CREATE INDEX IF NOT EXISTS idx_codex_local_access_logs_request_id
             ON request_logs(request_id, timestamp DESC);
         "#,
+    )?;
+    conn.execute(
+        r#"
+        UPDATE request_logs
+        SET error_category = 'upstream_response_failed'
+        WHERE success = 0
+          AND error_category != 'upstream_response_failed'
+          AND (
+            lower(error_message) LIKE '%upstream_response_failed%'
+            OR lower(error_message) LIKE '%codex upstream response.failed%'
+            OR lower(error_message) LIKE '%last_event=response.failed%'
+          )
+        "#,
+        [],
+    )?;
+    conn.execute(
+        r#"
+        UPDATE request_logs
+        SET error_category = 'stream_incomplete'
+        WHERE success = 0
+          AND error_category != 'stream_incomplete'
+          AND error_category != 'upstream_response_failed'
+          AND (
+            lower(error_message) LIKE '%stream disconnected before completion%'
+            OR lower(error_message) LIKE '%error decoding response body%'
+            OR lower(error_message) LIKE '%closed before response.completed%'
+            OR lower(error_message) LIKE '%closed before response.done%'
+            OR lower(error_message) LIKE '%stream ended before completion%'
+            OR lower(error_message) LIKE '%incomplete_eof%'
+          )
+        "#,
+        [],
     )?;
     Ok(conn)
 }
@@ -5543,8 +5626,10 @@ fn sidecar_codex_key_config_value(
 fn sidecar_effective_proxy_signature(
     collection: &CodexLocalAccessCollection,
 ) -> Result<UpstreamHttpClientSignature, String> {
-    let signature =
-        current_upstream_http_client_signature(collection.upstream_proxy_url.as_deref());
+    let signature = current_upstream_http_client_signature(
+        collection.upstream_proxy_url.as_deref(),
+        DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
+    );
     if let Some(proxy_url) = signature.proxy_url.as_deref() {
         Proxy::all(proxy_url).map_err(|e| match signature.proxy_source {
             UpstreamProxySource::ApiService => format!("API 代理地址无效: {}", e),
@@ -5610,8 +5695,43 @@ fn is_client_disconnect_error_message(message: &str) -> bool {
         || lower.contains("客户端在发送")
 }
 
+fn is_client_canceled_error_category(category: &str) -> bool {
+    category.trim().eq_ignore_ascii_case("client_canceled")
+}
+
+fn is_stream_incomplete_error_category(category: &str) -> bool {
+    category.trim().eq_ignore_ascii_case("stream_incomplete")
+}
+
+fn is_upstream_response_failed_error_category(category: &str) -> bool {
+    category
+        .trim()
+        .eq_ignore_ascii_case("upstream_response_failed")
+}
+
+fn is_upstream_response_failed_error_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("upstream_response_failed")
+        || lower.contains("codex upstream response.failed")
+        || lower.contains("last_event=response.failed")
+}
+
+fn is_stream_incomplete_error_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("stream disconnected before completion")
+        || lower.contains("error decoding response body")
+        || lower.contains("closed before response.completed")
+        || lower.contains("closed before response.done")
+        || lower.contains("stream ended before completion")
+        || lower.contains("incomplete_eof")
+}
+
 fn legacy_stream_error_category(message: &str) -> &'static str {
-    if message.contains("流式响应超时")
+    if is_upstream_response_failed_error_message(message) {
+        "upstream_response_failed"
+    } else if is_stream_incomplete_error_message(message) {
+        "stream_incomplete"
+    } else if message.contains("流式响应超时")
         || (message.contains("连续") && message.contains("未收到新数据"))
     {
         "upstream_stream_timeout"
@@ -5620,6 +5740,74 @@ fn legacy_stream_error_category(message: &str) -> &'static str {
     } else {
         "stream_write_failed"
     }
+}
+
+fn compact_json_for_log(value: &Value) -> String {
+    let mut text = serde_json::to_string(value).unwrap_or_else(|_| value.to_string());
+    const MAX_LEN: usize = 800;
+    if text.len() > MAX_LEN {
+        text.truncate(MAX_LEN);
+        text.push_str("...");
+    }
+    text
+}
+
+fn json_field_string(value: &Value, key: &str) -> Option<String> {
+    value.get(key).and_then(|item| {
+        item.as_str()
+            .map(str::to_string)
+            .or_else(|| item.as_i64().map(|number| number.to_string()))
+            .or_else(|| item.as_u64().map(|number| number.to_string()))
+            .or_else(|| item.as_f64().map(|number| number.to_string()))
+            .or_else(|| item.as_bool().map(|flag| flag.to_string()))
+    })
+}
+
+fn nested_error_object(value: &Value) -> Option<&Value> {
+    value
+        .get("response")
+        .and_then(|response| response.get("error"))
+        .or_else(|| value.get("error"))
+        .or_else(|| value.get("last_error"))
+}
+
+fn upstream_response_failed_signal(
+    event_name: Option<&str>,
+    value: &Value,
+) -> Option<UpstreamResponseFailedSignal> {
+    let value_type = value.get("type").and_then(Value::as_str);
+    let event_type = value_type.or(event_name).unwrap_or("").trim();
+    if event_type != "response.failed" && event_type != "error" {
+        return None;
+    }
+
+    let error_value = nested_error_object(value).unwrap_or(value);
+    let code = json_field_string(error_value, "code").or_else(|| json_field_string(value, "code"));
+    let error_type =
+        json_field_string(error_value, "type").or_else(|| json_field_string(value, "error_type"));
+    let message = json_field_string(error_value, "message")
+        .or_else(|| json_field_string(error_value, "detail"))
+        .or_else(|| json_field_string(value, "message"));
+    let raw = compact_json_for_log(error_value);
+
+    Some(UpstreamResponseFailedSignal {
+        event_type: event_type.to_string(),
+        code,
+        error_type,
+        message,
+        raw,
+    })
+}
+
+fn format_upstream_response_failed_error(signal: &UpstreamResponseFailedSignal) -> String {
+    format!(
+        "upstream_response_failed: Codex upstream {}: code={} type={} message={} raw={}",
+        signal.event_type,
+        signal.code.as_deref().unwrap_or("-"),
+        signal.error_type.as_deref().unwrap_or("-"),
+        signal.message.as_deref().unwrap_or("-"),
+        signal.raw
+    )
 }
 
 async fn start_legacy_gateway_locked(
@@ -5808,11 +5996,17 @@ async fn prepare_sidecar_launch_config(
         "request-retry".to_string(),
         json!(MAX_REQUEST_RETRY_ATTEMPTS as i32),
     );
+    let timeouts = collection_timeouts(collection);
     config.insert(
         "streaming".to_string(),
         json!({
-            "keepalive-seconds": SIDECAR_STREAMING_KEEPALIVE_SECONDS,
-            "bootstrap-retries": SIDECAR_STREAMING_BOOTSTRAP_RETRIES,
+            "keepalive-seconds": timeouts.sidecar_stream_keepalive_seconds,
+            "bootstrap-retries": timeouts.sidecar_streaming_bootstrap_retries,
+            "stream-open-timeout-ms": timeouts.sidecar_stream_open_timeout_ms,
+            "stream-idle-timeout-ms": timeouts.sidecar_stream_idle_timeout_ms,
+            "image-stream-open-timeout-ms": timeouts.sidecar_image_stream_open_timeout_ms,
+            "image-stream-idle-timeout-ms": timeouts.sidecar_image_stream_idle_timeout_ms,
+            "stream-open-max-attempts": timeouts.sidecar_stream_open_max_attempts,
         }),
     );
     config.insert(
@@ -5929,6 +6123,7 @@ fn sidecar_usage_event_is_client_canceled(event: &SidecarUsageEvent) -> bool {
                 || message.contains("client canceled")
                 || message.contains("client disconnected")
                 || message.contains("client closed")
+                || is_client_disconnect_error_message(&message)
         })
         .unwrap_or(false)
 }
@@ -5936,6 +6131,22 @@ fn sidecar_usage_event_is_client_canceled(event: &SidecarUsageEvent) -> bool {
 fn normalized_sidecar_error_category(event: &SidecarUsageEvent) -> Option<String> {
     if sidecar_usage_event_is_client_canceled(event) {
         return Some("client_canceled".to_string());
+    }
+    if event
+        .error_message
+        .as_deref()
+        .map(is_upstream_response_failed_error_message)
+        .unwrap_or(false)
+    {
+        return Some("upstream_response_failed".to_string());
+    }
+    if event
+        .error_message
+        .as_deref()
+        .map(is_stream_incomplete_error_message)
+        .unwrap_or(false)
+    {
+        return Some("stream_incomplete".to_string());
     }
     event
         .error_category
@@ -7519,6 +7730,214 @@ fn validate_upstream_proxy_config(
     Ok(normalized)
 }
 
+fn clamp_timeout_ms(value: u64, fallback: u64, max: u64) -> u64 {
+    let base = if value == 0 { fallback } else { value };
+    base.clamp(LOCAL_ACCESS_TIMEOUT_MIN_MS, max)
+}
+
+fn clamp_retry_delay_ms(value: u64, fallback: u64) -> u64 {
+    let base = if value == 0 { fallback } else { value };
+    base.clamp(
+        LOCAL_ACCESS_RETRY_DELAY_MIN_MS,
+        LOCAL_ACCESS_RETRY_DELAY_MAX_MS,
+    )
+}
+
+fn normalize_timeouts(timeouts: &mut CodexLocalAccessTimeouts) -> bool {
+    let original = timeouts.clone();
+    let defaults = CodexLocalAccessTimeouts::default();
+    timeouts.legacy_request_read_timeout_ms = clamp_timeout_ms(
+        timeouts.legacy_request_read_timeout_ms,
+        defaults.legacy_request_read_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.legacy_upstream_connect_timeout_ms = clamp_timeout_ms(
+        timeouts.legacy_upstream_connect_timeout_ms,
+        defaults.legacy_upstream_connect_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.legacy_stream_idle_timeout_ms = clamp_timeout_ms(
+        timeouts.legacy_stream_idle_timeout_ms,
+        defaults.legacy_stream_idle_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.legacy_stream_total_timeout_ms = clamp_timeout_ms(
+        timeouts.legacy_stream_total_timeout_ms,
+        defaults.legacy_stream_total_timeout_ms,
+        LEGACY_STREAM_TOTAL_TIMEOUT_MAX_MS,
+    );
+    if timeouts.legacy_stream_total_timeout_ms < timeouts.legacy_stream_idle_timeout_ms {
+        timeouts.legacy_stream_total_timeout_ms = timeouts.legacy_stream_idle_timeout_ms;
+    }
+    timeouts.sidecar_stream_open_timeout_ms = clamp_timeout_ms(
+        timeouts.sidecar_stream_open_timeout_ms,
+        defaults.sidecar_stream_open_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.sidecar_stream_idle_timeout_ms = clamp_timeout_ms(
+        timeouts.sidecar_stream_idle_timeout_ms,
+        defaults.sidecar_stream_idle_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.sidecar_image_stream_open_timeout_ms = clamp_timeout_ms(
+        timeouts.sidecar_image_stream_open_timeout_ms,
+        defaults.sidecar_image_stream_open_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.sidecar_image_stream_idle_timeout_ms = clamp_timeout_ms(
+        timeouts.sidecar_image_stream_idle_timeout_ms,
+        defaults.sidecar_image_stream_idle_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.sidecar_stream_open_max_attempts = timeouts.sidecar_stream_open_max_attempts.clamp(
+        SIDECAR_STREAM_OPEN_ATTEMPTS_MIN,
+        SIDECAR_STREAM_OPEN_ATTEMPTS_MAX,
+    );
+    timeouts.sidecar_stream_keepalive_seconds = timeouts.sidecar_stream_keepalive_seconds.clamp(
+        SIDECAR_STREAM_KEEPALIVE_MIN_SECONDS,
+        SIDECAR_STREAM_KEEPALIVE_MAX_SECONDS,
+    );
+    timeouts.websocket_connect_timeout_ms = clamp_timeout_ms(
+        timeouts.websocket_connect_timeout_ms,
+        defaults.websocket_connect_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.websocket_initial_message_timeout_ms = clamp_timeout_ms(
+        timeouts.websocket_initial_message_timeout_ms,
+        defaults.websocket_initial_message_timeout_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.websocket_idle_timeout_ms = clamp_timeout_ms(
+        timeouts.websocket_idle_timeout_ms,
+        defaults.websocket_idle_timeout_ms,
+        WEBSOCKET_IDLE_TIMEOUT_MAX_MS,
+    );
+    timeouts.websocket_heartbeat_interval_ms = clamp_timeout_ms(
+        timeouts.websocket_heartbeat_interval_ms,
+        defaults.websocket_heartbeat_interval_ms,
+        LOCAL_ACCESS_TIMEOUT_MAX_MS,
+    );
+    timeouts.upstream_send_retry_attempts = timeouts.upstream_send_retry_attempts.clamp(
+        LOCAL_ACCESS_RETRY_ATTEMPTS_MIN,
+        LOCAL_ACCESS_RETRY_ATTEMPTS_MAX,
+    );
+    timeouts.upstream_send_retry_base_delay_ms = clamp_retry_delay_ms(
+        timeouts.upstream_send_retry_base_delay_ms,
+        defaults.upstream_send_retry_base_delay_ms,
+    );
+    timeouts.upstream_send_retry_max_delay_ms = clamp_retry_delay_ms(
+        timeouts.upstream_send_retry_max_delay_ms,
+        defaults.upstream_send_retry_max_delay_ms,
+    );
+    if timeouts.upstream_send_retry_max_delay_ms < timeouts.upstream_send_retry_base_delay_ms {
+        timeouts.upstream_send_retry_max_delay_ms = timeouts.upstream_send_retry_base_delay_ms;
+    }
+    timeouts.single_account_status_retry_attempts =
+        timeouts.single_account_status_retry_attempts.clamp(
+            LOCAL_ACCESS_RETRY_ATTEMPTS_MIN,
+            LOCAL_ACCESS_RETRY_ATTEMPTS_MAX,
+        );
+    timeouts.single_account_status_retry_base_delay_ms = clamp_retry_delay_ms(
+        timeouts.single_account_status_retry_base_delay_ms,
+        defaults.single_account_status_retry_base_delay_ms,
+    );
+    timeouts.single_account_status_retry_max_delay_ms = clamp_retry_delay_ms(
+        timeouts.single_account_status_retry_max_delay_ms,
+        defaults.single_account_status_retry_max_delay_ms,
+    );
+    if timeouts.single_account_status_retry_max_delay_ms
+        < timeouts.single_account_status_retry_base_delay_ms
+    {
+        timeouts.single_account_status_retry_max_delay_ms =
+            timeouts.single_account_status_retry_base_delay_ms;
+    }
+    timeouts.sidecar_streaming_bootstrap_retries =
+        timeouts.sidecar_streaming_bootstrap_retries.clamp(
+            LOCAL_ACCESS_RETRY_ATTEMPTS_MIN,
+            LOCAL_ACCESS_RETRY_ATTEMPTS_MAX,
+        );
+    *timeouts != original
+}
+
+fn collection_timeouts(collection: &CodexLocalAccessCollection) -> CodexLocalAccessTimeouts {
+    let mut timeouts = collection.timeouts.clone();
+    normalize_timeouts(&mut timeouts);
+    timeouts
+}
+
+fn normalize_timeout_preset_name(name: &str) -> String {
+    name.trim()
+        .chars()
+        .take(TIMEOUT_PRESET_NAME_MAX_CHARS)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+fn normalize_timeout_preset_id(id: &str) -> Option<String> {
+    let normalized = id.trim();
+    if normalized.is_empty()
+        || normalized == BUILTIN_TIMEOUT_PRESET_LONG_WAIT_ID
+        || normalized == BUILTIN_TIMEOUT_PRESET_SHORT_WAIT_ID
+    {
+        return None;
+    }
+    Some(normalized.to_string())
+}
+
+fn normalize_timeout_presets(presets: &mut Vec<CodexLocalAccessTimeoutPreset>) -> bool {
+    let original = presets.clone();
+    let now = now_ms();
+    let mut normalized = Vec::new();
+    let mut seen = HashSet::new();
+
+    for mut preset in std::mem::take(presets) {
+        if normalized.len() >= MAX_CUSTOM_TIMEOUT_PRESETS {
+            break;
+        }
+        let Some(id) = normalize_timeout_preset_id(&preset.id) else {
+            continue;
+        };
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        let name = normalize_timeout_preset_name(&preset.name);
+        if name.is_empty() {
+            continue;
+        }
+        normalize_timeouts(&mut preset.timeouts);
+        preset.id = id;
+        preset.name = name;
+        if preset.created_at <= 0 {
+            preset.created_at = now;
+        }
+        if preset.updated_at <= 0 {
+            preset.updated_at = preset.created_at;
+        }
+        normalized.push(preset);
+    }
+
+    *presets = normalized;
+    *presets != original
+}
+
+fn normalize_active_timeout_preset_id(collection: &mut CodexLocalAccessCollection) -> bool {
+    let original = collection.active_timeout_preset_id.clone();
+    let current = collection.active_timeout_preset_id.trim();
+    let normalized = if current == BUILTIN_TIMEOUT_PRESET_SHORT_WAIT_ID
+        || collection
+            .timeout_presets
+            .iter()
+            .any(|preset| preset.id == current)
+    {
+        current.to_string()
+    } else {
+        BUILTIN_TIMEOUT_PRESET_LONG_WAIT_ID.to_string()
+    };
+    collection.active_timeout_preset_id = normalized;
+    collection.active_timeout_preset_id != original
+}
+
 fn sanitize_collection(
     collection: &mut CodexLocalAccessCollection,
 ) -> Result<(bool, HashSet<String>), String> {
@@ -7645,6 +8064,9 @@ fn sanitize_collection(
         collection.max_retry_interval_ms = normalized_max_retry_interval_ms;
         changed = true;
     }
+    changed |= normalize_timeouts(&mut collection.timeouts);
+    changed |= normalize_timeout_presets(&mut collection.timeout_presets);
+    changed |= normalize_active_timeout_preset_id(collection);
 
     Ok((changed, valid_account_ids))
 }
@@ -7681,6 +8103,9 @@ async fn ensure_runtime_loaded_without_start() -> Result<(), String> {
             session_affinity_ttl_ms: DEFAULT_SESSION_AFFINITY_TTL_MS,
             max_retry_credentials: 0,
             max_retry_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
+            timeouts: CodexLocalAccessTimeouts::default(),
+            active_timeout_preset_id: "long_wait".to_string(),
+            timeout_presets: Vec::new(),
             disable_cooling: false,
             restrict_free_accounts: true,
             debug_logs: true,
@@ -8142,6 +8567,22 @@ fn apply_usage_stats(
     } else {
         target.failure_count = target.failure_count.saturating_add(1);
     }
+    let normalized_error_category = error_category
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if matches!(normalized_error_category, Some(category) if is_client_canceled_error_category(category))
+    {
+        target.client_canceled_count = target.client_canceled_count.saturating_add(1);
+    }
+    if matches!(normalized_error_category, Some(category) if is_upstream_response_failed_error_category(category))
+    {
+        target.upstream_response_failed_count =
+            target.upstream_response_failed_count.saturating_add(1);
+    }
+    if matches!(normalized_error_category, Some(category) if is_stream_incomplete_error_category(category))
+    {
+        target.stream_incomplete_count = target.stream_incomplete_count.saturating_add(1);
+    }
     target.total_latency_ms = target.total_latency_ms.saturating_add(latency_ms);
     match request_kind {
         CodexLocalAccessRequestKind::Text => {
@@ -8159,9 +8600,7 @@ fn apply_usage_stats(
         CodexLocalAccessRequestKind::Other => {}
     }
     if matches!(
-        error_category
-            .map(str::trim)
-            .filter(|value| !value.is_empty()),
+        normalized_error_category,
         Some("image_generation_not_enabled" | "image_generation_disabled")
     ) {
         target.image_generation_capability_failure_count = target
@@ -9218,6 +9657,9 @@ pub async fn save_local_access_accounts(
                 session_affinity_ttl_ms: DEFAULT_SESSION_AFFINITY_TTL_MS,
                 max_retry_credentials: 0,
                 max_retry_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
+                timeouts: CodexLocalAccessTimeouts::default(),
+                active_timeout_preset_id: BUILTIN_TIMEOUT_PRESET_LONG_WAIT_ID.to_string(),
+                timeout_presets: Vec::new(),
                 disable_cooling: false,
                 restrict_free_accounts: true,
                 debug_logs: true,
@@ -9413,6 +9855,71 @@ pub async fn update_local_access_routing_options(
     }
 
     ensure_gateway_matches_runtime().await?;
+    snapshot_state().await
+}
+
+pub async fn update_local_access_timeouts(
+    timeouts: CodexLocalAccessTimeouts,
+    active_timeout_preset_id: Option<String>,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded().await?;
+
+    let maybe_collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime.collection.clone()
+    };
+
+    let Some(mut collection) = maybe_collection else {
+        return Err("本地接入集合尚未创建".to_string());
+    };
+
+    collection.timeouts = timeouts;
+    normalize_timeouts(&mut collection.timeouts);
+    if let Some(preset_id) = active_timeout_preset_id {
+        collection.active_timeout_preset_id = preset_id;
+        normalize_active_timeout_preset_id(&mut collection);
+    }
+    collection.updated_at = now_ms();
+    save_collection_to_disk(&collection)?;
+
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        sync_runtime_collection(&mut runtime, collection);
+    }
+
+    ensure_gateway_matches_runtime().await?;
+    snapshot_state().await
+}
+
+pub async fn update_local_access_timeout_presets(
+    timeout_presets: Vec<CodexLocalAccessTimeoutPreset>,
+    active_timeout_preset_id: Option<String>,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded().await?;
+
+    let maybe_collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime.collection.clone()
+    };
+
+    let Some(mut collection) = maybe_collection else {
+        return Err("本地接入集合尚未创建".to_string());
+    };
+
+    collection.timeout_presets = timeout_presets;
+    normalize_timeout_presets(&mut collection.timeout_presets);
+    if let Some(preset_id) = active_timeout_preset_id {
+        collection.active_timeout_preset_id = preset_id;
+    }
+    normalize_active_timeout_preset_id(&mut collection);
+    collection.updated_at = now_ms();
+    save_collection_to_disk(&collection)?;
+
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        sync_runtime_collection(&mut runtime, collection);
+    }
+
     snapshot_state().await
 }
 
@@ -9895,7 +10402,7 @@ pub async fn kill_local_access_port_processes() -> Result<CodexLocalAccessPortCl
 }
 
 pub async fn update_local_access_port(port: u16) -> Result<CodexLocalAccessState, String> {
-    ensure_runtime_loaded().await?;
+    ensure_runtime_loaded_without_start().await?;
 
     let maybe_collection = {
         let runtime = gateway_runtime().lock().await;
@@ -10003,7 +10510,10 @@ fn parse_content_length(header_bytes: &[u8]) -> Result<usize, String> {
     Ok(0)
 }
 
-async fn read_http_request<R>(stream: &mut R) -> Result<Vec<u8>, String>
+async fn read_http_request<R>(
+    stream: &mut R,
+    request_read_timeout: Duration,
+) -> Result<Vec<u8>, String>
 where
     R: AsyncRead + Unpin,
 {
@@ -10013,7 +10523,7 @@ where
     let mut content_length = 0usize;
 
     loop {
-        let bytes_read = timeout(REQUEST_READ_TIMEOUT, stream.read(&mut chunk))
+        let bytes_read = timeout(request_read_timeout, stream.read(&mut chunk))
             .await
             .map_err(|_| "读取请求超时".to_string())?
             .map_err(|e| format!("读取请求失败: {}", e))?;
@@ -10454,6 +10964,7 @@ impl ResponseUsageCollector {
             stream_buffer: Vec::new(),
             usage: None,
             response_id: None,
+            terminal_error: None,
         }
     }
 
@@ -10475,12 +10986,14 @@ impl ResponseUsageCollector {
             ResponseCapture {
                 usage: self.usage,
                 response_id: self.response_id,
+                terminal_error: self.terminal_error,
             }
         } else {
             let parsed = serde_json::from_slice::<Value>(&self.body).ok();
             ResponseCapture {
                 usage: parsed.as_ref().and_then(extract_usage_capture),
                 response_id: parsed.as_ref().and_then(extract_response_id),
+                terminal_error: None,
             }
         }
     }
@@ -10514,9 +11027,17 @@ impl ResponseUsageCollector {
         }
 
         let text = String::from_utf8_lossy(frame);
+        let mut event_name: Option<String> = None;
         let mut data_lines = Vec::new();
         for raw_line in text.lines() {
             let line = raw_line.trim();
+            if let Some(rest) = line.strip_prefix("event:") {
+                let value = rest.trim();
+                if !value.is_empty() {
+                    event_name = Some(value.to_string());
+                }
+                continue;
+            }
             if let Some(rest) = line.strip_prefix("data:") {
                 let payload = rest.trim();
                 if !payload.is_empty() {
@@ -10540,6 +11061,12 @@ impl ResponseUsageCollector {
         }
 
         if let Ok(value) = serde_json::from_str::<Value>(&payload) {
+            if self.terminal_error.is_none() {
+                if let Some(signal) = upstream_response_failed_signal(event_name.as_deref(), &value)
+                {
+                    self.terminal_error = Some(format_upstream_response_failed_error(&signal));
+                }
+            }
             if let Some(usage) = extract_usage_capture(&value) {
                 self.usage = Some(usage);
             }
@@ -11061,6 +11588,9 @@ async fn finish_chunked_response(stream: &mut TcpStream) -> Result<(), String> {
 
 fn parse_responses_payload_from_upstream(body_bytes: &[u8]) -> Result<Value, String> {
     if let Ok(parsed) = serde_json::from_slice::<Value>(body_bytes) {
+        if let Some(signal) = upstream_response_failed_signal(None, &parsed) {
+            return Err(format_upstream_response_failed_error(&signal));
+        }
         return Ok(parsed);
     }
 
@@ -11069,9 +11599,9 @@ fn parse_responses_payload_from_upstream(body_bytes: &[u8]) -> Result<Value, Str
     let mut output_text = String::new();
     let mut output_items: Vec<Value> = Vec::new();
 
-    let mut process_frame = |frame: &[u8]| {
+    let mut process_frame = |frame: &[u8]| -> Result<(), String> {
         if frame.is_empty() {
-            return;
+            return Ok(());
         }
         let text = String::from_utf8_lossy(frame);
         let mut event_name: Option<String> = None;
@@ -11096,19 +11626,22 @@ fn parse_responses_payload_from_upstream(body_bytes: &[u8]) -> Result<Value, Str
         let payload = if data_lines.is_empty() {
             let trimmed = text.trim();
             if trimmed.is_empty() {
-                return;
+                return Ok(());
             }
             trimmed.to_string()
         } else {
             data_lines.join("\n")
         };
         if payload == "[DONE]" {
-            return;
+            return Ok(());
         }
 
         let Ok(value) = serde_json::from_str::<Value>(&payload) else {
-            return;
+            return Ok(());
         };
+        if let Some(signal) = upstream_response_failed_signal(event_name.as_deref(), &value) {
+            return Err(format_upstream_response_failed_error(&signal));
+        }
         match value
             .get("type")
             .and_then(Value::as_str)
@@ -11141,6 +11674,7 @@ fn parse_responses_payload_from_upstream(body_bytes: &[u8]) -> Result<Value, Str
             }
             _ => {}
         }
+        Ok(())
     };
 
     loop {
@@ -11149,10 +11683,10 @@ fn parse_responses_payload_from_upstream(body_bytes: &[u8]) -> Result<Value, Str
         };
         let frame = stream_buffer[..boundary_index].to_vec();
         stream_buffer.drain(..boundary_index + separator_len);
-        process_frame(&frame);
+        process_frame(&frame)?;
     }
     if !stream_buffer.is_empty() {
-        process_frame(&stream_buffer);
+        process_frame(&stream_buffer)?;
     }
 
     let Some(response_value) = completed_response else {
@@ -11454,6 +11988,12 @@ impl ImageStreamTransformer {
         let Ok(event) = serde_json::from_str::<Value>(&payload) else {
             return;
         };
+        if self.response_capture.terminal_error.is_none() {
+            if let Some(signal) = upstream_response_failed_signal(event_name.as_deref(), &event) {
+                self.response_capture.terminal_error =
+                    Some(format_upstream_response_failed_error(&signal));
+            }
+        }
         if let Some(usage) = extract_usage_capture(&event) {
             self.response_capture.usage = Some(usage);
         }
@@ -11544,6 +12084,7 @@ async fn write_chat_completions_compatible_response(
     debug_logs: bool,
     request: &ParsedRequest,
     started_at: Instant,
+    timeouts: &CodexLocalAccessTimeouts,
 ) -> Result<ResponseCapture, String> {
     let status = upstream.status();
     let status_text = status.canonical_reason().unwrap_or("OK");
@@ -11565,10 +12106,14 @@ async fn write_chat_completions_compatible_response(
         let stream_started_at = Instant::now();
         let mut first_chunk_logged = false;
         loop {
-            if stream_started_at.elapsed() > UPSTREAM_STREAM_TOTAL_TIMEOUT {
+            let stream_total_timeout = duration_from_millis(
+                timeouts.legacy_stream_total_timeout_ms,
+                DEFAULT_UPSTREAM_STREAM_TOTAL_TIMEOUT,
+            );
+            if stream_started_at.elapsed() > stream_total_timeout {
                 let message = format!(
                     "读取上游流式响应超时: 总时长超过 {} 秒",
-                    UPSTREAM_STREAM_TOTAL_TIMEOUT.as_secs()
+                    stream_total_timeout.as_secs()
                 );
                 legacy_debug_log(
                     debug_logs,
@@ -11583,12 +12128,16 @@ async fn write_chat_completions_compatible_response(
                 return Err(message);
             }
 
-            let next_chunk = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, body_stream.next())
+            let stream_idle_timeout = duration_from_millis(
+                timeouts.legacy_stream_idle_timeout_ms,
+                DEFAULT_UPSTREAM_STREAM_IDLE_TIMEOUT,
+            );
+            let next_chunk = tokio::time::timeout(stream_idle_timeout, body_stream.next())
                 .await
                 .map_err(|_| {
                     let message = format!(
                         "读取上游流式响应超时: 连续 {} 秒未收到新数据",
-                        UPSTREAM_STREAM_IDLE_TIMEOUT.as_secs()
+                        stream_idle_timeout.as_secs()
                     );
                     legacy_debug_log(
                         debug_logs,
@@ -11629,6 +12178,20 @@ async fn write_chat_completions_compatible_response(
         let (tail, response_capture) = transformer.finish();
         write_chunked_response_chunk(stream, &tail).await?;
         finish_chunked_response(stream).await?;
+        if let Some(terminal_error) = response_capture.terminal_error.as_deref() {
+            legacy_debug_log(
+                debug_logs,
+                format!(
+                    "stream_upstream_failed method={} target={} status={} latency_ms={} detail={}",
+                    request.method,
+                    request.target,
+                    status.as_u16(),
+                    started_at.elapsed().as_millis(),
+                    escape_failure_detail(&terminal_error)
+                ),
+            );
+            return Err(terminal_error.to_string());
+        }
         legacy_debug_log(
             debug_logs,
             format!(
@@ -11650,6 +12213,7 @@ async fn write_chat_completions_compatible_response(
     let response_capture = ResponseCapture {
         usage: extract_usage_capture(&parsed),
         response_id: extract_response_id(&parsed),
+        terminal_error: None,
     };
     let chat_payload =
         build_chat_completion_payload(&parsed, requested_model, original_request_body);
@@ -11677,6 +12241,7 @@ async fn write_images_compatible_response(
     debug_logs: bool,
     request: &ParsedRequest,
     started_at: Instant,
+    timeouts: &CodexLocalAccessTimeouts,
 ) -> Result<ResponseCapture, String> {
     let status = upstream.status();
     let status_text = status.canonical_reason().unwrap_or("OK");
@@ -11697,10 +12262,14 @@ async fn write_images_compatible_response(
         let stream_started_at = Instant::now();
         let mut first_chunk_logged = false;
         loop {
-            if stream_started_at.elapsed() > UPSTREAM_STREAM_TOTAL_TIMEOUT {
+            let stream_total_timeout = duration_from_millis(
+                timeouts.legacy_stream_total_timeout_ms,
+                DEFAULT_UPSTREAM_STREAM_TOTAL_TIMEOUT,
+            );
+            if stream_started_at.elapsed() > stream_total_timeout {
                 let message = format!(
                     "读取上游流式响应超时: 总时长超过 {} 秒",
-                    UPSTREAM_STREAM_TOTAL_TIMEOUT.as_secs()
+                    stream_total_timeout.as_secs()
                 );
                 legacy_debug_log(
                     debug_logs,
@@ -11715,12 +12284,16 @@ async fn write_images_compatible_response(
                 return Err(message);
             }
 
-            let next_chunk = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, body_stream.next())
+            let stream_idle_timeout = duration_from_millis(
+                timeouts.legacy_stream_idle_timeout_ms,
+                DEFAULT_UPSTREAM_STREAM_IDLE_TIMEOUT,
+            );
+            let next_chunk = tokio::time::timeout(stream_idle_timeout, body_stream.next())
                 .await
                 .map_err(|_| {
                     let message = format!(
                         "读取上游流式响应超时: 连续 {} 秒未收到新数据",
-                        UPSTREAM_STREAM_IDLE_TIMEOUT.as_secs()
+                        stream_idle_timeout.as_secs()
                     );
                     legacy_debug_log(
                         debug_logs,
@@ -11761,6 +12334,20 @@ async fn write_images_compatible_response(
         let (tail, response_capture) = transformer.finish();
         write_chunked_response_chunk(stream, &tail).await?;
         finish_chunked_response(stream).await?;
+        if let Some(terminal_error) = response_capture.terminal_error.as_deref() {
+            legacy_debug_log(
+                debug_logs,
+                format!(
+                    "stream_upstream_failed method={} target={} status={} latency_ms={} detail={}",
+                    request.method,
+                    request.target,
+                    status.as_u16(),
+                    started_at.elapsed().as_millis(),
+                    escape_failure_detail(&terminal_error)
+                ),
+            );
+            return Err(terminal_error.to_string());
+        }
         legacy_debug_log(
             debug_logs,
             format!(
@@ -11782,6 +12369,7 @@ async fn write_images_compatible_response(
     let response_capture = ResponseCapture {
         usage: extract_usage_capture(&parsed),
         response_id: extract_response_id(&parsed),
+        terminal_error: None,
     };
     let images_payload = build_images_api_payload(&parsed, response_format)?;
     let payload_bytes = serde_json::to_vec(&images_payload)
@@ -11806,6 +12394,7 @@ async fn write_gateway_response(
     debug_logs: bool,
     request: &ParsedRequest,
     started_at: Instant,
+    timeouts: &CodexLocalAccessTimeouts,
 ) -> Result<ResponseCapture, String> {
     match response_adapter {
         GatewayResponseAdapter::Passthrough { request_is_stream } => {
@@ -11816,6 +12405,7 @@ async fn write_gateway_response(
                 debug_logs,
                 request,
                 started_at,
+                timeouts,
             )
             .await
         }
@@ -11833,6 +12423,7 @@ async fn write_gateway_response(
                 debug_logs,
                 request,
                 started_at,
+                timeouts,
             )
             .await
         }
@@ -11850,6 +12441,7 @@ async fn write_gateway_response(
                 debug_logs,
                 request,
                 started_at,
+                timeouts,
             )
             .await
         }
@@ -11863,6 +12455,7 @@ async fn write_upstream_response(
     debug_logs: bool,
     request: &ParsedRequest,
     started_at: Instant,
+    timeouts: &CodexLocalAccessTimeouts,
 ) -> Result<ResponseCapture, String> {
     let status = upstream.status();
     let status_text = status.canonical_reason().unwrap_or("OK");
@@ -11879,10 +12472,14 @@ async fn write_upstream_response(
     let stream_started_at = Instant::now();
     let mut first_chunk_logged = false;
     loop {
-        if stream_started_at.elapsed() > UPSTREAM_STREAM_TOTAL_TIMEOUT {
+        let stream_total_timeout = duration_from_millis(
+            timeouts.legacy_stream_total_timeout_ms,
+            DEFAULT_UPSTREAM_STREAM_TOTAL_TIMEOUT,
+        );
+        if stream_started_at.elapsed() > stream_total_timeout {
             let message = format!(
                 "读取上游流式响应超时: 总时长超过 {} 秒",
-                UPSTREAM_STREAM_TOTAL_TIMEOUT.as_secs()
+                stream_total_timeout.as_secs()
             );
             legacy_debug_log(
                 debug_logs && is_stream,
@@ -11896,12 +12493,16 @@ async fn write_upstream_response(
             );
             return Err(message);
         }
-        let next_chunk = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, body_stream.next())
+        let stream_idle_timeout = duration_from_millis(
+            timeouts.legacy_stream_idle_timeout_ms,
+            DEFAULT_UPSTREAM_STREAM_IDLE_TIMEOUT,
+        );
+        let next_chunk = tokio::time::timeout(stream_idle_timeout, body_stream.next())
             .await
             .map_err(|_| {
                 let message = format!(
                     "读取上游流式响应超时: 连续 {} 秒未收到新数据",
-                    UPSTREAM_STREAM_IDLE_TIMEOUT.as_secs()
+                    stream_idle_timeout.as_secs()
                 );
                 legacy_debug_log(
                     debug_logs && is_stream,
@@ -11941,6 +12542,20 @@ async fn write_upstream_response(
 
     finish_chunked_response(stream).await?;
     let response_capture = usage_collector.finish();
+    if let Some(terminal_error) = response_capture.terminal_error.as_deref() {
+        legacy_debug_log(
+            debug_logs && is_stream,
+            format!(
+                "stream_upstream_failed method={} target={} status={} latency_ms={} detail={}",
+                request.method,
+                request.target,
+                status.as_u16(),
+                started_at.elapsed().as_millis(),
+                escape_failure_detail(&terminal_error)
+            ),
+        );
+        return Err(terminal_error.to_string());
+    }
     legacy_debug_log(
         debug_logs && is_stream,
         format!(
@@ -11985,15 +12600,17 @@ fn format_upstream_network_error(error: &reqwest::Error) -> String {
     )
 }
 
-fn upstream_send_retry_delay(retry_attempt: usize) -> Duration {
+fn backoff_retry_delay(retry_attempt: usize, base_delay_ms: u64, max_delay_ms: u64) -> Duration {
     let multiplier = match retry_attempt {
         0 | 1 => 1u32,
         2 => 2u32,
         _ => 4u32,
     };
-    let delay = UPSTREAM_SEND_RETRY_BASE_DELAY.saturating_mul(multiplier);
-    if delay > UPSTREAM_SEND_RETRY_MAX_DELAY {
-        UPSTREAM_SEND_RETRY_MAX_DELAY
+    let base = Duration::from_millis(base_delay_ms);
+    let max = Duration::from_millis(max_delay_ms);
+    let delay = base.saturating_mul(multiplier);
+    if delay > max {
+        max
     } else {
         delay
     }
@@ -12008,20 +12625,6 @@ fn should_retry_single_account_upstream_status(status: StatusCode) -> bool {
             | StatusCode::SERVICE_UNAVAILABLE
             | StatusCode::GATEWAY_TIMEOUT
     )
-}
-
-fn single_account_status_retry_delay(retry_attempt: usize) -> Duration {
-    let multiplier = match retry_attempt {
-        0 | 1 => 1u32,
-        2 => 2u32,
-        _ => 4u32,
-    };
-    let delay = SINGLE_ACCOUNT_STATUS_RETRY_BASE_DELAY.saturating_mul(multiplier);
-    if delay > SINGLE_ACCOUNT_STATUS_RETRY_MAX_DELAY {
-        SINGLE_ACCOUNT_STATUS_RETRY_MAX_DELAY
-    } else {
-        delay
-    }
 }
 
 fn build_account_scoped_upstream_body<'a>(
@@ -12069,6 +12672,8 @@ async fn send_upstream_request(
     body: &[u8],
     account: &CodexAccount,
     upstream_proxy_url: Option<&str>,
+    connect_timeout: Duration,
+    timeouts: &CodexLocalAccessTimeouts,
     image_generation_mode: CodexLocalAccessImageGenerationMode,
     request_kind: CodexLocalAccessRequestKind,
 ) -> Result<reqwest::Response, String> {
@@ -12076,7 +12681,7 @@ async fn send_upstream_request(
         Method::from_bytes(method.as_bytes()).map_err(|e| format!("不支持的请求方法: {}", e))?;
     let url = build_upstream_url(account, target)?;
     let upstream_token = account_upstream_token(account)?;
-    let client = upstream_http_client(upstream_proxy_url)?;
+    let client = upstream_http_client(upstream_proxy_url, connect_timeout)?;
     let upstream_body = build_account_scoped_upstream_body(
         target,
         body,
@@ -12084,7 +12689,8 @@ async fn send_upstream_request(
         image_generation_mode,
         request_kind,
     )?;
-    for retry_attempt in 0..=UPSTREAM_SEND_RETRY_ATTEMPTS {
+    let max_send_retries = timeouts.upstream_send_retry_attempts as usize;
+    for retry_attempt in 0..=max_send_retries {
         let mut request = client.request(method.clone(), &url);
 
         for (name, value) in headers {
@@ -12141,12 +12747,17 @@ async fn send_upstream_request(
         match request.send().await {
             Ok(response) => return Ok(response),
             Err(error) => {
-                let should_retry = retry_attempt < UPSTREAM_SEND_RETRY_ATTEMPTS
-                    && should_retry_upstream_send_error(&error);
+                let should_retry =
+                    retry_attempt < max_send_retries && should_retry_upstream_send_error(&error);
                 if !should_retry {
                     return Err(format_upstream_network_error(&error));
                 }
-                tokio::time::sleep(upstream_send_retry_delay(retry_attempt + 1)).await;
+                tokio::time::sleep(backoff_retry_delay(
+                    retry_attempt + 1,
+                    timeouts.upstream_send_retry_base_delay_ms,
+                    timeouts.upstream_send_retry_max_delay_ms,
+                ))
+                .await;
             }
         }
     }
@@ -12177,6 +12788,11 @@ async fn proxy_request_with_account_pool(
             account_email: None,
             error_category: Some("bad_request".to_string()),
         })?;
+    let timeouts = collection_timeouts(collection);
+    let upstream_connect_timeout = duration_from_millis(
+        timeouts.legacy_upstream_connect_timeout_ms,
+        DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
+    );
     let routing_hint = build_request_routing_hint(request);
     let total = collection.account_ids.len();
     let configured_max_credentials = collection.max_retry_credentials as usize;
@@ -12334,6 +12950,8 @@ async fn proxy_request_with_account_pool(
                     &request.body,
                     &account,
                     collection.upstream_proxy_url.as_deref(),
+                    upstream_connect_timeout,
+                    &timeouts,
                     collection.image_generation_mode,
                     request_kind,
                 )
@@ -12459,6 +13077,8 @@ async fn proxy_request_with_account_pool(
                                 &request.body,
                                 &account,
                                 collection.upstream_proxy_url.as_deref(),
+                                upstream_connect_timeout,
+                                &timeouts,
                                 collection.image_generation_mode,
                                 request_kind,
                             )
@@ -12587,12 +13207,15 @@ async fn proxy_request_with_account_pool(
                 }
 
                 let can_retry_single_account = total == 1
-                    && single_account_status_retry_attempt < SINGLE_ACCOUNT_STATUS_RETRY_ATTEMPTS
+                    && single_account_status_retry_attempt
+                        < timeouts.single_account_status_retry_attempts as usize
                     && should_retry_single_account_upstream_status(status);
                 if can_retry_single_account {
                     single_account_status_retry_attempt += 1;
-                    tokio::time::sleep(single_account_status_retry_delay(
+                    tokio::time::sleep(backoff_retry_delay(
                         single_account_status_retry_attempt,
+                        timeouts.single_account_status_retry_base_delay_ms,
+                        timeouts.single_account_status_retry_max_delay_ms,
                     ))
                     .await;
                     continue;
@@ -12710,8 +13333,9 @@ async fn accept_downstream_websocket(
 
 async fn read_initial_websocket_payload(
     downstream: &mut WebSocketStream<TcpStream>,
+    initial_message_timeout: Duration,
 ) -> Result<Vec<u8>, String> {
-    let deadline = Instant::now() + CODEX_WEBSOCKET_INITIAL_MESSAGE_TIMEOUT;
+    let deadline = Instant::now() + initial_message_timeout;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -12824,8 +13448,12 @@ fn websocket_target_host_port(request: &WsClientRequest) -> Result<(String, u16)
     Ok((host, port))
 }
 
-async fn tcp_connect_with_timeout(addr: &str, label: &str) -> Result<TcpStream, String> {
-    timeout(CODEX_WEBSOCKET_CONNECT_TIMEOUT, TcpStream::connect(addr))
+async fn tcp_connect_with_timeout(
+    addr: &str,
+    label: &str,
+    connect_timeout: Duration,
+) -> Result<TcpStream, String> {
+    timeout(connect_timeout, TcpStream::connect(addr))
         .await
         .map_err(|_| format!("连接 {} 超时", label))?
         .map_err(|e| format!("连接 {} 失败: {}", label, e))
@@ -12854,6 +13482,7 @@ async fn connect_http_proxy_tunnel(
     proxy_url: &Url,
     target_host: &str,
     target_port: u16,
+    connect_timeout: Duration,
 ) -> Result<TcpStream, String> {
     let proxy_host = proxy_url
         .host_str()
@@ -12864,19 +13493,17 @@ async fn connect_http_proxy_tunnel(
         .port_or_known_default()
         .ok_or_else(|| "WebSocket 上游代理地址缺少端口".to_string())?;
     let proxy_addr = format!("{}:{}", proxy_host, proxy_port);
-    let mut stream = tcp_connect_with_timeout(&proxy_addr, "WebSocket HTTP 代理").await?;
+    let mut stream =
+        tcp_connect_with_timeout(&proxy_addr, "WebSocket HTTP 代理", connect_timeout).await?;
     let target_addr = format!("{}:{}", target_host, target_port);
     let auth_header = proxy_authorization_header(proxy_url).unwrap_or_default();
     let request = format!(
         "CONNECT {target_addr} HTTP/1.1\r\nHost: {target_addr}\r\nProxy-Connection: Keep-Alive\r\n{auth_header}\r\n"
     );
-    timeout(
-        CODEX_WEBSOCKET_CONNECT_TIMEOUT,
-        stream.write_all(request.as_bytes()),
-    )
-    .await
-    .map_err(|_| "发送 WebSocket 代理 CONNECT 请求超时".to_string())?
-    .map_err(|e| format!("发送 WebSocket 代理 CONNECT 请求失败: {}", e))?;
+    timeout(connect_timeout, stream.write_all(request.as_bytes()))
+        .await
+        .map_err(|_| "发送 WebSocket 代理 CONNECT 请求超时".to_string())?
+        .map_err(|e| format!("发送 WebSocket 代理 CONNECT 请求失败: {}", e))?;
 
     let mut response = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
@@ -12884,7 +13511,7 @@ async fn connect_http_proxy_tunnel(
         if response.len() > CODEX_WEBSOCKET_PROXY_CONNECT_MAX_BYTES {
             return Err("WebSocket 代理 CONNECT 响应过大".to_string());
         }
-        let read = timeout(CODEX_WEBSOCKET_CONNECT_TIMEOUT, stream.read(&mut chunk))
+        let read = timeout(connect_timeout, stream.read(&mut chunk))
             .await
             .map_err(|_| "读取 WebSocket 代理 CONNECT 响应超时".to_string())?
             .map_err(|e| format!("读取 WebSocket 代理 CONNECT 响应失败: {}", e))?;
@@ -12911,8 +13538,12 @@ async fn connect_http_proxy_tunnel(
     }
 }
 
-async fn socks5_read_exact(stream: &mut TcpStream, buffer: &mut [u8]) -> Result<(), String> {
-    timeout(CODEX_WEBSOCKET_CONNECT_TIMEOUT, stream.read_exact(buffer))
+async fn socks5_read_exact(
+    stream: &mut TcpStream,
+    buffer: &mut [u8],
+    connect_timeout: Duration,
+) -> Result<(), String> {
+    timeout(connect_timeout, stream.read_exact(buffer))
         .await
         .map_err(|_| "读取 WebSocket SOCKS5 代理响应超时".to_string())?
         .map_err(|e| format!("读取 WebSocket SOCKS5 代理响应失败: {}", e))?;
@@ -12923,6 +13554,7 @@ async fn connect_socks5_proxy_tunnel(
     proxy_url: &Url,
     target_host: &str,
     target_port: u16,
+    connect_timeout: Duration,
 ) -> Result<TcpStream, String> {
     let proxy_host = proxy_url
         .host_str()
@@ -12933,7 +13565,8 @@ async fn connect_socks5_proxy_tunnel(
         .port_or_known_default()
         .ok_or_else(|| "WebSocket SOCKS5 代理地址缺少端口".to_string())?;
     let proxy_addr = format!("{}:{}", proxy_host, proxy_port);
-    let mut stream = tcp_connect_with_timeout(&proxy_addr, "WebSocket SOCKS5 代理").await?;
+    let mut stream =
+        tcp_connect_with_timeout(&proxy_addr, "WebSocket SOCKS5 代理", connect_timeout).await?;
 
     let username = decode_proxy_credential(proxy_url.username());
     let password = proxy_url
@@ -12946,13 +13579,13 @@ async fn connect_socks5_proxy_tunnel(
     } else {
         &[0x05, 0x01, 0x00]
     };
-    timeout(CODEX_WEBSOCKET_CONNECT_TIMEOUT, stream.write_all(greeting))
+    timeout(connect_timeout, stream.write_all(greeting))
         .await
         .map_err(|_| "发送 WebSocket SOCKS5 握手超时".to_string())?
         .map_err(|e| format!("发送 WebSocket SOCKS5 握手失败: {}", e))?;
 
     let mut method_response = [0u8; 2];
-    socks5_read_exact(&mut stream, &mut method_response).await?;
+    socks5_read_exact(&mut stream, &mut method_response, connect_timeout).await?;
     if method_response[0] != 0x05 {
         return Err("WebSocket SOCKS5 代理响应版本无效".to_string());
     }
@@ -12971,15 +13604,12 @@ async fn connect_socks5_proxy_tunnel(
         auth_request.extend_from_slice(username_bytes);
         auth_request.push(password_bytes.len() as u8);
         auth_request.extend_from_slice(password_bytes);
-        timeout(
-            CODEX_WEBSOCKET_CONNECT_TIMEOUT,
-            stream.write_all(&auth_request),
-        )
-        .await
-        .map_err(|_| "发送 WebSocket SOCKS5 认证超时".to_string())?
-        .map_err(|e| format!("发送 WebSocket SOCKS5 认证失败: {}", e))?;
+        timeout(connect_timeout, stream.write_all(&auth_request))
+            .await
+            .map_err(|_| "发送 WebSocket SOCKS5 认证超时".to_string())?
+            .map_err(|e| format!("发送 WebSocket SOCKS5 认证失败: {}", e))?;
         let mut auth_response = [0u8; 2];
-        socks5_read_exact(&mut stream, &mut auth_response).await?;
+        socks5_read_exact(&mut stream, &mut auth_response, connect_timeout).await?;
         if auth_response != [0x01, 0x00] {
             return Err("WebSocket SOCKS5 代理认证失败".to_string());
         }
@@ -12998,16 +13628,13 @@ async fn connect_socks5_proxy_tunnel(
     connect_request.extend_from_slice(&[0x05, 0x01, 0x00, 0x03, target_host_bytes.len() as u8]);
     connect_request.extend_from_slice(target_host_bytes);
     connect_request.extend_from_slice(&target_port.to_be_bytes());
-    timeout(
-        CODEX_WEBSOCKET_CONNECT_TIMEOUT,
-        stream.write_all(&connect_request),
-    )
-    .await
-    .map_err(|_| "发送 WebSocket SOCKS5 CONNECT 请求超时".to_string())?
-    .map_err(|e| format!("发送 WebSocket SOCKS5 CONNECT 请求失败: {}", e))?;
+    timeout(connect_timeout, stream.write_all(&connect_request))
+        .await
+        .map_err(|_| "发送 WebSocket SOCKS5 CONNECT 请求超时".to_string())?
+        .map_err(|e| format!("发送 WebSocket SOCKS5 CONNECT 请求失败: {}", e))?;
 
     let mut reply_header = [0u8; 4];
-    socks5_read_exact(&mut stream, &mut reply_header).await?;
+    socks5_read_exact(&mut stream, &mut reply_header, connect_timeout).await?;
     if reply_header[0] != 0x05 {
         return Err("WebSocket SOCKS5 CONNECT 响应版本无效".to_string());
     }
@@ -13021,36 +13648,41 @@ async fn connect_socks5_proxy_tunnel(
         0x01 => 4,
         0x03 => {
             let mut len = [0u8; 1];
-            socks5_read_exact(&mut stream, &mut len).await?;
+            socks5_read_exact(&mut stream, &mut len, connect_timeout).await?;
             len[0] as usize
         }
         0x04 => 16,
         other => return Err(format!("WebSocket SOCKS5 CONNECT 地址类型无效: {}", other)),
     };
     let mut bound_addr = vec![0u8; addr_len + 2];
-    socks5_read_exact(&mut stream, &mut bound_addr).await?;
+    socks5_read_exact(&mut stream, &mut bound_addr, connect_timeout).await?;
     Ok(stream)
 }
 
 async fn connect_upstream_websocket_socket(
     request: &WsClientRequest,
     upstream_proxy_url: Option<&str>,
+    connect_timeout: Duration,
 ) -> Result<TcpStream, String> {
     let (target_host, target_port) = websocket_target_host_port(request)?;
-    let signature = current_upstream_http_client_signature(upstream_proxy_url);
+    let signature = current_upstream_http_client_signature(upstream_proxy_url, connect_timeout);
     let Some(proxy_url) = signature.proxy_url.as_deref() else {
         return tcp_connect_with_timeout(
             &format!("{}:{}", target_host, target_port),
             "Codex 上游 WebSocket",
+            connect_timeout,
         )
         .await;
     };
     let proxy_url =
         Url::parse(proxy_url).map_err(|e| format!("WebSocket 上游代理地址无效: {}", e))?;
     match proxy_url.scheme() {
-        "http" => connect_http_proxy_tunnel(&proxy_url, &target_host, target_port).await,
+        "http" => {
+            connect_http_proxy_tunnel(&proxy_url, &target_host, target_port, connect_timeout).await
+        }
         "socks5" | "socks5h" => {
-            connect_socks5_proxy_tunnel(&proxy_url, &target_host, target_port).await
+            connect_socks5_proxy_tunnel(&proxy_url, &target_host, target_port, connect_timeout)
+                .await
         }
         "https" => {
             Err("WebSocket 上游代理暂不支持 https 代理，请改用 http 或 socks5 代理地址".to_string())
@@ -13113,8 +13745,9 @@ fn websocket_connect_error_from_tungstenite(error: WsError) -> WebSocketConnectE
 async fn connect_upstream_websocket_request(
     request: WsClientRequest,
     upstream_proxy_url: Option<&str>,
+    connect_timeout: Duration,
 ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, WebSocketConnectError> {
-    let socket = connect_upstream_websocket_socket(&request, upstream_proxy_url)
+    let socket = connect_upstream_websocket_socket(&request, upstream_proxy_url, connect_timeout)
         .await
         .map_err(WebSocketConnectError::upstream)?;
     let (upstream, _) = client_async_tls_with_config(request, socket, None, None)
@@ -13128,6 +13761,7 @@ async fn connect_upstream_websocket(
     account: &CodexAccount,
     upstream_target: &str,
     upstream_proxy_url: Option<&str>,
+    connect_timeout: Duration,
 ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, WebSocketConnectError> {
     let ws_url = build_upstream_websocket_url(account, upstream_target)
         .map_err(WebSocketConnectError::upstream)?;
@@ -13187,7 +13821,7 @@ async fn connect_upstream_websocket(
         }
     }
 
-    connect_upstream_websocket_request(upstream_request, upstream_proxy_url).await
+    connect_upstream_websocket_request(upstream_request, upstream_proxy_url, connect_timeout).await
 }
 
 async fn proxy_websocket_with_account_pool(
@@ -13213,6 +13847,11 @@ async fn proxy_websocket_with_account_pool(
             account_email: None,
             error_category: Some("bad_request".to_string()),
         })?;
+    let timeouts = collection_timeouts(collection);
+    let websocket_connect_timeout = duration_from_millis(
+        timeouts.websocket_connect_timeout_ms,
+        CODEX_WEBSOCKET_CONNECT_TIMEOUT,
+    );
     let routing_hint = build_request_routing_hint(request);
     let total = collection.account_ids.len();
     let configured_max_credentials = collection.max_retry_credentials as usize;
@@ -13307,6 +13946,7 @@ async fn proxy_websocket_with_account_pool(
             &account,
             &upstream_target,
             collection.upstream_proxy_url.as_deref(),
+            websocket_connect_timeout,
         )
         .await
         {
@@ -13366,6 +14006,7 @@ async fn proxy_websocket_with_account_pool(
                                 &account,
                                 &upstream_target,
                                 collection.upstream_proxy_url.as_deref(),
+                                websocket_connect_timeout,
                             )
                             .await
                             {
@@ -13602,6 +14243,7 @@ async fn bridge_websocket_streams(
     downstream: WebSocketStream<TcpStream>,
     mut upstream: WebSocketStream<MaybeTlsStream<TcpStream>>,
     first_payload: Vec<u8>,
+    timeouts: CodexLocalAccessTimeouts,
 ) -> Result<WebSocketBridgeResult, String> {
     let first_text = String::from_utf8(first_payload)
         .map_err(|e| format!("WebSocket response.create 不是合法 UTF-8: {}", e))?;
@@ -13614,9 +14256,17 @@ async fn bridge_websocket_streams(
     let (mut upstream_write, mut upstream_read) = upstream.split();
     let mut capture = ResponseCapture::default();
     let mut upstream_error = None;
-    let mut heartbeat = tokio::time::interval_at(
-        tokio::time::Instant::now() + CODEX_WEBSOCKET_HEARTBEAT_INTERVAL,
+    let heartbeat_interval = duration_from_millis(
+        timeouts.websocket_heartbeat_interval_ms,
         CODEX_WEBSOCKET_HEARTBEAT_INTERVAL,
+    );
+    let idle_timeout = duration_from_millis(
+        timeouts.websocket_idle_timeout_ms,
+        CODEX_WEBSOCKET_IDLE_TIMEOUT,
+    );
+    let mut heartbeat = tokio::time::interval_at(
+        tokio::time::Instant::now() + heartbeat_interval,
+        heartbeat_interval,
     );
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -13632,7 +14282,7 @@ async fn bridge_websocket_streams(
                     .await
                     .map_err(|e| format!("刷新 Codex 上游 WebSocket 心跳失败: {}", e))?;
             }
-            downstream_next = timeout(CODEX_WEBSOCKET_IDLE_TIMEOUT, downstream_read.next()) => {
+            downstream_next = timeout(idle_timeout, downstream_read.next()) => {
                 let downstream_next = downstream_next
                     .map_err(|_| "WebSocket 客户端空闲超时".to_string())?;
                 let Some(message_result) = downstream_next else {
@@ -13649,7 +14299,7 @@ async fn bridge_websocket_streams(
                     break;
                 }
             }
-            upstream_next = timeout(CODEX_WEBSOCKET_IDLE_TIMEOUT, upstream_read.next()) => {
+            upstream_next = timeout(idle_timeout, upstream_read.next()) => {
                 let upstream_next = upstream_next
                     .map_err(|_| "Codex 上游 WebSocket 空闲超时".to_string())?;
                 let Some(message_result) = upstream_next else {
@@ -13689,14 +14339,20 @@ async fn handle_websocket_connection(
     resolved_api_key: ResolvedLocalApiKey,
 ) -> Result<(), String> {
     let started_at = Instant::now();
+    let timeouts = collection_timeouts(&collection);
     let mut downstream = accept_downstream_websocket(stream, &parsed).await?;
-    let initial_payload = match read_initial_websocket_payload(&mut downstream).await {
-        Ok(payload) => payload,
-        Err(err) => {
-            let _ = downstream.send(Message::Close(None)).await;
-            return Err(err);
-        }
-    };
+    let initial_message_timeout = duration_from_millis(
+        timeouts.websocket_initial_message_timeout_ms,
+        CODEX_WEBSOCKET_INITIAL_MESSAGE_TIMEOUT,
+    );
+    let initial_payload =
+        match read_initial_websocket_payload(&mut downstream, initial_message_timeout).await {
+            Ok(payload) => payload,
+            Err(err) => {
+                let _ = downstream.send(Message::Close(None)).await;
+                return Err(err);
+            }
+        };
     parsed.body = initial_payload;
     prepare_websocket_initial_request(&mut parsed, &resolved_api_key)?;
     let stats_context = RequestStatsContext {
@@ -13713,8 +14369,13 @@ async fn handle_websocket_connection(
             let account_id = success.account_id.clone();
             let account_email = success.account_email.clone();
             let account = success.account.clone();
-            let bridge_result =
-                bridge_websocket_streams(downstream, success.upstream, parsed.body.clone()).await?;
+            let bridge_result = bridge_websocket_streams(
+                downstream,
+                success.upstream,
+                parsed.body.clone(),
+                timeouts.clone(),
+            )
+            .await?;
             if let Some(upstream_error) = bridge_result.upstream_error {
                 mark_account_failure(
                     &account,
@@ -13844,7 +14505,21 @@ async fn handle_connection(
     mut stream: TcpStream,
     addr: std::net::SocketAddr,
 ) -> Result<(), String> {
-    let raw_request = match read_http_request(&mut stream).await {
+    let request_read_timeout = {
+        let runtime = gateway_runtime().lock().await;
+        runtime
+            .collection
+            .as_ref()
+            .map(collection_timeouts)
+            .map(|timeouts| {
+                duration_from_millis(
+                    timeouts.legacy_request_read_timeout_ms,
+                    DEFAULT_REQUEST_READ_TIMEOUT,
+                )
+            })
+            .unwrap_or(DEFAULT_REQUEST_READ_TIMEOUT)
+    };
+    let raw_request = match read_http_request(&mut stream, request_read_timeout).await {
         Ok(raw_request) => raw_request,
         Err(err) => {
             let message = format!("读取本地 API 请求失败: {}", err);
@@ -14216,6 +14891,7 @@ async fn handle_connection(
                 account_id,
                 account_email,
             } = success;
+            let timeouts = collection_timeouts(&collection);
             let response_capture = match write_gateway_response(
                 &mut stream,
                 upstream,
@@ -14223,6 +14899,7 @@ async fn handle_connection(
                 collection.debug_logs,
                 &prepared_request,
                 started_at,
+                &timeouts,
             )
             .await
             {
@@ -14392,17 +15069,20 @@ mod tests {
         extract_usage_capture, inspect_local_access_profile_config,
         is_codex_account_import_request, is_codex_local_access_auth_text,
         is_image_generation_capability_error, is_local_access_eligible_account,
-        is_responses_completion_event, model_pricing, normalize_custom_routing_rules,
-        parse_codex_retry_after, parse_responses_payload_from_upstream,
-        parse_websocket_upstream_error, prepare_gateway_request, profile_base_url_matches,
-        recover_invalid_stats_file, remove_codex_local_access_config, resolve_plan_rank,
-        resolve_supported_model_alias, resolve_upstream_target,
+        is_responses_completion_event, is_stream_incomplete_error_message,
+        is_upstream_response_failed_error_message, legacy_stream_error_category, model_pricing,
+        normalize_custom_routing_rules, normalized_sidecar_error_category, parse_codex_retry_after,
+        parse_responses_payload_from_upstream, parse_websocket_upstream_error,
+        prepare_gateway_request, profile_base_url_matches, recover_invalid_stats_file,
+        remove_codex_local_access_config, resolve_plan_rank, resolve_supported_model_alias,
+        resolve_upstream_target,
         should_retry_single_account_upstream_status, should_treat_response_as_stream,
         should_try_next_account, validate_client_model_visible,
         visible_codex_model_ids_for_api_key, websocket_accept_value,
         websocket_connect_error_from_http_response, CodexLocalAccessCollection,
         CodexLocalAccessGatewayMode, CodexLocalAccessScope, GatewayResponseAdapter, ParsedRequest,
-        ResolvedLocalApiKey, ResponseUsageCollector, RoutingCandidate, UsageCapture,
+        ResolvedLocalApiKey, ResponseUsageCollector, RoutingCandidate, SidecarUsageDetails,
+        SidecarUsageEvent, UsageCapture,
         CODEX_ACCOUNT_IMPORT_PATH, CODEX_ACCOUNT_IMPORT_SHORT_PATH, CODEX_AUTO_REVIEW_MODEL_ID,
         DEFAULT_MAX_RETRY_INTERVAL_MS, DEFAULT_SESSION_AFFINITY_TTL_MS,
     };
@@ -14410,6 +15090,7 @@ mod tests {
     use crate::models::codex_local_access::{
         CodexLocalAccessCustomRoutingRule, CodexLocalAccessImageGenerationMode,
         CodexLocalAccessRequestKind, CodexLocalAccessRoutingStrategy, CodexLocalAccessStats,
+        CodexLocalAccessTimeouts,
     };
     use crate::models::{
         DefaultInstanceSettings, InstanceLaunchMode, InstanceProfile, InstanceStore,
@@ -14444,6 +15125,9 @@ mod tests {
             session_affinity_ttl_ms: DEFAULT_SESSION_AFFINITY_TTL_MS,
             max_retry_credentials: 0,
             max_retry_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
+            timeouts: CodexLocalAccessTimeouts::default(),
+            active_timeout_preset_id: "long_wait".to_string(),
+            timeout_presets: Vec::new(),
             disable_cooling: false,
             restrict_free_accounts: true,
             debug_logs: true,
@@ -14655,6 +15339,7 @@ mod tests {
             downstream,
             upstream,
             br#"{"type":"response.create","payload":{}}"#.to_vec(),
+            CodexLocalAccessTimeouts::default(),
         ));
         let pong_result = pong_rx.await.unwrap();
 
@@ -14707,6 +15392,7 @@ mod tests {
             downstream,
             upstream,
             br#"{"type":"response.create","payload":{}}"#.to_vec(),
+            CodexLocalAccessTimeouts::default(),
         ));
         let (first_opcode, first_payload) =
             read_raw_client_websocket_frame(&mut raw_upstream).await;
@@ -15173,6 +15859,55 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
         assert_eq!(
             classify_upstream_error_category(StatusCode::FORBIDDEN, body),
             Some("image_generation_not_enabled")
+        );
+    }
+
+    #[test]
+    fn classifies_stream_incomplete_errors_separately() {
+        let decoding_error = "读取上游响应失败: error decoding response body";
+        let disconnected_error = "stream error: stream disconnected before completion: stream closed before response.completed/response.done";
+        let response_failed_error = "stream error: stream disconnected before completion: stream closed before response.completed/response.done, last_event=response.failed";
+
+        assert!(is_stream_incomplete_error_message(decoding_error));
+        assert!(is_stream_incomplete_error_message(disconnected_error));
+        assert!(is_upstream_response_failed_error_message(
+            response_failed_error
+        ));
+        assert_eq!(
+            legacy_stream_error_category(decoding_error),
+            "stream_incomplete"
+        );
+        assert_eq!(
+            legacy_stream_error_category(disconnected_error),
+            "stream_incomplete"
+        );
+        assert_eq!(
+            legacy_stream_error_category(response_failed_error),
+            "upstream_response_failed"
+        );
+    }
+
+    #[test]
+    fn sidecar_response_failed_overrides_generic_request_failed() {
+        let event = SidecarUsageEvent {
+            request_id: "req-1".to_string(),
+            model: "gpt-5.4".to_string(),
+            account_id: "account-1".to_string(),
+            account_email: "user@example.com".to_string(),
+            api_key_id: "key-1".to_string(),
+            api_key_label: "Default".to_string(),
+            request_kind: "text".to_string(),
+            success: false,
+            status: Some(200),
+            error_category: Some("request_failed".to_string()),
+            error_message: Some("stream error: stream disconnected before completion: stream closed before response.completed/response.done, last_event=response.failed".to_string()),
+            latency_ms: 1754,
+            usage: SidecarUsageDetails::default(),
+        };
+
+        assert_eq!(
+            normalized_sidecar_error_category(&event).as_deref(),
+            Some("upstream_response_failed")
         );
     }
 
@@ -16383,6 +17118,41 @@ data: {"response":{"id":"resp_done","model":"gpt-5.4","status":"completed","usag
                 .and_then(Value::as_u64),
             Some(2)
         );
+    }
+
+    #[test]
+    fn parses_responses_sse_response_failed_as_upstream_failure() {
+        let sse = br#"event: response.failed
+data: {"type":"response.failed","response":{"id":"resp_failed","error":{"code":"model_at_capacity","type":"server_error","message":"model overloaded"}}}
+
+"#;
+
+        let error = parse_responses_payload_from_upstream(sse).expect_err("failed event");
+        assert!(error.contains("upstream_response_failed"));
+        assert!(error.contains("response.failed"));
+        assert!(error.contains("model_at_capacity"));
+        assert!(error.contains("model overloaded"));
+        assert_eq!(
+            legacy_stream_error_category(&error),
+            "upstream_response_failed"
+        );
+    }
+
+    #[test]
+    fn response_usage_collector_captures_sse_error_event() {
+        let sse = br#"event: error
+data: {"error":{"code":"server_error","type":"upstream","message":"stream aborted"}}
+
+"#;
+
+        let mut collector = ResponseUsageCollector::new(true);
+        collector.feed(sse);
+        let capture = collector.finish();
+
+        let error = capture.terminal_error.expect("terminal error");
+        assert!(error.contains("upstream_response_failed"));
+        assert!(error.contains("server_error"));
+        assert!(error.contains("stream aborted"));
     }
 
     #[test]

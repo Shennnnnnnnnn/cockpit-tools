@@ -151,9 +151,11 @@ import { compareCurrentAccountFirst } from "../utils/currentAccountSort";
 import {
   CODEX_API_PROVIDER_CUSTOM_ID,
   CODEX_API_PROVIDER_PRESETS,
+  COCKPIT_API_BASE_URL,
   COCKPIT_API_PROVIDER_ID,
-  findCodexApiProviderPresetByBaseUrl,
+  COCKPIT_API_PROVIDER_NAME,
   findCodexApiProviderPresetById,
+  isCockpitApiProviderBaseUrl,
   resolveCodexApiProviderPresetId,
 } from "../utils/codexProviderPresets";
 import {
@@ -233,7 +235,7 @@ const CODEX_TOKEN_BATCH_EXAMPLE = `[
   }
 ]`;
 const OPENAI_OFFICIAL_PRESET_ID = "openai_official";
-const COCKPIT_API_BASE_URL = "https://chongcodex.cn/v1";
+const OPENAI_OFFICIAL_BASE_URL = "https://api.openai.com/v1";
 
 function normalizeCodexApiBaseUrl(rawValue?: string | null): string {
   return normalizeHttpBaseUrl(rawValue ?? "") ?? "";
@@ -264,8 +266,8 @@ const CODEX_LOCAL_ACCESS_GATEWAY_GUIDE_DISMISSED_KEY =
   "agtools.codex.api_service.gateway_guide.dismissed.v1";
 const CODEX_CUSTOM_SORT_ORDER_KEY =
   "agtools.codex.accounts.custom_sort_order.v1";
-const DEFAULT_CODEX_API_PROVIDER_ID = COCKPIT_API_PROVIDER_ID;
-const DEFAULT_CODEX_API_BASE_URL = COCKPIT_API_BASE_URL;
+const DEFAULT_CODEX_API_PROVIDER_ID = OPENAI_OFFICIAL_PRESET_ID;
+const DEFAULT_CODEX_API_BASE_URL = OPENAI_OFFICIAL_BASE_URL;
 const CODEX_LOCAL_ACCESS_FALLBACK_PORT = 54140;
 const CODEX_LOCAL_ACCESS_FALLBACK_BASE_URL = `http://127.0.0.1:${CODEX_LOCAL_ACCESS_FALLBACK_PORT}/v1`;
 const CODEX_LOCAL_ACCESS_FALLBACK_API_KEY_MASK = "agt_codex_••••••••••••";
@@ -2115,13 +2117,11 @@ export function CodexAccountsPage() {
       if (!normalizedBaseUrl) {
         return { apiProviderMode: "openai_builtin" };
       }
-      const matchedPresetByBaseUrl =
-        findCodexApiProviderPresetByBaseUrl(normalizedBaseUrl);
-      if (matchedPresetByBaseUrl?.id === COCKPIT_API_PROVIDER_ID) {
+      if (isCockpitApiProviderBaseUrl(normalizedBaseUrl)) {
         return {
           apiProviderMode: "custom",
-          apiProviderId: matchedPresetByBaseUrl.id,
-          apiProviderName: matchedPresetByBaseUrl.name,
+          apiProviderId: COCKPIT_API_PROVIDER_ID,
+          apiProviderName: COCKPIT_API_PROVIDER_NAME,
         };
       }
       if (providerPresetId === OPENAI_OFFICIAL_PRESET_ID) {
@@ -2937,6 +2937,12 @@ export function CodexAccountsPage() {
         .replace(/^Error:\s*/, "")
         .trim();
       const lower = raw.toLowerCase();
+      if (raw === "CODEX_STALE_ACCOUNT") {
+        return t(
+          "codex.authError.staleAccount",
+          "该账号已不在本地账号库中，账号列表已刷新。请重新导入或重新登录该 Codex 账号。",
+        );
+      }
       if (
         lower.includes("unsupported_country_region_territory") ||
         raw.includes("当前网络地区不支持刷新 Codex 授权")

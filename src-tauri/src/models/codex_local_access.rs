@@ -133,6 +133,189 @@ fn default_max_retry_interval_ms() -> u64 {
     3 * 1000
 }
 
+fn default_legacy_request_read_timeout_ms() -> u64 {
+    60 * 1000
+}
+
+fn default_legacy_upstream_connect_timeout_ms() -> u64 {
+    60 * 1000
+}
+
+fn default_legacy_stream_idle_timeout_ms() -> u64 {
+    120 * 1000
+}
+
+fn default_legacy_stream_total_timeout_ms() -> u64 {
+    300 * 1000
+}
+
+fn default_sidecar_stream_open_timeout_ms() -> u64 {
+    60 * 1000
+}
+
+fn default_sidecar_stream_idle_timeout_ms() -> u64 {
+    120 * 1000
+}
+
+fn default_sidecar_image_stream_open_timeout_ms() -> u64 {
+    60 * 1000
+}
+
+fn default_sidecar_image_stream_idle_timeout_ms() -> u64 {
+    180 * 1000
+}
+
+fn default_sidecar_stream_open_max_attempts() -> u8 {
+    1
+}
+
+fn default_sidecar_stream_keepalive_seconds() -> u16 {
+    15
+}
+
+fn default_websocket_connect_timeout_ms() -> u64 {
+    30 * 1000
+}
+
+fn default_websocket_initial_message_timeout_ms() -> u64 {
+    30 * 1000
+}
+
+fn default_websocket_idle_timeout_ms() -> u64 {
+    5 * 60 * 1000
+}
+
+#[cfg(not(test))]
+fn default_websocket_heartbeat_interval_ms() -> u64 {
+    30 * 1000
+}
+
+#[cfg(test)]
+fn default_websocket_heartbeat_interval_ms() -> u64 {
+    25
+}
+
+fn default_upstream_send_retry_attempts() -> u8 {
+    3
+}
+
+fn default_upstream_send_retry_base_delay_ms() -> u64 {
+    200
+}
+
+fn default_upstream_send_retry_max_delay_ms() -> u64 {
+    1200
+}
+
+fn default_single_account_status_retry_attempts() -> u8 {
+    2
+}
+
+fn default_single_account_status_retry_base_delay_ms() -> u64 {
+    300
+}
+
+fn default_single_account_status_retry_max_delay_ms() -> u64 {
+    1500
+}
+
+fn default_sidecar_streaming_bootstrap_retries() -> u8 {
+    1
+}
+
+fn default_timeout_preset_long_wait() -> String {
+    "long_wait".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessTimeouts {
+    #[serde(default = "default_legacy_request_read_timeout_ms")]
+    pub legacy_request_read_timeout_ms: u64,
+    #[serde(default = "default_legacy_upstream_connect_timeout_ms")]
+    pub legacy_upstream_connect_timeout_ms: u64,
+    #[serde(default = "default_legacy_stream_idle_timeout_ms")]
+    pub legacy_stream_idle_timeout_ms: u64,
+    #[serde(default = "default_legacy_stream_total_timeout_ms")]
+    pub legacy_stream_total_timeout_ms: u64,
+    #[serde(default = "default_sidecar_stream_open_timeout_ms")]
+    pub sidecar_stream_open_timeout_ms: u64,
+    #[serde(default = "default_sidecar_stream_idle_timeout_ms")]
+    pub sidecar_stream_idle_timeout_ms: u64,
+    #[serde(default = "default_sidecar_image_stream_open_timeout_ms")]
+    pub sidecar_image_stream_open_timeout_ms: u64,
+    #[serde(default = "default_sidecar_image_stream_idle_timeout_ms")]
+    pub sidecar_image_stream_idle_timeout_ms: u64,
+    #[serde(default = "default_sidecar_stream_open_max_attempts")]
+    pub sidecar_stream_open_max_attempts: u8,
+    #[serde(default = "default_sidecar_stream_keepalive_seconds")]
+    pub sidecar_stream_keepalive_seconds: u16,
+    #[serde(default = "default_websocket_connect_timeout_ms")]
+    pub websocket_connect_timeout_ms: u64,
+    #[serde(default = "default_websocket_initial_message_timeout_ms")]
+    pub websocket_initial_message_timeout_ms: u64,
+    #[serde(default = "default_websocket_idle_timeout_ms")]
+    pub websocket_idle_timeout_ms: u64,
+    #[serde(default = "default_websocket_heartbeat_interval_ms")]
+    pub websocket_heartbeat_interval_ms: u64,
+    #[serde(default = "default_upstream_send_retry_attempts")]
+    pub upstream_send_retry_attempts: u8,
+    #[serde(default = "default_upstream_send_retry_base_delay_ms")]
+    pub upstream_send_retry_base_delay_ms: u64,
+    #[serde(default = "default_upstream_send_retry_max_delay_ms")]
+    pub upstream_send_retry_max_delay_ms: u64,
+    #[serde(default = "default_single_account_status_retry_attempts")]
+    pub single_account_status_retry_attempts: u8,
+    #[serde(default = "default_single_account_status_retry_base_delay_ms")]
+    pub single_account_status_retry_base_delay_ms: u64,
+    #[serde(default = "default_single_account_status_retry_max_delay_ms")]
+    pub single_account_status_retry_max_delay_ms: u64,
+    #[serde(default = "default_sidecar_streaming_bootstrap_retries")]
+    pub sidecar_streaming_bootstrap_retries: u8,
+}
+
+impl Default for CodexLocalAccessTimeouts {
+    fn default() -> Self {
+        Self {
+            legacy_request_read_timeout_ms: default_legacy_request_read_timeout_ms(),
+            legacy_upstream_connect_timeout_ms: default_legacy_upstream_connect_timeout_ms(),
+            legacy_stream_idle_timeout_ms: default_legacy_stream_idle_timeout_ms(),
+            legacy_stream_total_timeout_ms: default_legacy_stream_total_timeout_ms(),
+            sidecar_stream_open_timeout_ms: default_sidecar_stream_open_timeout_ms(),
+            sidecar_stream_idle_timeout_ms: default_sidecar_stream_idle_timeout_ms(),
+            sidecar_image_stream_open_timeout_ms: default_sidecar_image_stream_open_timeout_ms(),
+            sidecar_image_stream_idle_timeout_ms: default_sidecar_image_stream_idle_timeout_ms(),
+            sidecar_stream_open_max_attempts: default_sidecar_stream_open_max_attempts(),
+            sidecar_stream_keepalive_seconds: default_sidecar_stream_keepalive_seconds(),
+            websocket_connect_timeout_ms: default_websocket_connect_timeout_ms(),
+            websocket_initial_message_timeout_ms: default_websocket_initial_message_timeout_ms(),
+            websocket_idle_timeout_ms: default_websocket_idle_timeout_ms(),
+            websocket_heartbeat_interval_ms: default_websocket_heartbeat_interval_ms(),
+            upstream_send_retry_attempts: default_upstream_send_retry_attempts(),
+            upstream_send_retry_base_delay_ms: default_upstream_send_retry_base_delay_ms(),
+            upstream_send_retry_max_delay_ms: default_upstream_send_retry_max_delay_ms(),
+            single_account_status_retry_attempts: default_single_account_status_retry_attempts(),
+            single_account_status_retry_base_delay_ms:
+                default_single_account_status_retry_base_delay_ms(),
+            single_account_status_retry_max_delay_ms:
+                default_single_account_status_retry_max_delay_ms(),
+            sidecar_streaming_bootstrap_retries: default_sidecar_streaming_bootstrap_retries(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLocalAccessTimeoutPreset {
+    pub id: String,
+    pub name: String,
+    pub timeouts: CodexLocalAccessTimeouts,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexLocalAccessApiKey {
@@ -194,6 +377,12 @@ pub struct CodexLocalAccessCollection {
     #[serde(default = "default_max_retry_interval_ms")]
     pub max_retry_interval_ms: u64,
     #[serde(default)]
+    pub timeouts: CodexLocalAccessTimeouts,
+    #[serde(default = "default_timeout_preset_long_wait")]
+    pub active_timeout_preset_id: String,
+    #[serde(default)]
+    pub timeout_presets: Vec<CodexLocalAccessTimeoutPreset>,
+    #[serde(default)]
     pub disable_cooling: bool,
     #[serde(default = "default_restrict_free_accounts")]
     pub restrict_free_accounts: bool,
@@ -215,6 +404,12 @@ pub struct CodexLocalAccessUsageStats {
     pub success_count: u64,
     #[serde(default)]
     pub failure_count: u64,
+    #[serde(default)]
+    pub client_canceled_count: u64,
+    #[serde(default)]
+    pub upstream_response_failed_count: u64,
+    #[serde(default)]
+    pub stream_incomplete_count: u64,
     #[serde(default)]
     pub total_latency_ms: u64,
     #[serde(default)]

@@ -1119,9 +1119,17 @@ export function FloatingCardWindow() {
       }
       selectAccount(selectedPlatform, viewedAccount.id);
     } catch (error) {
+      const rawError = String(error).replace(/^Error:\s*/, '').trim();
+      const displayError =
+        rawError === 'CODEX_STALE_ACCOUNT'
+          ? t('codex.authError.staleAccount', {
+              defaultValue:
+                '该账号已不在本地账号库中，账号列表已刷新。请重新导入或重新登录该 Codex 账号。',
+            })
+          : rawError;
       setErrorText(
         t('floatingCard.errors.switchFailed', {
-          error: String(error),
+          error: displayError,
           defaultValue: '切换失败：{{error}}',
         }),
       );

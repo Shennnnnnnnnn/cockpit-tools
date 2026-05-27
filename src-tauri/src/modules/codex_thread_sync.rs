@@ -13,7 +13,8 @@ use crate::modules;
 const DEFAULT_INSTANCE_ID: &str = "__default__";
 const DEFAULT_INSTANCE_NAME: &str = "默认实例";
 const SESSION_INDEX_FILE: &str = "session_index.jsonl";
-const BACKUP_FILE_NAMES: [&str; 1] = [SESSION_INDEX_FILE];
+const GLOBAL_STATE_FILE: &str = ".codex-global-state.json";
+const BACKUP_FILE_NAMES: [&str; 2] = [SESSION_INDEX_FILE, GLOBAL_STATE_FILE];
 const SESSION_DIRS: [&str; 2] = ["sessions", "archived_sessions"];
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +71,7 @@ struct ThreadSnapshot {
     rollout_modified_at: Option<SystemTime>,
     merged_rollout_content: Option<String>,
     session_index_entry: JsonValue,
+    workspace_root: Option<String>,
     source_root: PathBuf,
     freshness: ThreadFreshness,
 }
@@ -86,6 +88,12 @@ struct ThreadSyncPlanItem {
     snapshot: ThreadSnapshot,
     existing_rollout_path: Option<PathBuf>,
     is_update: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ThreadSyncWriteResult {
+    backup_dir: PathBuf,
+    metadata_rebuild_failed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -138,7 +146,9 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
     let mut total_synced_thread_count = 0usize;
     let mut total_added_thread_count = 0usize;
     let mut total_updated_thread_count = 0usize;
+    let mut project_index_repaired_instance_count = 0usize;
     let mut mutated_running_instance_count = 0usize;
+    let mut metadata_rebuild_failed_instance_count = 0usize;
 
     for instance in &instances {
         let existing_snapshots = snapshots_by_instance
@@ -148,6 +158,10 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
         let mut plan_items = Vec::new();
         let mut added_thread_count = 0usize;
         let mut updated_thread_count = 0usize;
+        let expected_snapshots = universe_ids
+            .iter()
+            .filter_map(|id| thread_universe.get(id).cloned())
+            .collect::<Vec<_>>();
 
         for id in &universe_ids {
             let Some(best_snapshot) = thread_universe.get(id) else {
@@ -177,7 +191,11 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
             }
         }
 
-        if plan_items.is_empty() {
+        let missing_workspace_roots =
+            find_missing_thread_workspace_roots(&instance.data_dir, &expected_snapshots)?;
+        let repairs_project_index = !missing_workspace_roots.is_empty();
+
+        if plan_items.is_empty() && !repairs_project_index {
             items.push(CodexInstanceThreadSyncItem {
                 instance_id: instance.id.clone(),
                 instance_name: instance.name.clone(),
@@ -188,10 +206,18 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
             continue;
         }
 
-        let backup_dir = sync_thread_plan_to_instance(instance, &plan_items)?;
+        let write_result =
+            sync_thread_plan_to_instance(instance, &plan_items, &expected_snapshots)?;
+        let backup_dir = write_result.backup_dir;
         let backup_dir_string = backup_dir.to_string_lossy().to_string();
         backup_dirs.push(backup_dir_string.clone());
         mutated_instance_count += 1;
+        if repairs_project_index {
+            project_index_repaired_instance_count += 1;
+        }
+        if write_result.metadata_rebuild_failed {
+            metadata_rebuild_failed_instance_count += 1;
+        }
         total_synced_thread_count += plan_items.len();
         total_added_thread_count += added_thread_count;
         total_updated_thread_count += updated_thread_count;
@@ -208,8 +234,13 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
         });
     }
 
-    let message = if total_synced_thread_count == 0 {
+    let message = if total_synced_thread_count == 0 && project_index_repaired_instance_count == 0 {
         "所有 Codex 实例会话已是最新，无需同步".to_string()
+    } else if total_synced_thread_count == 0 {
+        format!(
+            "会话内容已是最新，已修复 {} 个实例的项目索引",
+            project_index_repaired_instance_count
+        )
     } else if mutated_running_instance_count > 0 {
         format!(
             "已为 {} 个实例同步 {} 条会话（新增 {} 条，更新 {} 条），并已触发官方 Codex 重建会话索引；运行中的实例可能需要刷新或重启后显示",
@@ -227,6 +258,12 @@ pub fn sync_threads_across_instances() -> Result<CodexInstanceThreadSyncSummary,
             total_updated_thread_count
         )
     };
+
+    let message = append_metadata_rebuild_warning(
+        message,
+        metadata_rebuild_failed_instance_count,
+        total_synced_thread_count,
+    );
 
     Ok(CodexInstanceThreadSyncSummary {
         instance_count: instances.len(),
@@ -346,7 +383,8 @@ pub fn sync_sessions_to_instance(
         });
     }
 
-    let backup_dir = sync_missing_threads_to_instance(&target, &snapshots_to_sync)?;
+    let write_result = sync_missing_threads_to_instance(&target, &snapshots_to_sync)?;
+    let backup_dir = write_result.backup_dir;
     let synced_session_count = snapshots_to_sync.len();
     let message = if running {
         format!(
@@ -359,6 +397,11 @@ pub fn sync_sessions_to_instance(
             synced_session_count, target.name
         )
     };
+    let message = append_metadata_rebuild_warning(
+        message,
+        usize::from(write_result.metadata_rebuild_failed),
+        synced_session_count,
+    );
 
     Ok(CodexInstanceTargetThreadSyncSummary {
         requested_session_count: requested_ids.len(),
@@ -440,6 +483,7 @@ fn load_thread_snapshots(instance: &CodexSyncInstance) -> Result<Vec<ThreadSnaps
             let session_index_entry = session_index_map.get(&id).cloned().unwrap_or_else(|| {
                 build_fallback_session_index_entry(&id, &title, updated_at.as_deref())
             });
+            let workspace_root = session_meta_cwd(&session_meta);
             let rollout_actual_modified_at =
                 modules::codex_session_file_time::read_modified_time(&rollout_path);
             let rollout_modified_at =
@@ -455,6 +499,7 @@ fn load_thread_snapshots(instance: &CodexSyncInstance) -> Result<Vec<ThreadSnaps
                 rollout_modified_at,
                 merged_rollout_content: None,
                 session_index_entry,
+                workspace_root,
                 source_root: instance.data_dir.clone(),
                 freshness,
             });
@@ -531,10 +576,18 @@ fn session_meta_id(meta: &JsonValue) -> Option<String> {
         })
 }
 
+fn session_meta_cwd(meta: &JsonValue) -> Option<String> {
+    meta.get("payload")
+        .and_then(|payload| payload.get("cwd"))
+        .or_else(|| meta.get("cwd"))
+        .and_then(JsonValue::as_str)
+        .map(str::to_string)
+}
+
 fn sync_missing_threads_to_instance(
     target: &CodexSyncInstance,
     snapshots: &[ThreadSnapshot],
-) -> Result<PathBuf, String> {
+) -> Result<ThreadSyncWriteResult, String> {
     let plan_items = snapshots
         .iter()
         .cloned()
@@ -544,13 +597,14 @@ fn sync_missing_threads_to_instance(
             is_update: false,
         })
         .collect::<Vec<_>>();
-    sync_thread_plan_to_instance(target, &plan_items)
+    sync_thread_plan_to_instance(target, &plan_items, snapshots)
 }
 
 fn sync_thread_plan_to_instance(
     target: &CodexSyncInstance,
     plan_items: &[ThreadSyncPlanItem],
-) -> Result<PathBuf, String> {
+    workspace_snapshots: &[ThreadSnapshot],
+) -> Result<ThreadSyncWriteResult, String> {
     let backup_dir = backup_instance_files(&target.data_dir)?;
     let target_provider =
         modules::codex_session_visibility::read_history_visibility_provider_for_dir(
@@ -562,20 +616,51 @@ fn sync_thread_plan_to_instance(
         rewrite_rollout_provider_for_target(&target_rollout_path, &target_provider)?;
     }
 
-    let snapshots = plan_items
-        .iter()
-        .map(|item| item.snapshot.clone())
-        .collect::<Vec<_>>();
-    upsert_session_index_entries(&target.data_dir, &snapshots)?;
-    modules::codex_official_app_server::rebuild_thread_metadata(&target.data_dir).map_err(
-        |error| {
-            format!(
-                "已同步 rollout/session_index，但官方 Codex 重建会话索引失败 ({}): {}",
-                target.name, error
-            )
-        },
-    )?;
-    Ok(backup_dir)
+    let mut metadata_rebuild_failed = false;
+    if !plan_items.is_empty() {
+        let snapshots = plan_items
+            .iter()
+            .map(|item| item.snapshot.clone())
+            .collect::<Vec<_>>();
+        upsert_session_index_entries(&target.data_dir, &snapshots)?;
+        metadata_rebuild_failed = !try_rebuild_thread_metadata(target);
+    }
+    update_global_state_thread_workspaces(&target.data_dir, workspace_snapshots)?;
+    Ok(ThreadSyncWriteResult {
+        backup_dir,
+        metadata_rebuild_failed,
+    })
+}
+
+fn try_rebuild_thread_metadata(target: &CodexSyncInstance) -> bool {
+    match modules::codex_official_app_server::rebuild_thread_metadata(&target.data_dir) {
+        Ok(()) => true,
+        Err(error) => {
+            eprintln!(
+                "Codex thread sync: skipped official metadata rebuild for {} ({}): {}",
+                target.name,
+                target.data_dir.display(),
+                error
+            );
+            false
+        }
+    }
+}
+
+fn append_metadata_rebuild_warning(
+    message: String,
+    failed_instance_count: usize,
+    synced_thread_count: usize,
+) -> String {
+    if failed_instance_count == 0 || synced_thread_count == 0 {
+        return message;
+    }
+
+    let message = message.replace("，并已触发官方 Codex 重建会话索引", "");
+    format!(
+        "{}；{} 个实例未能触发官方 Codex 重建会话索引，但 rollout/session_index 已同步完成",
+        message, failed_instance_count
+    )
 }
 
 fn merge_thread_snapshots(snapshots: &[ThreadSnapshot]) -> Result<ThreadSnapshot, String> {
@@ -996,6 +1081,195 @@ fn upsert_session_index_entries(
     Ok(())
 }
 
+fn collect_thread_workspace_roots(snapshots: &[ThreadSnapshot]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut roots = Vec::new();
+
+    for snapshot in snapshots {
+        let Some(root) = snapshot_workspace_root(snapshot) else {
+            continue;
+        };
+        if seen.insert(root.clone()) {
+            roots.push(root);
+        }
+    }
+
+    roots
+}
+
+fn snapshot_workspace_root(snapshot: &ThreadSnapshot) -> Option<String> {
+    snapshot
+        .workspace_root
+        .as_deref()
+        .and_then(normalize_workspace_root)
+        .or_else(|| session_index_workspace_root(&snapshot.session_index_entry))
+}
+
+fn session_index_workspace_root(entry: &JsonValue) -> Option<String> {
+    [
+        "cwd",
+        "workspace_root",
+        "workspaceRoot",
+        "working_directory",
+        "workingDirectory",
+    ]
+    .iter()
+    .find_map(|key| entry.get(key).and_then(JsonValue::as_str))
+    .and_then(normalize_workspace_root)
+}
+
+fn normalize_workspace_root(value: &str) -> Option<String> {
+    let mut value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = value.strip_prefix("\\\\?\\") {
+        value = stripped;
+    }
+
+    let is_windows_path = value.starts_with("\\\\")
+        || value
+            .as_bytes()
+            .get(1)
+            .is_some_and(|separator| *separator == b':');
+    let separator = if is_windows_path { '\\' } else { '/' };
+    let mut normalized = if is_windows_path {
+        value.replace('/', "\\")
+    } else {
+        value.replace('\\', "/")
+    };
+    while normalized.len() > 3 && normalized.ends_with(separator) {
+        normalized.pop();
+    }
+
+    if normalized.trim().is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn read_global_state(root_dir: &Path) -> Result<JsonValue, String> {
+    let path = root_dir.join(GLOBAL_STATE_FILE);
+    if !path.exists() {
+        return Ok(json!({}));
+    }
+
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| format!("读取全局状态失败 ({}): {}", path.display(), error))?;
+    Ok(serde_json::from_str::<JsonValue>(&raw).unwrap_or_else(|_| json!({})))
+}
+
+fn global_state_array_contains(
+    object: &serde_json::Map<String, JsonValue>,
+    key: &str,
+    workspace: &str,
+) -> bool {
+    object
+        .get(key)
+        .and_then(JsonValue::as_array)
+        .map(|values| {
+            values.iter().any(|value| {
+                value.as_str().and_then(normalize_workspace_root).as_deref() == Some(workspace)
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn find_missing_thread_workspace_roots(
+    root_dir: &Path,
+    snapshots: &[ThreadSnapshot],
+) -> Result<Vec<String>, String> {
+    let roots = collect_thread_workspace_roots(snapshots);
+    if roots.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let value = read_global_state(root_dir)?;
+    let Some(object) = value.as_object() else {
+        return Ok(roots);
+    };
+
+    Ok(roots
+        .into_iter()
+        .filter(|root| {
+            !global_state_array_contains(object, "project-order", root)
+                || !global_state_array_contains(object, "electron-saved-workspace-roots", root)
+        })
+        .collect())
+}
+
+fn update_global_state_thread_workspaces(
+    root_dir: &Path,
+    snapshots: &[ThreadSnapshot],
+) -> Result<bool, String> {
+    let roots = collect_thread_workspace_roots(snapshots);
+    if roots.is_empty() {
+        return Ok(false);
+    }
+
+    let path = root_dir.join(GLOBAL_STATE_FILE);
+    let mut value = read_global_state(root_dir)?;
+    if !value.is_object() {
+        value = json!({});
+    }
+    let Some(object) = value.as_object_mut() else {
+        return Err("全局状态文件格式无效".to_string());
+    };
+
+    let mut changed = false;
+    changed |= merge_string_array(object, "project-order", &roots);
+    changed |= merge_string_array(object, "electron-saved-workspace-roots", &roots);
+
+    if changed {
+        let serialized = serde_json::to_string_pretty(&value)
+            .map_err(|error| format!("序列化全局状态失败: {}", error))?;
+        fs::write(&path, format!("{}\n", serialized))
+            .map_err(|error| format!("写入全局状态失败 ({}): {}", path.display(), error))?;
+    }
+
+    Ok(changed)
+}
+
+fn merge_string_array(
+    object: &mut serde_json::Map<String, JsonValue>,
+    key: &str,
+    additions: &[String],
+) -> bool {
+    let mut changed = false;
+    let mut values = object
+        .get(key)
+        .and_then(JsonValue::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| item.as_str().map(|value| value.to_string()))
+        .collect::<Vec<_>>();
+    let mut normalized_values = values
+        .iter()
+        .filter_map(|value| normalize_workspace_root(value))
+        .collect::<HashSet<_>>();
+
+    for addition in additions {
+        let Some(normalized) = normalize_workspace_root(addition) else {
+            continue;
+        };
+        if normalized_values.insert(normalized.clone()) {
+            values.push(normalized);
+            changed = true;
+        }
+    }
+
+    if changed {
+        object.insert(
+            key.to_string(),
+            JsonValue::Array(values.into_iter().map(JsonValue::String).collect()),
+        );
+    }
+
+    changed
+}
+
 fn copy_rollout_file_for_plan(
     item: &ThreadSyncPlanItem,
     target_root: &Path,
@@ -1275,6 +1549,7 @@ mod tests {
             rollout_modified_at: Some(source_modified_at),
             merged_rollout_content: None,
             session_index_entry: json!({"id":"s1"}),
+            workspace_root: None,
             source_root: source_root.clone(),
             freshness: ThreadFreshness {
                 activity_ms: 0,
@@ -1323,5 +1598,25 @@ mod tests {
             original_modified_at
         );
         fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn normalize_workspace_root_preserves_posix_paths() {
+        assert_eq!(
+            normalize_workspace_root("/Users/demo/project/").as_deref(),
+            Some("/Users/demo/project")
+        );
+    }
+
+    #[test]
+    fn normalize_workspace_root_normalizes_windows_paths() {
+        assert_eq!(
+            normalize_workspace_root(r"\\?\C:\Users\demo\project\").as_deref(),
+            Some(r"C:\Users\demo\project")
+        );
+        assert_eq!(
+            normalize_workspace_root("C:/Users/demo/project/").as_deref(),
+            Some(r"C:\Users\demo\project")
+        );
     }
 }

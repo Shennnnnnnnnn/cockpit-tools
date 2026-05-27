@@ -55,6 +55,9 @@ import type {
   CodexLocalAccessState,
   CodexLocalAccessStatsWindow,
   CodexLocalAccessTestResult,
+  CodexLocalAccessTimeoutPreset,
+  CodexLocalAccessTimeouts,
+  CodexLocalAccessUsageStats,
   CodexLocalAccessUsageEventPage,
 } from '../types/codexLocalAccess';
 import { buildCodexAccountPresentation } from '../presentation/platformAccountPresentation';
@@ -75,6 +78,8 @@ type CopyField = 'baseUrl' | 'lanBaseUrl' | 'apiKey' | 'modelId' | `apiKey:${str
 type RequestLogKindFilter = 'all' | CodexLocalAccessRequestKind;
 type RequestLogStatusFilter = 'all' | 'success' | 'failed';
 type RequestLogGatewayModeFilter = 'all' | CodexLocalAccessGatewayMode;
+type BuiltinTimeoutPresetId = 'long_wait' | 'short_wait';
+type TimeoutPresetId = BuiltinTimeoutPresetId | string;
 
 interface ApiKeyPolicyDraft {
   modelPrefix: string;
@@ -300,6 +305,84 @@ function parseIntegerDraft(value: string, min: number, max: number): number | nu
   return parsed;
 }
 
+function defaultCodexLocalAccessTimeouts(): CodexLocalAccessTimeouts {
+  return {
+    legacyRequestReadTimeoutMs: 60000,
+    legacyUpstreamConnectTimeoutMs: 60000,
+    legacyStreamIdleTimeoutMs: 120000,
+    legacyStreamTotalTimeoutMs: 300000,
+    sidecarStreamOpenTimeoutMs: 60000,
+    sidecarStreamIdleTimeoutMs: 120000,
+    sidecarImageStreamOpenTimeoutMs: 60000,
+    sidecarImageStreamIdleTimeoutMs: 180000,
+    sidecarStreamOpenMaxAttempts: 1,
+    sidecarStreamKeepaliveSeconds: 15,
+    websocketConnectTimeoutMs: 30000,
+    websocketInitialMessageTimeoutMs: 30000,
+    websocketIdleTimeoutMs: 300000,
+    websocketHeartbeatIntervalMs: 30000,
+    upstreamSendRetryAttempts: 3,
+    upstreamSendRetryBaseDelayMs: 200,
+    upstreamSendRetryMaxDelayMs: 1200,
+    singleAccountStatusRetryAttempts: 2,
+    singleAccountStatusRetryBaseDelayMs: 300,
+    singleAccountStatusRetryMaxDelayMs: 1500,
+    sidecarStreamingBootstrapRetries: 1,
+  };
+}
+
+function shortWaitCodexLocalAccessTimeouts(): CodexLocalAccessTimeouts {
+  return {
+    ...defaultCodexLocalAccessTimeouts(),
+    legacyRequestReadTimeoutMs: 15000,
+    legacyUpstreamConnectTimeoutMs: 20000,
+    legacyStreamIdleTimeoutMs: 60000,
+    legacyStreamTotalTimeoutMs: 180000,
+    sidecarStreamOpenTimeoutMs: 10000,
+    sidecarStreamIdleTimeoutMs: 60000,
+    sidecarImageStreamOpenTimeoutMs: 10000,
+    sidecarImageStreamIdleTimeoutMs: 60000,
+    sidecarStreamOpenMaxAttempts: 2,
+    websocketConnectTimeoutMs: 30000,
+    websocketInitialMessageTimeoutMs: 30000,
+  };
+}
+
+function builtinTimeoutPresetValue(id: BuiltinTimeoutPresetId): CodexLocalAccessTimeouts {
+  return id === 'short_wait' ? shortWaitCodexLocalAccessTimeouts() : defaultCodexLocalAccessTimeouts();
+}
+
+function normalizeTimeouts(value?: CodexLocalAccessTimeouts | null): CodexLocalAccessTimeouts {
+  return { ...defaultCodexLocalAccessTimeouts(), ...(value ?? {}) };
+}
+
+function timeoutDraftsFromValue(value?: CodexLocalAccessTimeouts | null): Record<keyof CodexLocalAccessTimeouts, string> {
+  const timeouts = normalizeTimeouts(value);
+  return {
+    legacyRequestReadTimeoutMs: formatSeconds(timeouts.legacyRequestReadTimeoutMs),
+    legacyUpstreamConnectTimeoutMs: formatSeconds(timeouts.legacyUpstreamConnectTimeoutMs),
+    legacyStreamIdleTimeoutMs: formatSeconds(timeouts.legacyStreamIdleTimeoutMs),
+    legacyStreamTotalTimeoutMs: formatSeconds(timeouts.legacyStreamTotalTimeoutMs),
+    sidecarStreamOpenTimeoutMs: formatSeconds(timeouts.sidecarStreamOpenTimeoutMs),
+    sidecarStreamIdleTimeoutMs: formatSeconds(timeouts.sidecarStreamIdleTimeoutMs),
+    sidecarImageStreamOpenTimeoutMs: formatSeconds(timeouts.sidecarImageStreamOpenTimeoutMs),
+    sidecarImageStreamIdleTimeoutMs: formatSeconds(timeouts.sidecarImageStreamIdleTimeoutMs),
+    sidecarStreamOpenMaxAttempts: String(timeouts.sidecarStreamOpenMaxAttempts),
+    sidecarStreamKeepaliveSeconds: String(timeouts.sidecarStreamKeepaliveSeconds),
+    websocketConnectTimeoutMs: formatSeconds(timeouts.websocketConnectTimeoutMs),
+    websocketInitialMessageTimeoutMs: formatSeconds(timeouts.websocketInitialMessageTimeoutMs),
+    websocketIdleTimeoutMs: formatSeconds(timeouts.websocketIdleTimeoutMs),
+    websocketHeartbeatIntervalMs: formatSeconds(timeouts.websocketHeartbeatIntervalMs),
+    upstreamSendRetryAttempts: String(timeouts.upstreamSendRetryAttempts),
+    upstreamSendRetryBaseDelayMs: String(timeouts.upstreamSendRetryBaseDelayMs),
+    upstreamSendRetryMaxDelayMs: String(timeouts.upstreamSendRetryMaxDelayMs),
+    singleAccountStatusRetryAttempts: String(timeouts.singleAccountStatusRetryAttempts),
+    singleAccountStatusRetryBaseDelayMs: String(timeouts.singleAccountStatusRetryBaseDelayMs),
+    singleAccountStatusRetryMaxDelayMs: String(timeouts.singleAccountStatusRetryMaxDelayMs),
+    sidecarStreamingBootstrapRetries: String(timeouts.sidecarStreamingBootstrapRetries),
+  };
+}
+
 function requestKindLabel(
   kind: string,
   t: ReturnType<typeof useTranslation>['t'],
@@ -362,6 +445,13 @@ export function CodexApiServicePage() {
   const [pricingModalOpen, setPricingModalOpen] = useState(false);
   const [pricingDrafts, setPricingDrafts] = useState<ModelPricingDraft[]>([]);
   const [pricingError, setPricingError] = useState('');
+  const [timeoutsModalOpen, setTimeoutsModalOpen] = useState(false);
+  const [timeoutDrafts, setTimeoutDrafts] = useState<Record<keyof CodexLocalAccessTimeouts, string>>(
+    () => timeoutDraftsFromValue(),
+  );
+  const [timeoutsError, setTimeoutsError] = useState('');
+  const [selectedTimeoutPresetId, setSelectedTimeoutPresetId] = useState<TimeoutPresetId>('long_wait');
+  const [timeoutPresetNameDraft, setTimeoutPresetNameDraft] = useState('');
   const [sessionAffinityDraft, setSessionAffinityDraft] = useState(false);
   const [sessionAffinityTtlDraft, setSessionAffinityTtlDraft] = useState('3600');
   const [maxRetryCredentialsDraft, setMaxRetryCredentialsDraft] = useState('0');
@@ -384,6 +474,35 @@ export function CodexApiServicePage() {
 
   const collection = state?.collection ?? null;
   const stats = state?.stats ?? null;
+  const builtinTimeoutPresets = useMemo(
+    () => [
+      {
+        id: 'long_wait' as const,
+        name: t('codex.apiService.timeouts.longWaitPreset', '长等待方案'),
+        timeouts: defaultCodexLocalAccessTimeouts(),
+        builtin: true,
+      },
+      {
+        id: 'short_wait' as const,
+        name: t('codex.apiService.timeouts.shortWaitPreset', '短等待方案'),
+        timeouts: shortWaitCodexLocalAccessTimeouts(),
+        builtin: true,
+      },
+    ],
+    [t],
+  );
+  const timeoutPresetOptions = useMemo(
+    () => [
+      ...builtinTimeoutPresets,
+      ...((collection?.timeoutPresets ?? []).map((preset) => ({
+        ...preset,
+        builtin: false,
+      }))),
+    ],
+    [builtinTimeoutPresets, collection?.timeoutPresets],
+  );
+  const selectedTimeoutPreset = timeoutPresetOptions.find((preset) => preset.id === selectedTimeoutPresetId);
+  const selectedTimeoutPresetIsCustom = Boolean(selectedTimeoutPreset && !selectedTimeoutPreset.builtin);
   const selectedStatsWindow = useMemo<CodexLocalAccessStatsWindow | null>(() => {
     if (!stats) return null;
     return stats[statsRange];
@@ -457,6 +576,24 @@ export function CodexApiServicePage() {
     totals && totals.requestCount > 0
       ? Math.round((totals.successCount / totals.requestCount) * 100)
       : 0;
+  const formatRequestResultDetail = (usage?: CodexLocalAccessUsageStats | null) =>
+    t('codex.localAccess.stats.requestsDetail', {
+      success: formatCompactNumber(usage?.successCount ?? 0),
+      failed: formatCompactNumber(
+        Math.max(
+            (usage?.failureCount ?? 0) -
+            (usage?.clientCanceledCount ?? 0) -
+            (usage?.upstreamResponseFailedCount ?? 0) -
+            (usage?.streamIncompleteCount ?? 0),
+          0,
+        ),
+      ),
+      canceled: formatCompactNumber(usage?.clientCanceledCount ?? 0),
+      upstreamFailed: formatCompactNumber(usage?.upstreamResponseFailedCount ?? 0),
+      incomplete: formatCompactNumber(usage?.streamIncompleteCount ?? 0),
+      defaultValue:
+        '成功 {{success}} / 失败 {{failed}} / 取消 {{canceled}} / 上游失败 {{upstreamFailed}} / 流未完成 {{incomplete}}',
+    });
   const imageUnavailableCount =
     state?.accountHealth.filter(
       (item) => item.imageGenerationStatus === 'unavailable',
@@ -617,6 +754,8 @@ export function CodexApiServicePage() {
     setMaxRetryCredentialsDraft(String(collection?.maxRetryCredentials ?? 0));
     setMaxRetryIntervalDraft(formatSeconds(collection?.maxRetryIntervalMs ?? 3000));
     setDisableCoolingDraft(collection?.disableCooling ?? false);
+    setTimeoutDrafts(timeoutDraftsFromValue(collection?.timeouts));
+    setSelectedTimeoutPresetId(collection?.activeTimeoutPresetId || 'long_wait');
   }, [
     collection?.modelAliases,
     collection?.excludedModels,
@@ -625,6 +764,8 @@ export function CodexApiServicePage() {
     collection?.maxRetryCredentials,
     collection?.maxRetryIntervalMs,
     collection?.disableCooling,
+    collection?.timeouts,
+    collection?.activeTimeoutPresetId,
   ]);
 
   useEffect(() => {
@@ -1106,6 +1247,253 @@ export function CodexApiServicePage() {
     }, t('codex.apiService.routing.optionsSaved', '调度选项已保存'));
   };
 
+  const updateTimeoutDraft = (key: keyof CodexLocalAccessTimeouts, value: string) => {
+    setTimeoutsError('');
+    setTimeoutDrafts((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleResetTimeoutDrafts = () => {
+    setTimeoutsError('');
+    setSelectedTimeoutPresetId('long_wait');
+    setTimeoutDrafts(timeoutDraftsFromValue());
+  };
+
+  const parseTimeoutDraftPayload = (): CodexLocalAccessTimeouts | null => {
+    const secondFields: Array<keyof CodexLocalAccessTimeouts> = [
+      'legacyRequestReadTimeoutMs',
+      'legacyUpstreamConnectTimeoutMs',
+      'legacyStreamIdleTimeoutMs',
+      'legacyStreamTotalTimeoutMs',
+      'sidecarStreamOpenTimeoutMs',
+      'sidecarStreamIdleTimeoutMs',
+      'sidecarImageStreamOpenTimeoutMs',
+      'sidecarImageStreamIdleTimeoutMs',
+      'websocketConnectTimeoutMs',
+      'websocketInitialMessageTimeoutMs',
+      'websocketIdleTimeoutMs',
+      'websocketHeartbeatIntervalMs',
+    ];
+    const parsedSeconds = new Map<keyof CodexLocalAccessTimeouts, number>();
+    for (const key of secondFields) {
+      const max = key === 'legacyStreamTotalTimeoutMs' || key === 'websocketIdleTimeoutMs' ? 1800 : 600;
+      const parsed = parseIntegerDraft(timeoutDrafts[key], 1, max);
+      if (parsed === null) {
+        setTimeoutsError(t('codex.apiService.validation.numberRange', {
+          min: 1,
+          max,
+          defaultValue: '请输入 {{min}} 到 {{max}} 之间的数字',
+        }));
+        return null;
+      }
+      parsedSeconds.set(key, parsed);
+    }
+    if (
+      (parsedSeconds.get('legacyStreamTotalTimeoutMs') ?? 0) <
+      (parsedSeconds.get('legacyStreamIdleTimeoutMs') ?? 0)
+    ) {
+      setTimeoutsError(t(
+        'codex.apiService.timeouts.totalGteIdle',
+        '旧 API 流总超时不能小于流空闲超时',
+      ));
+      return null;
+    }
+    const attempts = parseIntegerDraft(timeoutDrafts.sidecarStreamOpenMaxAttempts, 1, 3);
+    if (attempts === null) {
+      setTimeoutsError(t('codex.apiService.validation.numberRange', {
+        min: 1,
+        max: 3,
+        defaultValue: '请输入 {{min}} 到 {{max}} 之间的数字',
+      }));
+      return null;
+    }
+    const keepalive = parseIntegerDraft(timeoutDrafts.sidecarStreamKeepaliveSeconds, 0, 300);
+    if (keepalive === null) {
+      setTimeoutsError(t('codex.apiService.validation.numberRange', {
+        min: 0,
+        max: 300,
+        defaultValue: '请输入 {{min}} 到 {{max}} 之间的数字',
+      }));
+      return null;
+    }
+    const sidecarBootstrapRetries = parseIntegerDraft(timeoutDrafts.sidecarStreamingBootstrapRetries, 0, 5);
+    if (sidecarBootstrapRetries === null) {
+      setTimeoutsError(t('codex.apiService.validation.numberRange', {
+        min: 0,
+        max: 5,
+        defaultValue: '请输入 {{min}} 到 {{max}} 之间的数字',
+      }));
+      return null;
+    }
+    const upstreamSendRetryAttempts = parseIntegerDraft(timeoutDrafts.upstreamSendRetryAttempts, 0, 5);
+    const singleAccountStatusRetryAttempts = parseIntegerDraft(timeoutDrafts.singleAccountStatusRetryAttempts, 0, 5);
+    if (upstreamSendRetryAttempts === null || singleAccountStatusRetryAttempts === null) {
+      setTimeoutsError(t('codex.apiService.validation.numberRange', {
+        min: 0,
+        max: 5,
+        defaultValue: '请输入 {{min}} 到 {{max}} 之间的数字',
+      }));
+      return null;
+    }
+    const upstreamSendRetryBaseDelayMs = parseIntegerDraft(timeoutDrafts.upstreamSendRetryBaseDelayMs, 50, 10000);
+    const upstreamSendRetryMaxDelayMs = parseIntegerDraft(timeoutDrafts.upstreamSendRetryMaxDelayMs, 50, 10000);
+    const singleAccountStatusRetryBaseDelayMs = parseIntegerDraft(timeoutDrafts.singleAccountStatusRetryBaseDelayMs, 50, 10000);
+    const singleAccountStatusRetryMaxDelayMs = parseIntegerDraft(timeoutDrafts.singleAccountStatusRetryMaxDelayMs, 50, 10000);
+    if (
+      upstreamSendRetryBaseDelayMs === null ||
+      upstreamSendRetryMaxDelayMs === null ||
+      singleAccountStatusRetryBaseDelayMs === null ||
+      singleAccountStatusRetryMaxDelayMs === null
+    ) {
+      setTimeoutsError(t('codex.apiService.validation.numberRange', {
+        min: 50,
+        max: 10000,
+        defaultValue: '请输入 {{min}} 到 {{max}} 之间的数字',
+      }));
+      return null;
+    }
+    if (upstreamSendRetryMaxDelayMs < upstreamSendRetryBaseDelayMs) {
+      setTimeoutsError(t(
+        'codex.apiService.timeouts.maxDelayGteBase',
+        '最大延迟不能小于基础延迟',
+      ));
+      return null;
+    }
+    if (singleAccountStatusRetryMaxDelayMs < singleAccountStatusRetryBaseDelayMs) {
+      setTimeoutsError(t(
+        'codex.apiService.timeouts.maxDelayGteBase',
+        '最大延迟不能小于基础延迟',
+      ));
+      return null;
+    }
+    const payload: CodexLocalAccessTimeouts = {
+      legacyRequestReadTimeoutMs: (parsedSeconds.get('legacyRequestReadTimeoutMs') ?? 15) * 1000,
+      legacyUpstreamConnectTimeoutMs: (parsedSeconds.get('legacyUpstreamConnectTimeoutMs') ?? 20) * 1000,
+      legacyStreamIdleTimeoutMs: (parsedSeconds.get('legacyStreamIdleTimeoutMs') ?? 60) * 1000,
+      legacyStreamTotalTimeoutMs: (parsedSeconds.get('legacyStreamTotalTimeoutMs') ?? 180) * 1000,
+      sidecarStreamOpenTimeoutMs: (parsedSeconds.get('sidecarStreamOpenTimeoutMs') ?? 10) * 1000,
+      sidecarStreamIdleTimeoutMs: (parsedSeconds.get('sidecarStreamIdleTimeoutMs') ?? 60) * 1000,
+      sidecarImageStreamOpenTimeoutMs: (parsedSeconds.get('sidecarImageStreamOpenTimeoutMs') ?? 10) * 1000,
+      sidecarImageStreamIdleTimeoutMs: (parsedSeconds.get('sidecarImageStreamIdleTimeoutMs') ?? 60) * 1000,
+      sidecarStreamOpenMaxAttempts: attempts,
+      sidecarStreamKeepaliveSeconds: keepalive,
+      websocketConnectTimeoutMs: (parsedSeconds.get('websocketConnectTimeoutMs') ?? 30) * 1000,
+      websocketInitialMessageTimeoutMs: (parsedSeconds.get('websocketInitialMessageTimeoutMs') ?? 30) * 1000,
+      websocketIdleTimeoutMs: (parsedSeconds.get('websocketIdleTimeoutMs') ?? 300) * 1000,
+      websocketHeartbeatIntervalMs: (parsedSeconds.get('websocketHeartbeatIntervalMs') ?? 30) * 1000,
+      upstreamSendRetryAttempts,
+      upstreamSendRetryBaseDelayMs,
+      upstreamSendRetryMaxDelayMs,
+      singleAccountStatusRetryAttempts,
+      singleAccountStatusRetryBaseDelayMs,
+      singleAccountStatusRetryMaxDelayMs,
+      sidecarStreamingBootstrapRetries: sidecarBootstrapRetries,
+    };
+    return payload;
+  };
+
+  const handleSaveTimeouts = async () => {
+    const payload = parseTimeoutDraftPayload();
+    if (!payload) return;
+    await runAction(async () => {
+      const next = await codexLocalAccessService.updateCodexLocalAccessTimeouts(
+        payload,
+        selectedTimeoutPresetId,
+      );
+      setState(next);
+      setTimeoutsModalOpen(false);
+    }, t('codex.apiService.timeouts.saved', '超时与重试已保存'));
+  };
+
+  const applyTimeoutPreset = (presetId: TimeoutPresetId) => {
+    const builtin = presetId === 'long_wait' || presetId === 'short_wait';
+    const preset = builtin
+      ? { id: presetId, timeouts: builtinTimeoutPresetValue(presetId as BuiltinTimeoutPresetId), name: '' }
+      : collection?.timeoutPresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    setTimeoutsError('');
+    setSelectedTimeoutPresetId(preset.id);
+    setTimeoutPresetNameDraft(preset.name);
+    setTimeoutDrafts(timeoutDraftsFromValue(preset.timeouts));
+  };
+
+  const handleCreateTimeoutPreset = async () => {
+    const payload = parseTimeoutDraftPayload();
+    if (!payload || !collection) return;
+    const name = timeoutPresetNameDraft.trim();
+    if (!name) {
+      setTimeoutsError(t('codex.apiService.timeouts.presetNameRequired', '请输入方案名称'));
+      return;
+    }
+    const now = Date.now();
+    const preset: CodexLocalAccessTimeoutPreset = {
+      id: `custom_${crypto.randomUUID?.() ?? `${now}_${Math.random().toString(36).slice(2)}`}`,
+      name,
+      timeouts: payload,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await runAction(async () => {
+      await codexLocalAccessService.updateCodexLocalAccessTimeoutPresets(
+        [...(collection.timeoutPresets ?? []), preset],
+        preset.id,
+      );
+      const next = await codexLocalAccessService.updateCodexLocalAccessTimeouts(payload, preset.id);
+      setState(next);
+      setSelectedTimeoutPresetId(preset.id);
+      setTimeoutPresetNameDraft('');
+    }, t('codex.apiService.timeouts.presetSaved', '方案已保存'));
+  };
+
+  const handleUpdateTimeoutPreset = async () => {
+    const payload = parseTimeoutDraftPayload();
+    if (!payload || !collection || !selectedTimeoutPresetIsCustom) return;
+    const name = timeoutPresetNameDraft.trim();
+    if (!name) {
+      setTimeoutsError(t('codex.apiService.timeouts.presetNameRequired', '请输入方案名称'));
+      return;
+    }
+    const nextPresets = collection.timeoutPresets.map((preset) =>
+      preset.id === selectedTimeoutPresetId
+        ? { ...preset, name, timeouts: payload, updatedAt: Date.now() }
+        : preset,
+    );
+    await runAction(async () => {
+      await codexLocalAccessService.updateCodexLocalAccessTimeoutPresets(
+        nextPresets,
+        selectedTimeoutPresetId,
+      );
+      const next = await codexLocalAccessService.updateCodexLocalAccessTimeouts(
+        payload,
+        selectedTimeoutPresetId,
+      );
+      setState(next);
+    }, t('codex.apiService.timeouts.presetUpdated', '方案已更新'));
+  };
+
+  const handleDeleteTimeoutPreset = async () => {
+    if (!collection || !selectedTimeoutPresetIsCustom) return;
+    const confirmed = await confirmDialog(
+      t('codex.apiService.timeouts.deletePresetConfirm', '确定删除这个自定义方案吗？'),
+      { title: t('codex.apiService.timeouts.deletePresetTitle', '删除方案') },
+    );
+    if (!confirmed) return;
+    const nextPresets = collection.timeoutPresets.filter((preset) => preset.id !== selectedTimeoutPresetId);
+    await runAction(async () => {
+      await codexLocalAccessService.updateCodexLocalAccessTimeoutPresets(
+        nextPresets,
+        'long_wait',
+      );
+      const next = await codexLocalAccessService.updateCodexLocalAccessTimeouts(
+        defaultCodexLocalAccessTimeouts(),
+        'long_wait',
+      );
+      setState(next);
+      setSelectedTimeoutPresetId('long_wait');
+      setTimeoutPresetNameDraft('');
+      setTimeoutDrafts(timeoutDraftsFromValue(defaultCodexLocalAccessTimeouts()));
+    }, t('codex.apiService.timeouts.presetDeleted', '方案已删除'));
+  };
+
   const accessScopeOptions = [
     { value: 'localhost', label: t('codex.localAccess.accessScopeLocalhost', '仅本机') },
     { value: 'lan', label: t('codex.localAccess.accessScopeLan', '局域网') },
@@ -1175,11 +1563,7 @@ export function CodexApiServicePage() {
       key: 'requests',
       label: t('codex.localAccess.stats.requests', '总请求数'),
       value: formatCompactNumber(totals?.requestCount ?? 0),
-      detail: t('codex.localAccess.stats.requestsDetail', {
-        success: formatCompactNumber(totals?.successCount ?? 0),
-        failed: formatCompactNumber(totals?.failureCount ?? 0),
-        defaultValue: '成功 {{success}} / 失败 {{failed}}',
-      }),
+      detail: formatRequestResultDetail(totals),
     },
     {
       key: 'images',
@@ -1489,6 +1873,26 @@ export function CodexApiServicePage() {
                     </button>
                   </div>
                 </label>
+                <label>
+                  <span>{t('codex.apiService.timeouts.entryLabel', '高级参数')}</span>
+                  <div className="codex-api-service-input-row">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setTimeoutsError('');
+                        setSelectedTimeoutPresetId(collection?.activeTimeoutPresetId || 'long_wait');
+                        setTimeoutPresetNameDraft('');
+                        setTimeoutDrafts(timeoutDraftsFromValue(collection?.timeouts));
+                        setTimeoutsModalOpen(true);
+                      }}
+                      disabled={!collection}
+                    >
+                      <SlidersHorizontal size={14} />
+                      {t('codex.apiService.timeouts.openAction', '超时与重试')}
+                    </button>
+                  </div>
+                </label>
               </div>
             </section>
 
@@ -1694,7 +2098,7 @@ export function CodexApiServicePage() {
                         </div>
                         <div className="codex-api-service-account-meta">
                           <span>{t('codex.localAccess.stats.accountRequests', { count: stat?.usage.requestCount ?? 0, defaultValue: '{{count}} 次' })}</span>
-                          <span>{t('codex.localAccess.stats.accountResult', { success: stat?.usage.successCount ?? 0, failed: stat?.usage.failureCount ?? 0, defaultValue: '成功 {{success}} / 失败 {{failed}}' })}</span>
+                          <span>{formatRequestResultDetail(stat?.usage)}</span>
                           <span>{formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}</span>
                           <span>{t('codex.apiService.accountHealth.failures', { count: health?.consecutiveFailures ?? 0, defaultValue: '连续失败 {{count}}' })}</span>
                           <span>{health?.cooldowns.length ? t('codex.localAccess.healthCooldown', { count: health.cooldowns.length, defaultValue: '冷却 {{count}}' }) : t('codex.localAccess.healthAvailable', '可用')}</span>
@@ -1944,7 +2348,7 @@ export function CodexApiServicePage() {
                         </div>
                         <div className="codex-api-service-account-meta">
                           <span>{t('codex.localAccess.stats.accountRequests', { count: stat?.usage.requestCount ?? 0, defaultValue: '{{count}} 次' })}</span>
-                          <span>{t('codex.localAccess.stats.accountResult', { success: stat?.usage.successCount ?? 0, failed: stat?.usage.failureCount ?? 0, defaultValue: '成功 {{success}} / 失败 {{failed}}' })}</span>
+                          <span>{formatRequestResultDetail(stat?.usage)}</span>
                           <span>{formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}</span>
                           <span>{t('codex.apiService.accountHealth.failures', { count: health?.consecutiveFailures ?? 0, defaultValue: '连续失败 {{count}}' })}</span>
                           <span>{health?.cooldowns.length ? t('codex.localAccess.healthCooldown', { count: health.cooldowns.length, defaultValue: '冷却 {{count}}' }) : t('codex.localAccess.healthAvailable', '可用')}</span>
@@ -1977,11 +2381,7 @@ export function CodexApiServicePage() {
                           })}
                         </span>
                         <span>
-                          {t('codex.localAccess.stats.accountResult', {
-                            success: item.usage.successCount,
-                            failed: item.usage.failureCount,
-                            defaultValue: '成功 {{success}} / 失败 {{failed}}',
-                          })}
+                          {formatRequestResultDetail(item.usage)}
                         </span>
                         <span>{formatCompactNumber(item.usage.totalTokens)} Tokens</span>
                         <span>{formatUsdCost(item.usage.estimatedCostUsd)}</span>
@@ -2014,11 +2414,7 @@ export function CodexApiServicePage() {
                           })}
                         </span>
                         <span>
-                          {t('codex.localAccess.stats.accountResult', {
-                            success: item.usage.successCount,
-                            failed: item.usage.failureCount,
-                            defaultValue: '成功 {{success}} / 失败 {{failed}}',
-                          })}
+                          {formatRequestResultDetail(item.usage)}
                         </span>
                         <span>{formatCompactNumber(item.usage.totalTokens)} Tokens</span>
                         <span>{formatUsdCost(item.usage.estimatedCostUsd)}</span>
@@ -2191,6 +2587,200 @@ export function CodexApiServicePage() {
           </section>
         )}
       </main>
+
+      {timeoutsModalOpen && (
+        <div className="modal-overlay codex-api-service-pricing-overlay" role="presentation">
+          <div
+            className="modal codex-api-service-timeouts-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="codex-api-service-timeouts-title"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="codex-api-service-timeouts-title">
+                  {t('codex.apiService.timeouts.title', '超时与重试')}
+                </h2>
+                <p className="codex-api-service-pricing-desc">
+                  {t('codex.apiService.timeouts.desc', '单位为秒，保存后会按当前网关模式重启或重载 API 服务。')}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setTimeoutsModalOpen(false)}
+                aria-label={t('common.close', '关闭')}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body codex-api-service-timeouts-body">
+              {timeoutsError && (
+                <div className="codex-api-service-message error">
+                  <CircleAlert size={15} />
+                  <span>{timeoutsError}</span>
+                </div>
+              )}
+              <section className="codex-api-service-timeout-section codex-api-service-timeout-preset-section">
+                <h3>{t('codex.apiService.timeouts.presetTitle', '参数方案')}</h3>
+                <div className="codex-api-service-timeout-preset-row">
+                  <label className="codex-api-service-timeout-preset-select">
+                    <span>{t('codex.apiService.timeouts.presetSelect', '选择方案')}</span>
+                    <select
+                      value={selectedTimeoutPresetId}
+                      onChange={(event) => applyTimeoutPreset(event.target.value)}
+                    >
+                      {timeoutPresetOptions.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="codex-api-service-timeout-preset-name">
+                    <span>{t('codex.apiService.timeouts.presetName', '方案名称')}</span>
+                    <input
+                      type="text"
+                      maxLength={40}
+                      value={timeoutPresetNameDraft}
+                      onChange={(event) => {
+                        setTimeoutsError('');
+                        setTimeoutPresetNameDraft(event.target.value);
+                      }}
+                      placeholder={t('codex.apiService.timeouts.presetNamePlaceholder', '新的自定义方案')}
+                    />
+                  </label>
+                </div>
+                <div className="codex-api-service-timeout-preset-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleCreateTimeoutPreset()} disabled={!collection || busy}>
+                    <Plus size={14} />
+                    {t('codex.apiService.timeouts.saveAsPreset', '另存为方案')}
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleUpdateTimeoutPreset()} disabled={!collection || !selectedTimeoutPresetIsCustom || busy}>
+                    <Check size={14} />
+                    {t('codex.apiService.timeouts.updatePreset', '更新当前方案')}
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-sm danger" onClick={() => void handleDeleteTimeoutPreset()} disabled={!collection || !selectedTimeoutPresetIsCustom || busy}>
+                    <Trash2 size={14} />
+                    {t('codex.apiService.timeouts.deletePreset', '删除方案')}
+                  </button>
+                </div>
+              </section>
+              <section className="codex-api-service-timeout-section">
+                <h3>{t('codex.apiService.timeouts.sidecarTitle', '新 API 服务')}</h3>
+                <div className="codex-api-service-policy-grid">
+                  <label>
+                    <span>{t('codex.apiService.timeouts.streamOpen', '流打开超时')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.sidecarStreamOpenTimeoutMs} onChange={(event) => updateTimeoutDraft('sidecarStreamOpenTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.streamIdle', '流空闲超时')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.sidecarStreamIdleTimeoutMs} onChange={(event) => updateTimeoutDraft('sidecarStreamIdleTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.imageOpen', '图片流打开')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.sidecarImageStreamOpenTimeoutMs} onChange={(event) => updateTimeoutDraft('sidecarImageStreamOpenTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.imageIdle', '图片流空闲')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.sidecarImageStreamIdleTimeoutMs} onChange={(event) => updateTimeoutDraft('sidecarImageStreamIdleTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.openAttempts', '打开尝试')}</span>
+                    <input type="number" min={1} max={3} value={timeoutDrafts.sidecarStreamOpenMaxAttempts} onChange={(event) => updateTimeoutDraft('sidecarStreamOpenMaxAttempts', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.keepalive', 'Keep-alive')}</span>
+                    <input type="number" min={0} max={300} value={timeoutDrafts.sidecarStreamKeepaliveSeconds} onChange={(event) => updateTimeoutDraft('sidecarStreamKeepaliveSeconds', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.bootstrapRetries', '启动重试')}</span>
+                    <input type="number" min={0} max={5} value={timeoutDrafts.sidecarStreamingBootstrapRetries} onChange={(event) => updateTimeoutDraft('sidecarStreamingBootstrapRetries', event.target.value)} />
+                  </label>
+                </div>
+              </section>
+              <section className="codex-api-service-timeout-section">
+                <h3>{t('codex.apiService.timeouts.legacyTitle', '旧 API 服务')}</h3>
+                <div className="codex-api-service-policy-grid">
+                  <label>
+                    <span>{t('codex.apiService.timeouts.requestRead', '请求读取')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.legacyRequestReadTimeoutMs} onChange={(event) => updateTimeoutDraft('legacyRequestReadTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.connect', '上游连接')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.legacyUpstreamConnectTimeoutMs} onChange={(event) => updateTimeoutDraft('legacyUpstreamConnectTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.streamIdle', '流空闲超时')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.legacyStreamIdleTimeoutMs} onChange={(event) => updateTimeoutDraft('legacyStreamIdleTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.streamTotal', '流总超时')}</span>
+                    <input type="number" min={1} max={1800} value={timeoutDrafts.legacyStreamTotalTimeoutMs} onChange={(event) => updateTimeoutDraft('legacyStreamTotalTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.sendRetryAttempts', '发送重试')}</span>
+                    <input type="number" min={0} max={5} value={timeoutDrafts.upstreamSendRetryAttempts} onChange={(event) => updateTimeoutDraft('upstreamSendRetryAttempts', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.sendRetryBaseDelay', '发送基础延迟(ms)')}</span>
+                    <input type="number" min={50} max={10000} value={timeoutDrafts.upstreamSendRetryBaseDelayMs} onChange={(event) => updateTimeoutDraft('upstreamSendRetryBaseDelayMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.sendRetryMaxDelay', '发送最大延迟(ms)')}</span>
+                    <input type="number" min={50} max={10000} value={timeoutDrafts.upstreamSendRetryMaxDelayMs} onChange={(event) => updateTimeoutDraft('upstreamSendRetryMaxDelayMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.singleStatusAttempts', '单账号重试')}</span>
+                    <input type="number" min={0} max={5} value={timeoutDrafts.singleAccountStatusRetryAttempts} onChange={(event) => updateTimeoutDraft('singleAccountStatusRetryAttempts', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.singleStatusBaseDelay', '单账号基础延迟(ms)')}</span>
+                    <input type="number" min={50} max={10000} value={timeoutDrafts.singleAccountStatusRetryBaseDelayMs} onChange={(event) => updateTimeoutDraft('singleAccountStatusRetryBaseDelayMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.singleStatusMaxDelay', '单账号最大延迟(ms)')}</span>
+                    <input type="number" min={50} max={10000} value={timeoutDrafts.singleAccountStatusRetryMaxDelayMs} onChange={(event) => updateTimeoutDraft('singleAccountStatusRetryMaxDelayMs', event.target.value)} />
+                  </label>
+                </div>
+              </section>
+              <section className="codex-api-service-timeout-section">
+                <h3>{t('codex.apiService.timeouts.websocketTitle', 'WebSocket 设置')}</h3>
+                <div className="codex-api-service-policy-grid">
+                  <label>
+                    <span>{t('codex.apiService.timeouts.websocketConnect', '连接超时')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.websocketConnectTimeoutMs} onChange={(event) => updateTimeoutDraft('websocketConnectTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.websocketInitial', '首包超时')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.websocketInitialMessageTimeoutMs} onChange={(event) => updateTimeoutDraft('websocketInitialMessageTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.websocketIdle', '空闲超时')}</span>
+                    <input type="number" min={1} max={1800} value={timeoutDrafts.websocketIdleTimeoutMs} onChange={(event) => updateTimeoutDraft('websocketIdleTimeoutMs', event.target.value)} />
+                  </label>
+                  <label>
+                    <span>{t('codex.apiService.timeouts.websocketHeartbeat', '心跳间隔')}</span>
+                    <input type="number" min={1} max={600} value={timeoutDrafts.websocketHeartbeatIntervalMs} onChange={(event) => updateTimeoutDraft('websocketHeartbeatIntervalMs', event.target.value)} />
+                  </label>
+                </div>
+              </section>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={handleResetTimeoutDrafts}>
+                {t('codex.apiService.timeouts.resetDefaults', '恢复默认')}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setTimeoutsModalOpen(false)}>
+                {t('common.cancel', '取消')}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => void handleSaveTimeouts()} disabled={busy}>
+                <Check size={15} />
+                {t('common.save', '保存')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pricingModalOpen && (
         <div className="modal-overlay codex-api-service-pricing-overlay" role="presentation">

@@ -7,6 +7,31 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.24.9] - 2026-05-26
+
+### Added
+- **CLIProxyAPI sidecar now supports xAI accounts and executor routing**: xAI OAuth, token refresh, model thinking configuration, executor binding, and related service tests are included so xAI accounts can participate in the sidecar account pool.
+- **Codex API Service sidecar now exposes OpenAI-compatible image and video endpoints**: `/v1/images/generations`, `/v1/images/edits`, and video handlers are relayed through Codex Responses tooling with streaming, multipart image input, response-format conversion, and usage capture support.
+- **CLIProxyAPI sidecar now includes Codex client model catalog generation**: the sidecar can fetch Codex client models, ships a generated Codex model catalog, and uses the catalog alongside built-in model definitions.
+- **Home relay mode now supports cluster discovery and mTLS enrollment**: Home JWT enrollment can request and verify client certificates, configure TLS Redis clients, discover cluster nodes, and fail over to healthier Home targets.
+- **Codex API Service usage statistics now separate client-canceled and incomplete-stream results**: totals, account rows, and request summaries show successful, failed, canceled, and stream-incomplete counts separately.
+- **Codex API Service now exposes configurable timeout and retry controls**: the full API Service page adds advanced controls for Sidecar stream timeouts, image stream timeouts, open attempts, keep-alives, bootstrap retries, Legacy request/upstream/stream timeouts, WebSocket timeouts, upstream send retries, and single-account short retries, with built-in long-wait/short-wait presets and custom preset saving.
+
+### Changed
+- **Codex account API provider defaults now prefer OpenAI Official**: the Cockpit API preset is hidden from the normal preset list while existing Cockpit API Base URLs remain recognized as Cockpit-managed custom providers.
+- **CLIProxyAPI sidecar request handling now has stronger metadata, logging, and auth-file management**: request metadata, response wrapping, auth-file project IDs, partial auth-file updates, Redis queue handling, and sanitized request logs were expanded with focused coverage.
+- **Codex API Service stream handling now uses runtime timeout settings**: Sidecar and Legacy gateways read their stream, WebSocket, retry, and connection timeout profile from the saved API Service configuration instead of relying on fixed in-code values.
+- **Codex synced-session metadata rebuild is now best effort**: project index repair continues when metadata rebuild fails and keeps session visibility updates focused on available data. Thanks @OvOYu.
+
+### Fixed
+- **Codex local access port changes now remain available after a bind failure**: users can adjust the port after startup binding fails instead of being blocked by the failed state. Thanks @Disaster-Terminator.
+- **Codex synced session project visibility now repairs missing or stale project indexes more reliably**: synced thread metadata is rebuilt from available session files and official app metadata without blocking on non-critical rebuild failures. Thanks @OvOYu.
+- **Codex account switching now refreshes the local account list before switching**: stale account selections are rejected with a clear message when the account has already disappeared from local storage.
+- **Codex API Service now classifies incomplete upstream streams separately from generic failures**: legacy and sidecar errors such as disconnected streams, incomplete EOF, and missing completion events are migrated and counted as `stream_incomplete`.
+- **Trae account auth storage now handles iCube cipher records correctly**: encrypted auth records are read and written through the matching cipher-storage path in both the shared core and Tauri modules. Thanks @wuhua111.
+- **Forked PR builds no longer require unavailable signing secrets**: the build matrix only applies signing configuration when the required secrets are available. Thanks @OvOYu.
+
+---
 ## [0.24.8] - 2026-05-25
 
 ### Added

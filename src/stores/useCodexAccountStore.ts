@@ -68,6 +68,8 @@ const shouldHydrateCodexProfile = (account: CodexAccount): boolean =>
   !hasCodexAccountStructure(account) ||
   (isCodexTeamLikePlan(account.plan_type) && !hasCodexAccountName(account));
 
+const CODEX_STALE_ACCOUNT_ERROR = 'CODEX_STALE_ACCOUNT';
+
 interface CodexAccountState {
   accounts: CodexAccount[];
   currentAccount: CodexAccount | null;
@@ -157,6 +159,20 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
   },
   
   switchAccount: async (accountId: string) => {
+    const accounts = await codexService.listCodexAccounts();
+    allowNextEmptyCodexAccountList = false;
+    set({ accounts, loading: false, error: null });
+    persistCodexAccountsCache(accounts);
+
+    const targetExists = accounts.some((account) => account.id === accountId);
+    if (!targetExists) {
+      const currentAccount = await codexService.getCurrentCodexAccount();
+      allowNextEmptyCodexCurrentAccount = false;
+      set({ currentAccount });
+      persistCodexCurrentAccountCache(currentAccount);
+      throw new Error(CODEX_STALE_ACCOUNT_ERROR);
+    }
+
     const account = await codexService.switchCodexAccount(accountId);
     set({ currentAccount: account });
     await get().fetchAccounts();
